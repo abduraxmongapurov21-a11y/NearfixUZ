@@ -1,0 +1,33 @@
+{
+  "name": "analog-messenger",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "api:dev": "npm --workspace @analog/api run dev",
+    "api:build": "npm --workspace @analog/api run build",
+    "api:test": "npm --workspace @analog/api run test",
+    "api:prisma:generate": "npm --workspace @analog/api run prisma:generate",
+    "api:prisma:migrate": "npm --workspace @analog/api run prisma:migrate",
+    "mobile:start": "npm --workspace @analog/mobile run start",
+    "mobile:ios": "npm --workspace @analog/mobile run ios",
+    "mobile:android": "npm --workspace @analog/mobile run android",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "dependencies": {
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.10",
+    "typescript": "~5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

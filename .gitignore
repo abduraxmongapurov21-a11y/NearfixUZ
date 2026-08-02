@@ -1,0 +1,21 @@
+node_modules/
+.expo/
+dist/
+build/
+apps/api/src/generated/
+.env
+.env.*
+!.env.example
+
+# Source archives are retained locally, not committed.
+*.zip
+
+# Local installers and signing/private-key material must never be committed.
+*.exe
+*.msi
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
