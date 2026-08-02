@@ -1,0 +1,73 @@
+{
+  "expo": {
+    "name": "NearFIX",
+    "slug": "nearfix-mobile",
+    "version": "1.0.1",
+    "icon": "./assets/images/icon.png",
+    "scheme": "nearfix",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F7FCFD",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "NearFIX xaritada joriy joylashuvingizni ko'rsatish uchun lokatsiyaga ruxsat kerak."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "NearFIX chatda rasm tanlash uchun galereyaga ruxsat kerak.",
+          "cameraPermission": "NearFIX chatda rasmga olish uchun kameraga ruxsat kerak.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#0F719D",
+          "defaultChannel": "default"
+        }
+      ]
+    ],
+    "ios": {
+      "icon": "./assets/images/icon.png",
+      "supportsTablet": true,
+      "bundleIdentifier": "uz.nearfix.app",
+      "buildNumber": "2026072601",
+      "infoPlist": {
+        "NSCameraUsageDescription": "NearFIX chatda rasmga olish uchun kameraga ruxsat kerak.",
+        "NSPhotoLibraryUsageDescription": "NearFIX chatda rasm tanlash uchun galereyaga ruxsat kerak.",
+        "NSLocationWhenInUseUsageDescription": "NearFIX xaritada joriy joylashuvingizni ko'rsatish uchun lokatsiyaga ruxsat kerak."
+      }
+    },
+    "android": {
+      "package": "uz.nearfix.app",
+      "icon": "./assets/images/icon.png",
+      "predictiveBackGestureEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "monochromeImage": "./assets/images/adaptive-monochrome.png",
+        "backgroundColor": "#0F719D"
+      }
+    },
+    "extra": {
+      "authEnabled": true,
+      "paymentsEnabled": false,
+      "apiBaseUrl": "https://nearfix-production-c0db.up.railway.app",
+      "privacyPolicyUrl": "https://nearfix-production-c0db.up.railway.app/legal/privacy",
+      "termsUrl": "https://nearfix-production-c0db.up.railway.app/legal/terms"
+    }
+  }
+}

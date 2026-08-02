@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nearfix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nearfix
+      POSTGRES_PASSWORD: nearfix
+      POSTGRES_DB: nearfix
+    ports:
+      - "5432:5432"
+    volumes:
+      - nearfix_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nearfix -d nearfix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nearfix_postgres_data:

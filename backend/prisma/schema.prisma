@@ -1,0 +1,696 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CLIENT
+  PROVIDER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  DELETED
+}
+
+enum AdminAccountRole {
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum AdminAccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum OtpPurpose {
+  REGISTER
+  PASSWORD_RESET
+}
+
+enum WorkerProfileStatus {
+  DRAFT
+  APPROVED
+  SUSPENDED
+}
+
+enum WorkerAvailabilityStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+enum OrderStatus {
+  CREATED
+  WAITING_RESPONSE
+  ACCEPTED
+  ON_THE_WAY
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderUrgency {
+  NORMAL
+  FAST
+  URGENT
+}
+
+enum OrderEventActorType {
+  SYSTEM
+  CLIENT
+  WORKER
+  ADMIN
+}
+
+enum OrderEventType {
+  ORDER_CREATED
+  WORKER_NOTIFIED
+  RESPONSE_REMINDER_SENT
+  BROWSE_OTHER_WORKERS_SUGGESTED
+  WORKER_ACCEPTED
+  WORKER_REJECTED
+  WORKER_ON_THE_WAY
+  WORK_STARTED
+  WORK_COMPLETED
+  ORDER_CANCELLED
+  REVIEW_SUBMITTED
+  PAYMENT_UPDATED
+  SUPPORT_NOTE_ADDED
+}
+
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+}
+
+enum MediaScope {
+  ORDER_PROBLEM
+  CHAT
+  WORKER_GALLERY
+  REVIEW
+}
+
+enum MediaStatus {
+  PENDING
+  READY
+  FAILED
+  DELETED
+}
+
+enum BannerTargetType {
+  NONE
+  CATEGORY
+  URL
+}
+
+enum ChatMessageType {
+  TEXT
+  IMAGE
+  VIDEO
+}
+
+enum ChatRoomType {
+  DIRECT
+  ORDER
+  WORKER_GROUP
+  SUPPORT
+}
+
+enum ChatParticipantRole {
+  CLIENT
+  PROVIDER
+  ADMIN
+  SUPPORT
+}
+
+enum PaymentProvider {
+  CLICK
+  PAYME
+  UZUM
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ReportTargetType {
+  USER
+  WORKER
+  MESSAGE
+  REVIEW
+  ORDER
+  SUPPORT_TICKET
+}
+
+enum ReportReason {
+  SPAM
+  ABUSE
+  HARASSMENT
+  FRAUD
+  INAPPROPRIATE_CONTENT
+  SAFETY_RISK
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWING
+  RESOLVED
+  DISMISSED
+  ACTION_TAKEN
+}
+
+model User {
+  id                String     @id @default(cuid())
+  phone             String     @unique
+  name              String?
+  role              UserRole   @default(CLIENT)
+  status            UserStatus @default(ACTIVE)
+  cityId            String?
+  passwordHash      String?
+  passwordSetAt     DateTime?
+  passwordChangedAt DateTime?
+  sessionVersion    Int        @default(1)
+  deletedAt         DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  sessions         Session[]
+  adminPermissions AdminPermission[]
+  workerProfile    WorkerProfile?
+  addresses        Address[]
+  clientOrders     Order[]           @relation("ClientOrders")
+  chatMessages     ChatMessage[]
+  chatRooms        ChatRoom[]        @relation("ChatRoomCreator")
+  chatMemberships  ChatParticipant[]
+  media            Media[]
+  reviews          Review[]          @relation("ClientReviews")
+  favorites        Favorite[]        @relation("ClientFavorites")
+  orderEvents      OrderEvent[]      @relation("OrderEventActor")
+  notifications    Notification[]
+  pushTokens       PushToken[]
+  supportTickets   SupportTicket[]
+  reportsCreated   Report[]          @relation("ReportReporter")
+  reportsResolved  Report[]          @relation("ReportResolver")
+  blocksCreated    UserBlock[]       @relation("Blocker")
+  blocksReceived   UserBlock[]       @relation("BlockedUser")
+  supportResolved  SupportTicket[]   @relation("SupportResolver")
+}
+
+model AdminPermission {
+  id         String   @id @default(cuid())
+  userId     String
+  permission String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permission])
+  @@index([permission])
+}
+
+model AdminAccount {
+  id                 String             @id @default(cuid())
+  username           String             @unique
+  passwordHash       String
+  name               String?
+  role               AdminAccountRole   @default(ADMIN)
+  status             AdminAccountStatus @default(ACTIVE)
+  sessionVersion     Int                @default(1)
+  mustChangePassword Boolean            @default(true)
+  lastLoginAt        DateTime?
+  passwordChangedAt  DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  permissions AdminAccountPermission[]
+  auditLogs   AdminAuditLog[]          @relation("AdminAuditActor")
+
+  @@index([status])
+  @@index([role])
+}
+
+model AdminAccountPermission {
+  id             String   @id @default(cuid())
+  adminAccountId String
+  permission     String
+  createdAt      DateTime @default(now())
+
+  adminAccount AdminAccount @relation(fields: [adminAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([adminAccountId, permission])
+  @@index([permission])
+}
+
+model AdminAuditLog {
+  id           String   @id @default(cuid())
+  actorAdminId String?
+  actorType    String
+  action       String
+  targetType   String?
+  targetId     String?
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  actorAdmin AdminAccount? @relation("AdminAuditActor", fields: [actorAdminId], references: [id], onDelete: SetNull)
+
+  @@index([actorAdminId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  revoked      Boolean  @default(false)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@index([revoked])
+}
+
+model OtpChallenge {
+  id                String     @id @default(cuid())
+  phone             String
+  purpose           OtpPurpose
+  codeHash          String
+  expiresAt         DateTime
+  attempts          Int        @default(0)
+  maxAttempts       Int        @default(5)
+  consumedAt        DateTime?
+  resendAfter       DateTime
+  providerMessageId String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([phone, purpose])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+model OtpSession {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  phone      String
+  userId     String?
+  purpose    String
+  nextStep   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone])
+  @@index([userId])
+  @@index([purpose])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+model WorkerProfile {
+  id                       String              @id @default(cuid())
+  userId                   String              @unique
+  status                   WorkerProfileStatus @default(DRAFT)
+  profession               String?
+  professions              String[]            @default([])
+  experienceYears          Int?
+  profileImageUrl          String?
+  bio                      String?
+  basePrice                Int?
+  serviceLat               Decimal?            @db.Decimal(10, 7)
+  serviceLng               Decimal?            @db.Decimal(10, 7)
+  serviceLocationUpdatedAt DateTime?
+  ratingAvg                Decimal             @default(0) @db.Decimal(3, 2)
+  completedOrdersCount     Int                 @default(0)
+  submittedAt              DateTime?
+  verifiedAt               DateTime?
+  moderationReason         String?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  availability WorkerAvailability?
+  orders       Order[]             @relation("WorkerOrders")
+  reviews      Review[]            @relation("WorkerReviews")
+  favorites    Favorite[]          @relation("WorkerFavorites")
+}
+
+model WorkerAvailability {
+  workerId      String                   @id
+  status        WorkerAvailabilityStatus @default(OFFLINE)
+  activeOrderId String?                  @unique
+  lockedUntil   DateTime?
+  updatedAt     DateTime                 @updatedAt
+
+  worker      WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  activeOrder Order?        @relation("ActiveWorkerOrder", fields: [activeOrderId], references: [id])
+
+  @@index([status])
+  @@index([lockedUntil])
+}
+
+model Address {
+  id          String   @id @default(cuid())
+  userId      String
+  label       String
+  cityId      String
+  district    String?
+  addressText String
+  lat         Decimal? @db.Decimal(10, 7)
+  lng         Decimal? @db.Decimal(10, 7)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([userId])
+  @@index([cityId])
+}
+
+model Order {
+  id                 String       @id @default(cuid())
+  publicCode         String       @unique
+  clientId           String
+  workerId           String
+  addressId          String?
+  cityId             String
+  serviceType        String
+  problemTitle       String
+  problemDescription String?
+  urgency            OrderUrgency @default(FAST)
+  status             OrderStatus  @default(CREATED)
+  priceEstimate      Int?
+  finalAmount        Int?
+  responseDeadlineAt DateTime?
+  cancelReason       String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  client             User                @relation("ClientOrders", fields: [clientId], references: [id])
+  worker             WorkerProfile       @relation("WorkerOrders", fields: [workerId], references: [id])
+  address            Address?            @relation(fields: [addressId], references: [id])
+  events             OrderEvent[]
+  reviews            Review[]
+  chatMessages       ChatMessage[]
+  chatRooms          ChatRoom[]
+  media              Media[]
+  payments           Payment[]
+  notifications      Notification[]
+  workerAvailability WorkerAvailability? @relation("ActiveWorkerOrder")
+  supportTickets     SupportTicket[]
+
+  @@index([clientId])
+  @@index([workerId])
+  @@index([status])
+  @@index([responseDeadlineAt])
+  @@index([cityId])
+}
+
+model OrderEvent {
+  id         String              @id @default(cuid())
+  orderId    String
+  actorType  OrderEventActorType
+  actorId    String?
+  eventType  OrderEventType
+  fromStatus OrderStatus?
+  toStatus   OrderStatus?
+  message    String?
+  metadata   Json?
+  createdAt  DateTime            @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor User? @relation("OrderEventActor", fields: [actorId], references: [id])
+
+  @@index([orderId, createdAt])
+  @@index([eventType])
+  @@index([actorType, actorId])
+  @@index([toStatus])
+}
+
+model Review {
+  id        String       @id @default(cuid())
+  orderId   String       @unique
+  clientId  String
+  workerId  String
+  rating    Int
+  text      String?
+  status    ReviewStatus @default(PUBLISHED)
+  createdAt DateTime     @default(now())
+
+  order  Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  client User          @relation("ClientReviews", fields: [clientId], references: [id])
+  worker WorkerProfile @relation("WorkerReviews", fields: [workerId], references: [id])
+
+  @@index([workerId])
+  @@index([clientId])
+}
+
+model Favorite {
+  clientId  String
+  workerId  String
+  createdAt DateTime @default(now())
+
+  client User          @relation("ClientFavorites", fields: [clientId], references: [id], onDelete: Cascade)
+  worker WorkerProfile @relation("WorkerFavorites", fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, workerId])
+  @@index([workerId])
+}
+
+model ChatRoom {
+  id          String       @id @default(cuid())
+  type        ChatRoomType
+  title       String
+  orderId     String?
+  cityId      String?
+  serviceType String?
+  createdById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  order        Order?            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("ChatRoomCreator", fields: [createdById], references: [id])
+  participants ChatParticipant[]
+  messages     ChatMessage[]
+  media        Media[]
+
+  @@index([type])
+  @@index([orderId])
+  @@index([cityId, serviceType])
+}
+
+model ChatParticipant {
+  roomId     String
+  userId     String
+  role       ChatParticipantRole
+  lastReadAt DateTime?
+  joinedAt   DateTime            @default(now())
+
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String          @id @default(cuid())
+  roomId    String?
+  orderId   String?
+  senderId  String
+  type      ChatMessageType @default(TEXT)
+  body      String?
+  mediaId   String?
+  createdAt DateTime        @default(now())
+
+  room   ChatRoom? @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  order  Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sender User      @relation(fields: [senderId], references: [id])
+  media  Media?    @relation(fields: [mediaId], references: [id])
+
+  @@index([roomId, createdAt])
+  @@index([orderId, createdAt])
+  @@index([senderId])
+}
+
+model Media {
+  id        String      @id @default(cuid())
+  ownerId   String
+  roomId    String?
+  orderId   String?
+  scope     MediaScope
+  url       String
+  fileName  String?
+  mimeType  String
+  size      Int?
+  status    MediaStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+
+  owner        User          @relation(fields: [ownerId], references: [id])
+  room         ChatRoom?     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  order        Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  chatMessages ChatMessage[]
+
+  @@index([ownerId])
+  @@index([roomId])
+  @@index([orderId])
+  @@index([scope])
+}
+
+model Banner {
+  id          String           @id @default(cuid())
+  title       String
+  imageUrl    String
+  targetType  BannerTargetType @default(NONE)
+  targetValue String?
+  sortOrder   Int              @default(0)
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@index([sortOrder])
+}
+
+model Payment {
+  id         String          @id @default(cuid())
+  orderId    String
+  provider   PaymentProvider
+  status     PaymentStatus   @default(PENDING)
+  amount     Int
+  externalId String?
+  metadata   Json?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([provider, externalId])
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String
+  orderId   String?
+  type      String
+  status    NotificationStatus @default(PENDING)
+  payload   Json?
+  sentAt    DateTime?
+  readAt    DateTime?
+  createdAt DateTime           @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([readAt])
+}
+
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model SupportTicket {
+  id                String              @id @default(cuid())
+  userId            String
+  orderId           String?
+  reason            String
+  message           String?
+  status            SupportTicketStatus @default(OPEN)
+  adminNote         String?
+  resolvedByAdminId String?
+  resolvedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order           Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  resolvedByAdmin User?  @relation("SupportResolver", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([resolvedByAdminId])
+}
+
+model Report {
+  id                String           @id @default(cuid())
+  reporterId        String
+  targetType        ReportTargetType
+  targetId          String
+  reason            ReportReason
+  details           String?
+  status            ReportStatus     @default(PENDING)
+  adminNote         String?
+  resolvedByAdminId String?
+  resolvedAt        DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  reporter        User  @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  resolvedByAdmin User? @relation("ReportResolver", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([reporterId, createdAt])
+  @@index([targetType, targetId])
+  @@index([status, createdAt])
+  @@index([reason])
+  @@index([resolvedByAdminId])
+}
+
+model UserBlock {
+  blockerId     String
+  blockedUserId String
+  createdAt     DateTime @default(now())
+
+  blocker     User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedUser User @relation("BlockedUser", fields: [blockedUserId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedUserId])
+  @@index([blockedUserId])
+}

@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {
+      "distribution": "store",
+      "environment": "production",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://nearfix-production-c0db.up.railway.app",
+        "EXPO_PUBLIC_AUTH_ENABLED": "true",
+        "EXPO_PUBLIC_PAYMENTS_ENABLED": "false",
+        "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://nearfix-production-c0db.up.railway.app/legal/privacy",
+        "EXPO_PUBLIC_TERMS_URL": "https://nearfix-production-c0db.up.railway.app/legal/terms"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
+      },
+      "ios": {
+        "ascAppId": "6782775201"
+      }
+    }
+  }
+}
