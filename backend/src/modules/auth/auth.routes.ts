@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import {
   appReviewLoginSchema,
+  completeRegistrationSchema,
   otpRequestSchema,
   otpVerifySchema,
   refreshTokenSchema,
@@ -12,6 +13,7 @@ import { otpRequestIpRateLimit } from "./middleware/otp-ip-rate-limit.js";
 import { deleteCurrentUserAccount } from "./account-deletion.service.js";
 import {
   loginWithAppReviewDemo,
+  completeOtpRegistration,
   requestAuthOtp,
   refreshAccessToken,
   requestRegistrationOtp,
@@ -70,6 +72,17 @@ authRouter.post("/otp/request", otpRequestIpRateLimit, requestLegacyOtpHandler);
 authRouter.post("/register/otp/request", otpRequestIpRateLimit, requestRegistrationOtpHandler);
 authRouter.post("/otp/verify", verifyLegacyOtpHandler);
 authRouter.post("/register/otp/verify", verifyRegistrationOtpHandler);
+
+authRouter.post("/register/complete", async (request, response, next) => {
+  try {
+    const input = completeRegistrationSchema.parse(request.body);
+    const result = await completeOtpRegistration(input);
+
+    response.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
 
 authRouter.post("/app-review/login", otpRequestIpRateLimit, async (request, response, next) => {
   try {

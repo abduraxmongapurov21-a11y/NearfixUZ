@@ -16,6 +16,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "app-review:prepare": "tsx scripts/prepare-app-review-demo.ts",
+    "local-runtime:prepare": "tsx scripts/prepare-local-runtime.ts",
     "db:clean-start": "tsx prisma/clean-start.ts",
     "check": "npm run prisma:validate && npm run build",
     "test:otp-security": "tsx scripts/otp-security-tests.ts",
@@ -24,12 +25,18 @@
     "test:admin-account-auth": "tsx scripts/admin-account-auth-tests.ts",
     "test:admin-management": "tsx scripts/admin-management-tests.ts",
     "test:admin-audit-password": "tsx scripts/admin-audit-password-tests.ts",
-    "test:auth-api": "tsx scripts/auth-api-tests.ts",
+    "test:auth-api": "tsx scripts/unified-auth-api-tests.ts",
+    "test:unified-auth": "tsx scripts/unified-auth-api-tests.ts",
     "test:legal-routes": "tsx scripts/legal-routes-test.ts",
     "test:sprint-b": "tsx scripts/sprint-b-smoke.ts",
     "test:catalog-distance": "tsx scripts/catalog-distance-tests.ts",
     "test:error-handler": "tsx scripts/error-handler-tests.ts",
-    "test:store-races": "tsx scripts/store-race-tests.ts"
+    "test:store-races": "tsx scripts/store-race-tests.ts",
+    "test:guest-public-api": "tsx scripts/guest-public-api-tests.ts",
+    "test:worker-application": "tsx scripts/worker-application-tests.ts",
+    "test:order-capabilities": "tsx scripts/order-capability-tests.ts",
+    "test:order-lifecycle": "tsx scripts/order-lifecycle-tests.ts",
+    "test:local-database-guard": "tsx scripts/local-database-guard-tests.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1071.0",

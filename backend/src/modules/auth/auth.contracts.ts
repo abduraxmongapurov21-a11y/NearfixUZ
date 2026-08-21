@@ -50,6 +50,11 @@ export const appReviewLoginSchema = z.object({
   password: loginPasswordSchema
 });
 
+export const completeRegistrationSchema = z.object({
+  registrationToken: otpSessionTokenSchema,
+  name: z.string().trim().min(2).max(80)
+});
+
 export const forgotPasswordOtpRequestSchema = z.object({
   phone: phoneSchema
 });

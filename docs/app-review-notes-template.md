@@ -11,7 +11,7 @@ Copy this document into App Store Connect Review Notes for the NearFIX review bu
 
 ## Reviewer credentials
 
-- Demo client phone: `+998901112233`
+- Demo client phone: `+998000000000`
 - Demo client password: `NearfixReview2026!`
 - Demo worker phone: `+998901112244`
 - Demo worker password: `NearfixWorker2026!`

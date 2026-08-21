@@ -6,19 +6,53 @@ import {
   catalogWorkersQuerySchema,
   updateAvailabilitySchema,
   updateWorkerProfileSchema,
-  updateWorkerServiceLocationSchema
+  updateWorkerServiceLocationSchema,
+  workerApplicationDraftSchema,
+  workerApplicationSubmitSchema
 } from "./worker.contracts.js";
 import {
   getCatalogWorkers,
+  getPublicWorker,
   getOwnWorkerEarnings,
+  getOwnWorkerApplication,
   getOwnWorkerProfile,
   getOwnWorkerTransactions,
   setWorkerAvailability,
+  saveOwnWorkerApplication,
+  submitOwnWorkerApplication,
   updateOwnWorkerProfile,
   updateOwnWorkerServiceLocation
 } from "./worker.service.js";
 
 export const workerRouter = Router();
+
+workerRouter.get("/application", authenticate, requireRole("CLIENT"), async (request, response, next) => {
+  try {
+    response.json({ ok: true, application: await getOwnWorkerApplication(request.user!.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+workerRouter.put("/application", authenticate, requireRole("CLIENT"), async (request, response, next) => {
+  try {
+    const input = workerApplicationDraftSchema.parse(request.body);
+    const application = await saveOwnWorkerApplication(request.user!.id, input);
+    response.json({ ok: true, application });
+  } catch (error) {
+    next(error);
+  }
+});
+
+workerRouter.post("/application/submit", authenticate, requireRole("CLIENT"), async (request, response, next) => {
+  try {
+    const input = workerApplicationSubmitSchema.parse(request.body);
+    const application = await submitOwnWorkerApplication(request.user!.id, input);
+    response.json({ ok: true, application });
+  } catch (error) {
+    next(error);
+  }
+});
 
 workerRouter.get("/catalog", (request, response, next) => {
   if (request.query.originAddressId === undefined) {
@@ -105,6 +139,15 @@ workerRouter.get("/:workerId/rating", async (request, response, next) => {
       ok: true,
       rating
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+workerRouter.get("/:workerId", async (request, response, next) => {
+  try {
+    const worker = await getPublicWorker(String(request.params.workerId));
+    response.json({ ok: true, worker });
   } catch (error) {
     next(error);
   }

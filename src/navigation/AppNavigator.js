@@ -1,28 +1,22 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { USER_ROLES } from "../constants/routes";
 import { registerPushTokenApi } from "../services/notifications/notificationService";
 import { useAuthStore } from "../store/authStore";
 import { colors } from "../theme";
-import { AuthNavigator } from "./AuthNavigator";
 import { ClientNavigator } from "./ClientNavigator";
 import { WorkerNavigator } from "./WorkerNavigator";
 import { Text } from "../i18n/native";
+import { discoveryNavigatorKey } from "./pendingIntent.mjs";
+import { rootExperienceForSession } from "./experienceMode.mjs";
 
 export function AppNavigator() {
   const session = useAuthStore((state) => state.session);
+  const invalidation = useAuthStore((state) => state.invalidation);
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
-  const setHasHydrated = useAuthStore((state) => state.setHasHydrated);
+  const navigationGeneration = useAuthStore((state) => state.navigationGeneration);
+  const [hydrationFinished, setHydrationFinished] = useState(() => useAuthStore.persist.hasHydrated());
 
-  useEffect(() => {
-    if (hasHydrated) return undefined;
-
-    const fallbackTimer = setTimeout(() => {
-      setHasHydrated(true);
-    }, 2500);
-
-    return () => clearTimeout(fallbackTimer);
-  }, [hasHydrated, setHasHydrated]);
+  useEffect(() => useAuthStore.persist.onFinishHydration(() => setHydrationFinished(true)), []);
 
   useEffect(() => {
     if (session?.token) {
@@ -30,7 +24,7 @@ export function AppNavigator() {
     }
   }, [session?.token]);
 
-  if (!hasHydrated) {
+  if (!hasHydrated && !hydrationFinished) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={colors.primary} />
@@ -39,9 +33,10 @@ export function AppNavigator() {
     );
   }
 
-  if (!session) return <AuthNavigator />;
-  if (session.role === USER_ROLES.WORKER) return <WorkerNavigator />;
-  return <ClientNavigator />;
+  if (rootExperienceForSession(session) === "worker") {
+    return <WorkerNavigator key={`worker-${navigationGeneration}`} />;
+  }
+  return <ClientNavigator key={discoveryNavigatorKey(invalidation, navigationGeneration)} />;
 }
 
 const styles = StyleSheet.create({

@@ -8,6 +8,7 @@ process.env.APP_REVIEW_DEMO_CLIENT_PASSWORD = "DemoClient-123";
 const { OtpPurpose, UserRole } = await import("@prisma/client");
 const { prisma } = await import("../src/db/prisma.js");
 const {
+  completeOtpRegistration,
   loginWithAppReviewDemo,
   requestAuthOtp,
   verifyAuthOtp
@@ -92,9 +93,15 @@ async function main() {
         codeHash: hashOtpCode(normalPhone, "1234")
       }
     });
-    const normalLogin = await verifyAuthOtp({
+    const normalVerification = await verifyAuthOtp({
       phone: normalPhone,
       code: "1234"
+    });
+    assert.equal(normalVerification.status, "REGISTRATION_REQUIRED");
+    assert.ok(normalVerification.registrationToken);
+    const normalLogin = await completeOtpRegistration({
+      registrationToken: normalVerification.registrationToken,
+      name: "Passwordless client"
     });
     assert.ok(normalLogin.accessToken);
     assert.ok(normalLogin.refreshToken);

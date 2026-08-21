@@ -13,6 +13,14 @@ import { prisma } from "../../db/prisma.js";
 import type { AuthUser } from "../auth/auth-context.js";
 import { createNotification } from "../notifications/notification.service.js";
 import { ensureWorkerAvailableForOrder } from "../workers/worker.service.js";
+import {
+  assertApprovedProviderOwnership,
+  canAccessOrder,
+  isMarketplaceUser,
+  ownsOrderAsApprovedProvider,
+  ownsOrderAsClient,
+  resolveOrderExperienceMode
+} from "./order-access.js";
 import { eventByTransition, transitionOrderStatus } from "./order-state.js";
 
 type CreateOrderInput = {
@@ -53,15 +61,6 @@ function isAdmin(user: AuthUser) {
 
 function isProvider(user: AuthUser) {
   return user.role === UserRole.PROVIDER.toLowerCase();
-}
-
-function assertOrderAssignedToProvider(order: { worker: { userId: string } }, user: AuthUser) {
-  if (order.worker.userId !== user.id) {
-    throw Object.assign(new Error("Order is not assigned to this provider"), {
-      status: 403,
-      code: "ORDER_NOT_ASSIGNED"
-    });
-  }
 }
 
 async function releaseWorkerAvailability(tx: Prisma.TransactionClient, workerId: string, orderId: string) {
@@ -139,7 +138,7 @@ const lifecycleNotificationCopy: Partial<Record<OrderStatus, { type: string; tit
 };
 
 export async function createOrder(user: AuthUser, input: CreateOrderInput) {
-  if (user.role !== UserRole.CLIENT.toLowerCase()) {
+  if (!isMarketplaceUser(user)) {
     throw Object.assign(new Error("Only clients can create orders"), {
       status: 403,
       code: "CLIENT_REQUIRED"
@@ -159,6 +158,13 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
       throw Object.assign(new Error("Worker is not approved or does not exist"), {
         status: 404,
         code: "WORKER_NOT_BOOKABLE"
+      });
+    }
+
+    if (worker.userId === user.id) {
+      throw Object.assign(new Error("Providers cannot create client orders for their own worker profile"), {
+        status: 409,
+        code: "SELF_BOOKING_NOT_ALLOWED"
       });
     }
 
@@ -285,12 +291,7 @@ export async function getOrderForUser(user: AuthUser, orderId: string) {
     });
   }
 
-  const canView =
-    user.role === UserRole.ADMIN.toLowerCase() ||
-    order.clientId === user.id ||
-    order.worker.userId === user.id;
-
-  if (!canView) {
+  if (!canAccessOrder(user, order)) {
     throw Object.assign(new Error("Order access denied"), {
       status: 403,
       code: "ORDER_ACCESS_DENIED"
@@ -300,13 +301,13 @@ export async function getOrderForUser(user: AuthUser, orderId: string) {
   return order;
 }
 
-export async function listOrdersForUser(user: AuthUser) {
-  const where =
-    user.role === UserRole.ADMIN.toLowerCase()
-      ? {}
-      : user.role === UserRole.PROVIDER.toLowerCase()
-        ? { worker: { userId: user.id } }
-        : { clientId: user.id };
+export async function listOrdersForUser(user: AuthUser, requestedMode?: string) {
+  const mode = resolveOrderExperienceMode(user, requestedMode);
+  const where = mode === "admin"
+    ? {}
+    : mode === "worker"
+      ? { worker: { userId: user.id, status: WorkerProfileStatus.APPROVED } }
+      : { clientId: user.id };
 
   return prisma.order.findMany({
     where,
@@ -340,7 +341,8 @@ export async function listIncomingOrdersForProvider(user: AuthUser) {
         }
       ],
       worker: {
-        userId: user.id
+        userId: user.id,
+        status: WorkerProfileStatus.APPROVED
       }
     },
     include: {
@@ -374,7 +376,7 @@ export async function acceptOrder(user: AuthUser, orderId: string) {
     }
 
     if (isProvider(user)) {
-      assertOrderAssignedToProvider(order, user);
+      assertApprovedProviderOwnership(user, order);
     }
 
     if (order.status !== OrderStatus.WAITING_RESPONSE) {
@@ -462,7 +464,7 @@ export async function rejectOrder(user: AuthUser, orderId: string, reason: strin
       });
     }
 
-    assertOrderAssignedToProvider(order, user);
+    assertApprovedProviderOwnership(user, order);
 
     if (order.status !== OrderStatus.WAITING_RESPONSE) {
       throw Object.assign(new Error("Worker reject is only allowed while waiting for response"), {
@@ -538,7 +540,7 @@ export async function transitionOrder(user: AuthUser, orderId: string, toStatus:
     }
 
     if (isProvider(user)) {
-      assertOrderAssignedToProvider(order, user);
+      assertApprovedProviderOwnership(user, order);
     }
 
     await transitionOrderStatus(tx, {
@@ -627,7 +629,7 @@ export async function cancelOrder(
       });
     }
 
-    const canCancel = isAdmin(user) || order.clientId === user.id || order.worker.userId === user.id;
+    const canCancel = isAdmin(user) || ownsOrderAsClient(user, order) || ownsOrderAsApprovedProvider(user, order);
 
     if (!canCancel) {
       throw Object.assign(new Error("Order cancellation denied"), {
@@ -650,7 +652,7 @@ export async function cancelOrder(
     await tx.orderEvent.create({
       data: {
         orderId: order.id,
-        actorType: actorTypeForUser(user),
+        actorType: ownsOrderAsClient(user, order) ? OrderEventActorType.CLIENT : actorTypeForUser(user),
         actorId: user.id,
         eventType,
         fromStatus: order.status,

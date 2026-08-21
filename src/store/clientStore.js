@@ -40,9 +40,14 @@ const defaultClientStoreDependencies = {
   getSession: () => useAuthStore.getState().session,
   getAddressesApi,
   fetchFavoritesApi,
+  addFavoriteApi,
+  removeFavoriteApi,
   createAddressApi,
   updateAddressApi,
-  deleteAddressApi
+  deleteAddressApi,
+  fetchOrdersApi,
+  createOrderApi,
+  cancelOrderApi
 };
 const clientStoreDependencies = { ...defaultClientStoreDependencies };
 
@@ -172,10 +177,13 @@ export const useClientStore = create((set, get) => ({
     return result;
   },
   syncOrdersFromApi: async () => {
-    const token = useAuthStore.getState().session?.token;
+    const session = clientStoreDependencies.getSession();
+    const token = session?.token;
     if (!token) return { ok: false, message: "No API session token" };
+    const ticket = clientRequestGuard.begin("orders", session.userId);
 
-    const result = await fetchOrdersApi(token);
+    const result = await clientStoreDependencies.fetchOrdersApi(token);
+    if (!clientRequestGuard.isCurrent(ticket, currentAccountId())) return { ...result, ok: false, stale: true };
     if (result.ok) {
       const active = result.orders.find((order) =>
         [TRACKING_STATUSES.REQUEST_SENT, TRACKING_STATUSES.ACCEPTED, TRACKING_STATUSES.ON_THE_WAY, TRACKING_STATUSES.IN_PROGRESS].includes(
@@ -280,19 +288,27 @@ export const useClientStore = create((set, get) => ({
     })),
   resetCatalogFilters: () => set({ catalogFilters: DEFAULT_CATALOG_FILTERS }),
   toggleFavoriteWorker: async (workerId) => {
-    const token = useAuthStore.getState().session?.token;
+    const session = clientStoreDependencies.getSession();
+    const token = session?.token;
     const isFavorite = get().favoriteWorkerIds.includes(workerId);
 
-    if (token) {
-      if (isFavorite) await removeFavoriteApi(token, workerId);
-      else await addFavoriteApi(token, workerId);
-    }
+    if (!token || !session?.userId) return { ok: false, code: "UNAUTHORIZED", message: "Login required" };
+    const ticket = clientRequestGuard.begin(`favorite:${workerId}`, session.userId);
+    const result = isFavorite
+      ? await clientStoreDependencies.removeFavoriteApi(token, workerId)
+      : await clientStoreDependencies.addFavoriteApi(token, workerId);
+
+    if (!clientRequestGuard.isCurrent(ticket, currentAccountId())) return { ...result, ok: false, stale: true };
+    if (!result.ok) return result;
 
     set((state) => ({
-      favoriteWorkerIds: state.favoriteWorkerIds.includes(workerId)
+      favoriteWorkerIds: isFavorite
         ? state.favoriteWorkerIds.filter((id) => id !== workerId)
-        : [...state.favoriteWorkerIds, workerId]
+        : state.favoriteWorkerIds.includes(workerId)
+          ? state.favoriteWorkerIds
+          : [...state.favoriteWorkerIds, workerId]
     }));
+    return result;
   },
   createAddress: async (address) => {
     const session = clientStoreDependencies.getSession();
@@ -300,6 +316,7 @@ export const useClientStore = create((set, get) => ({
     const tempId = `address-${Date.now()}`;
     const optimisticAddress = {
       id: tempId,
+      isOptimistic: true,
       title: address.title || address.label,
       label: address.title || address.label,
       address: address.address || address.addressText,
@@ -308,6 +325,7 @@ export const useClientStore = create((set, get) => ({
       lng: address.lng ?? address.longitude ?? null,
       latitude: address.lat ?? address.latitude ?? null,
       longitude: address.lng ?? address.longitude ?? null,
+      district: address.district,
       isDefault: Boolean(address.isDefault)
     };
 
@@ -372,6 +390,7 @@ export const useClientStore = create((set, get) => ({
       ...(patch.address || patch.addressText ? { address: patch.address || patch.addressText, addressText: patch.address || patch.addressText } : {}),
       ...(patch.lat !== undefined || patch.latitude !== undefined ? { lat: patch.lat ?? patch.latitude, latitude: patch.lat ?? patch.latitude } : {}),
       ...(patch.lng !== undefined || patch.longitude !== undefined ? { lng: patch.lng ?? patch.longitude, longitude: patch.lng ?? patch.longitude } : {}),
+      ...(patch.district !== undefined ? { district: patch.district } : {}),
       ...(patch.isDefault !== undefined ? { isDefault: patch.isDefault } : {})
     };
 
@@ -474,6 +493,13 @@ export const useClientStore = create((set, get) => ({
     return get().removeAddress(addressId);
   },
   selectWorker: (workerId) => set({ selectedWorkerId: workerId }),
+  upsertPublicWorker: (worker) =>
+    set((state) => ({
+      workers: worker
+        ? [worker, ...state.workers.filter((item) => item.id !== worker.id)]
+        : state.workers,
+      selectedWorkerId: worker?.id || state.selectedWorkerId
+    })),
   getSelectedWorker: () => {
     const { selectedWorkerId, workers: workerList } = get();
     return workerList.find((worker) => worker.id === selectedWorkerId) || workerList[0] || null;
@@ -507,14 +533,17 @@ export const useClientStore = create((set, get) => ({
     const state = get();
     const service = state.categories.find((item) => item.id === state.orderDraft.serviceId);
     const worker = state.workers.find((item) => item.id === state.orderDraft.selectedWorkerId) || state.getSelectedWorker();
-    const token = useAuthStore.getState().session?.token;
+    const session = clientStoreDependencies.getSession();
+    const token = session?.token;
 
     if (!token) {
       return { ok: false, message: "Buyurtma berish uchun tizimga kiring." };
     }
 
     if (token && worker?.id) {
-      const result = await createOrderApi(token, state.orderDraft, service, worker);
+      const ticket = clientRequestGuard.begin("order-create", session.userId);
+      const result = await clientStoreDependencies.createOrderApi(token, state.orderDraft, service, worker);
+      if (!clientRequestGuard.isCurrent(ticket, currentAccountId())) return { ...result, ok: false, stale: true };
 
       if (result.ok) {
         set((current) => ({
@@ -542,11 +571,14 @@ export const useClientStore = create((set, get) => ({
   },
   cancelActiveOrder: async (reason) => {
     const state = get();
-    const token = useAuthStore.getState().session?.token;
+    const session = clientStoreDependencies.getSession();
+    const token = session?.token;
 
     if (!token || !state.activeOrder?.id) return { ok: false, message: "Faol buyurtma topilmadi." };
 
-    const result = await cancelOrderApi(token, state.activeOrder.id, reason);
+    const ticket = clientRequestGuard.begin("order-cancel", session.userId);
+    const result = await clientStoreDependencies.cancelOrderApi(token, state.activeOrder.id, reason);
+    if (!clientRequestGuard.isCurrent(ticket, currentAccountId())) return { ...result, ok: false, stale: true };
     if (result.ok) {
       set((current) => ({
         activeOrder: result.order,

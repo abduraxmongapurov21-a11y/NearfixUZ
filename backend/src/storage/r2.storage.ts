@@ -17,7 +17,7 @@ type R2CommandClient = {
   send(command: PutObjectCommand | DeleteObjectCommand): Promise<unknown>;
 };
 
-type UploadObjectInput = {
+export type UploadObjectInput = {
   objectKey: string;
   body: Buffer;
   contentType: string;

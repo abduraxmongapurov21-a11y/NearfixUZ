@@ -28,4 +28,17 @@ npm run prisma:generate
 npm run dev
 ```
 
-`DATABASE_URL` must point to PostgreSQL before running `db:push` or migrations.
+`DATABASE_URL` and `DIRECT_URL` must both point to PostgreSQL before running migrations.
+
+## Pixel_7 local runtime
+
+The checked-in examples isolate the Android emulator from production:
+
+```text
+Pixel_7 → http://10.0.2.2:4000 → PostgreSQL on 127.0.0.1:5432
+```
+
+Copy `backend/.env.example` to the ignored `backend/.env`, use development-only secrets, and verify the
+sanitized database host before applying migrations. Then run `prisma migrate deploy` and
+`npm run local-runtime:prepare`. The local runtime fixture refuses non-loopback databases and non-development/test
+environments.

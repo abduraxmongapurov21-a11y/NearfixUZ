@@ -90,4 +90,16 @@ assert.deepEqual(
   }
 );
 
+assert.deepEqual(
+  reconcileCatalogAddressState(
+    { catalogOriginAddressId: null, catalogSort: "nearest" },
+    [{ id: "address-temporary", isOptimistic: true, lat: 41.31, lng: 69.24 }]
+  ),
+  {
+    savedAddresses: [{ id: "address-temporary", isOptimistic: true, lat: 41.31, lng: 69.24 }],
+    catalogOriginAddressId: null,
+    catalogSort: "recommended"
+  }
+);
+
 console.log("Client address account isolation, ordering, defaults, and origin reconciliation tests passed.");

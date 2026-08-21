@@ -41,10 +41,10 @@ export const usersColumns: ColumnDef<AdminUser>[] = [
     cell: ({ row }) =>
       row.original.role === "client" ? (
         <Button onClick={() => promoteUser(row.original.id)} size="sm" variant="outline">
-          Promote to worker
+          Prepare worker application
         </Button>
       ) : (
-        <span className="text-xs text-muted-foreground">Worker profile active</span>
+        <span className="text-xs text-muted-foreground">Worker access active</span>
       )
   }
 ];

@@ -1,4 +1,6 @@
 node_modules/
+/android/
+/ios/
 .expo/
 .expo-home/
 .env
@@ -19,6 +21,7 @@ dist-test-*/
 dist-test-ios/
 web-build/
 backend/uploads/
+db-backups/
 expo-qr.png
 nearfixFront/
 Telegram Archive/

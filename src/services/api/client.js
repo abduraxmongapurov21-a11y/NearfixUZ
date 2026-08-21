@@ -36,8 +36,7 @@ export async function httpRequest(path, { method = "GET", body, token } = {}) {
     if (error?.name === "AbortError") {
       throw new ApiError("Server javob bermayapti. Internet yoki backend manzilini tekshiring.", 0, "REQUEST_TIMEOUT");
     }
-
-    throw error;
+    throw new ApiError("Backend bilan aloqa o'rnatilmadi.", 0, "NETWORK_REQUEST_FAILED", { cause: error?.message });
   }).finally(() => clearTimeout(timeoutId));
 
   const payload = await response.json().catch(() => ({}));
@@ -58,6 +57,8 @@ export async function apiRequest(handler, fallback) {
     return {
       ok: false,
       code: error?.code,
+      status: error?.status,
+      missing: error?.payload?.missing,
       message: error?.message || "Unexpected service error",
       retryAfter: error?.payload?.retryAfter
     };

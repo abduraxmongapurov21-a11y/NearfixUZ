@@ -23,6 +23,8 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { useClientStore } from "../../store/clientStore";
 import { WorkerAvatar } from "../../components/ui/WorkerAvatar";
 import { Alert, Text } from "../../i18n/native";
+import { useAuthStore } from "../../store/authStore";
+import { requireAuthentication } from "../../navigation/protectedActions";
 import {
   formatApproximateDistance,
   hasAddressCoordinates,
@@ -60,6 +62,7 @@ function hasProfession(worker, profession) {
 }
 
 export function CategoryScreen({ navigation, route }) {
+  const session = useAuthStore((state) => state.session);
   const profession = route.params?.profession || "Santexnik";
   const workers = useClientStore((state) => state.workers);
   const selectedCityId = useClientStore((state) => state.selectedCityId);
@@ -119,7 +122,7 @@ export function CategoryScreen({ navigation, route }) {
 
   function openWorker(workerId) {
     selectWorker(workerId);
-    navigation.navigate(ROUTES.WORKER_PROFILE);
+    navigation.navigate(ROUTES.WORKER_PROFILE, { workerId });
   }
 
   async function handleRefresh() {
@@ -196,7 +199,9 @@ export function CategoryScreen({ navigation, route }) {
               ) : (
                 <Pressable
                   style={styles.addressOption}
-                  onPress={() => navigation.navigate(ROUTES.CLIENT_TABS, { screen: ROUTES.PROFILE_TAB })}
+                  onPress={() => session
+                    ? navigation.navigate(ROUTES.CLIENT_TABS, { screen: ROUTES.PROFILE_TAB })
+                    : requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.PROFILE_TAB })}
                 >
                   <Text style={styles.addressTitle}>Manzil qo'shish</Text>
                 </Pressable>
@@ -310,7 +315,12 @@ function WorkerListCard({ worker, index, onPress }) {
 }
 
 function ScreenBottomNav({ navigation }) {
+  const session = useAuthStore((state) => state.session);
   function goTab(screen) {
+    if (!session && screen !== ROUTES.HOME_TAB) {
+      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: screen });
+      return;
+    }
     navigation.navigate(ROUTES.CLIENT_TABS, { screen });
   }
 

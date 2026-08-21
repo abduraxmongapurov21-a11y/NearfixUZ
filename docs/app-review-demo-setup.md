@@ -5,10 +5,11 @@ Run these steps against the production backend before submitting the mobile buil
 ## 1. Configure Railway backend variables
 
 ```text
-APP_REVIEW_CLIENT_PHONE=+998901112233
-APP_REVIEW_CLIENT_PASSWORD=NearfixReview2026!
-APP_REVIEW_WORKER_PHONE=+998901112244
-APP_REVIEW_WORKER_PASSWORD=NearfixWorker2026!
+APP_REVIEW_DEMO_ENABLED=true
+APP_REVIEW_DEMO_CLIENT_PHONE=+998000000000
+APP_REVIEW_DEMO_CLIENT_PASSWORD=NearfixReview2026!
+APP_REVIEW_DEMO_WORKER_PHONE=+998901112244
+APP_REVIEW_DEMO_WORKER_PASSWORD=NearfixWorker2026!
 ```
 
 Do not configure an App Review OTP bypass. Login uses phone and password only.
@@ -42,13 +43,13 @@ The script:
 ## 4. Verify production login
 
 ```bash
-curl -X POST https://nearfix-production-c0db.up.railway.app/auth/login \
+curl -X POST https://nearfix-production-c0db.up.railway.app/auth/app-review/login \
   -H "Content-Type: application/json" \
-  -d '{"phone":"+998901112233","password":"NearfixReview2026!"}'
+  -d '{"phone":"+998000000000","password":"NearfixReview2026!"}'
 ```
 
 ```bash
-curl -X POST https://nearfix-production-c0db.up.railway.app/auth/login \
+curl -X POST https://nearfix-production-c0db.up.railway.app/auth/app-review/login \
   -H "Content-Type: application/json" \
   -d '{"phone":"+998901112244","password":"NearfixWorker2026!"}'
 ```

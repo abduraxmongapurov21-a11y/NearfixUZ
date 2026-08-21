@@ -8,6 +8,7 @@ import { fetchChatRoomsApi } from "../../services/chats/chatService";
 import { useAuthStore } from "../../store/authStore";
 import { useUiStore } from "../../store/uiStore";
 import { Text } from "../../i18n/native";
+import { requireAuthentication } from "../../navigation/protectedActions";
 
 const tabMeta = {
   [ROUTES.HOME_TAB]: { labelKey: "home", icon: Home },
@@ -58,7 +59,13 @@ export function BottomTabBar({ state, descriptors, navigation }) {
         accessibilityRole="button"
         accessibilityState={focused ? { selected: true } : {}}
         accessibilityLabel={options.tabBarAccessibilityLabel}
-        onPress={() => navigation.navigate(route.name)}
+        onPress={() => {
+          if (!session && route.name !== ROUTES.HOME_TAB && route.name !== ROUTES.PROFILE_TAB) {
+            requireAuthentication(navigation.getParent(), { kind: "PROTECTED_ROUTE", routeName: route.name });
+            return;
+          }
+          navigation.navigate(route.name);
+        }}
         style={styles.tab}
       >
         <View>

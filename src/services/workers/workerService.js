@@ -1,6 +1,6 @@
 import { TRACKING_STATUSES } from "../../constants/orderTracking";
 import { WORKER_STATUS } from "../../constants/workerStatus";
-import { apiRequest } from "../api/client";
+import { apiRequest, httpRequest } from "../api/client";
 import { httpAuthRequest } from "../api/authenticatedClient";
 import { mapApiOrder } from "../orders/orderService";
 import { normalizeServiceLocation } from "./serviceLocation.mjs";
@@ -66,12 +66,12 @@ export async function fetchWorkerMeApi(token) {
 
 export async function fetchWorkerReviewsApi(workerId) {
   return apiRequest(async () => {
-    const payload = await httpAuthRequest(`/workers/${workerId}/reviews`);
+    const payload = await httpRequest(`/workers/${encodeURIComponent(workerId)}/reviews`);
     return {
       ok: true,
       reviews: (payload.reviews || []).map((review) => ({
         id: review.id,
-        author: review.client?.name || "NearFIX mijoz",
+        author: review.authorName || "NearFIX mijoz",
         date: review.createdAt ? new Date(review.createdAt).toLocaleDateString("uz-UZ") : "",
         rating: review.rating,
         text: review.text || "Izoh qoldirilmagan."
@@ -136,6 +136,27 @@ export async function updateWorkerProfileApi(token, profile) {
   });
 }
 
+export async function fetchWorkerApplicationApi(token) {
+  return apiRequest(async () => {
+    const payload = await httpAuthRequest("/workers/application", { token });
+    return { ok: true, application: payload.application || null };
+  });
+}
+
+export async function saveWorkerApplicationApi(token, application) {
+  return apiRequest(async () => {
+    const payload = await httpAuthRequest("/workers/application", { method: "PUT", token, body: application });
+    return { ok: true, application: payload.application };
+  });
+}
+
+export async function submitWorkerApplicationApi(token, application) {
+  return apiRequest(async () => {
+    const payload = await httpAuthRequest("/workers/application/submit", { method: "POST", token, body: application });
+    return { ok: true, application: payload.application };
+  });
+}
+
 export async function updateWorkerServiceLocationApi(token, location) {
   return apiRequest(async () => {
     const payload = await httpAuthRequest("/workers/me/service-location", {
@@ -180,7 +201,7 @@ export async function fetchIncomingOrdersApi(token) {
 
 export async function fetchWorkerOrdersApi(token) {
   return apiRequest(async () => {
-    const payload = await httpAuthRequest("/orders", { token });
+    const payload = await httpAuthRequest("/orders?mode=worker", { token });
     return {
       ok: true,
       orders: (payload.orders || []).map(mapApiOrder)

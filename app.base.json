@@ -25,6 +25,21 @@
         }
       ],
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      [
+        "react-native-yamap-plus",
+        {
+          "android_useYandexMapKitLite": true,
+          "ios_useYandexMapKitLite": true
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "NearFIX chatda rasm tanlash uchun galereyaga ruxsat kerak.",
@@ -55,7 +70,7 @@
     "android": {
       "package": "uz.nearfix.app",
       "icon": "./assets/images/icon.png",
-      "predictiveBackGestureEnabled": true,
+      "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "monochromeImage": "./assets/images/adaptive-monochrome.png",
@@ -64,10 +79,7 @@
     },
     "extra": {
       "authEnabled": true,
-      "paymentsEnabled": false,
-      "apiBaseUrl": "https://nearfix-production-c0db.up.railway.app",
-      "privacyPolicyUrl": "https://nearfix-production-c0db.up.railway.app/legal/privacy",
-      "termsUrl": "https://nearfix-production-c0db.up.railway.app/legal/terms"
+      "paymentsEnabled": false
     }
   }
 }

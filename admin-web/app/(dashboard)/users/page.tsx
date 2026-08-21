@@ -5,7 +5,7 @@ export default function UsersPage() {
   return (
     <>
       <PageHeader
-        description="User list with role visibility and a safe path to promote approved clients into workers."
+        description="User list with role visibility and a safe path to prepare client worker applications."
         title="Users"
       />
       <UsersTable />

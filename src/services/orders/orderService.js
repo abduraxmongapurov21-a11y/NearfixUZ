@@ -73,7 +73,7 @@ export async function createOrderApi(token, draft, service, worker) {
 
 export async function fetchOrdersApi(token) {
   return apiRequest(async () => {
-    const payload = await httpAuthRequest("/orders", { token });
+    const payload = await httpAuthRequest("/orders?mode=client", { token });
     return {
       ok: true,
       orders: (payload.orders || []).map(mapApiOrder)

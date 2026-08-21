@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ShieldCheck, Smartphone } from "lucide-react-native";
-import { PrimaryButton } from "../../components/ui/Button";
+import { PrimaryButton, SecondaryButton } from "../../components/ui/Button";
 import { ROUTES } from "../../constants/routes";
 import { requestAuthOtp } from "../../services/auth";
 import { colors, iconSizes, radius } from "../../theme";
@@ -9,13 +9,21 @@ import { openPrivacyPolicy, openTerms } from "../../utils/legalLinks";
 import { AuthScreenLayout, authStyles } from "./AuthScreenLayout";
 import { authErrorMessage, isValidUzPhone, normalizeUzPhone } from "./authHelpers";
 import { Alert, Text, TextInput } from "../../i18n/native";
+import { useAuthStore } from "../../store/authStore";
 
 export function LoginScreen({ navigation }) {
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
+  const submittingRef = useRef(false);
+  const clearPendingIntent = useAuthStore((state) => state.clearPendingIntent);
+
+  function continueAsGuest() {
+    clearPendingIntent();
+    navigation.getParent()?.goBack();
+  }
 
   async function handleLogin() {
-    if (loading) return;
+    if (loading || submittingRef.current) return;
 
     const normalizedPhone = normalizeUzPhone(phone);
     if (!isValidUzPhone(normalizedPhone)) {
@@ -23,6 +31,7 @@ export function LoginScreen({ navigation }) {
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     try {
       const result = await requestAuthOtp(normalizedPhone, "AUTH");
@@ -43,12 +52,13 @@ export function LoginScreen({ navigation }) {
         purpose: "AUTH"
       });
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
 
   return (
-    <AuthScreenLayout title="Telefon raqamingiz bilan davom eting" copy="SMS kod yuboramiz.">
+    <AuthScreenLayout title="Telefon raqamingiz" copy="Kirish yoki ro'yxatdan o'tish uchun SMS kod yuboramiz.">
       <View style={styles.trustRow}>
         <View style={styles.trustPill}>
           <ShieldCheck size={iconSizes.sm} color={colors.secondary} strokeWidth={2.6} />
@@ -80,7 +90,8 @@ export function LoginScreen({ navigation }) {
         </View>
       </View>
 
-      <PrimaryButton disabled={loading} title={loading ? "Yuborilmoqda..." : "Kodni yuborish"} onPress={handleLogin} />
+      <PrimaryButton disabled={loading} title={loading ? "Yuborilmoqda..." : "Davom etish"} onPress={handleLogin} />
+      <SecondaryButton disabled={loading} title="Mehmon sifatida davom etish" onPress={continueAsGuest} />
 
       <View style={styles.legalConsent}>
         <Text style={styles.terms}>Davom etish orqali </Text>

@@ -13,7 +13,7 @@ import {
   View
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { Ban, Bell, CircleHelp, Edit3, FileText, LogOut, MapPin, Plus, Shield, Trash2 } from "lucide-react-native";
+import { Ban, Bell, BriefcaseBusiness, CircleHelp, Edit3, FileText, LogOut, MapPin, Plus, Shield, Trash2 } from "lucide-react-native";
 import { ROUTES } from "../../constants/routes";
 import { fetchUnreadNotificationCountApi } from "../../services/notifications/notificationService";
 import { useAuthStore } from "../../store/authStore";
@@ -48,6 +48,7 @@ export function ClientProfileScreen({ navigation, route }) {
   const logout = useAuthStore((state) => state.logout);
   const deleteAccount = useAuthStore((state) => state.deleteAccount);
   const updateProfile = useAuthStore((state) => state.updateProfile);
+  const setExperienceMode = useAuthStore((state) => state.setExperienceMode);
   const user = useClientStore((state) => state.user);
   const savedAddresses = useClientStore((state) => state.savedAddresses);
   const addressStatus = useClientStore((state) => state.addressStatus);
@@ -73,6 +74,7 @@ export function ClientProfileScreen({ navigation, route }) {
   const [addressDraft, setAddressDraft] = useState({
     title: "",
     address: "",
+    district: null,
     latitude: null,
     longitude: null
   });
@@ -115,6 +117,8 @@ export function ClientProfileScreen({ navigation, route }) {
 
     setAddressDraft((current) => ({
       ...current,
+      address: typeof selectedLocation.address === "string" ? selectedLocation.address : "",
+      district: selectedLocation.district || null,
       latitude: selectedLocation.latitude,
       longitude: selectedLocation.longitude
     }));
@@ -205,6 +209,7 @@ export function ClientProfileScreen({ navigation, route }) {
     return {
       title: "",
       address: "",
+      district: null,
       latitude: null,
       longitude: null
     };
@@ -233,6 +238,7 @@ export function ClientProfileScreen({ navigation, route }) {
     setAddressDraft({
       title: address.title || address.label || "",
       address: address.address || address.addressText || "",
+      district: address.district || null,
       latitude: address.latitude ?? address.lat ?? null,
       longitude: address.longitude ?? address.lng ?? null
     });
@@ -242,7 +248,12 @@ export function ClientProfileScreen({ navigation, route }) {
   function handlePickAddressLocation() {
     openAddressPicker(
       typeof addressDraft.latitude === "number" && typeof addressDraft.longitude === "number"
-        ? { latitude: addressDraft.latitude, longitude: addressDraft.longitude }
+        ? {
+            latitude: addressDraft.latitude,
+            longitude: addressDraft.longitude,
+            ...(addressDraft.address ? { address: addressDraft.address } : {}),
+            ...(addressDraft.district ? { district: addressDraft.district } : {})
+          }
         : undefined
     );
   }
@@ -263,10 +274,24 @@ export function ClientProfileScreen({ navigation, route }) {
       return;
     }
 
+    const cleanAddress = addressDraft.address.trim();
+    if (
+      typeof addressDraft.latitude === "number" &&
+      typeof addressDraft.longitude === "number" &&
+      cleanAddress.length < 4
+    ) {
+      Alert.alert(
+        "Manzil aniqlanmadi",
+        "Tanlangan koordinata uchun manzilni aniqlab bo'lmadi. Xaritadan qayta tanlang."
+      );
+      return;
+    }
+
     setSavingAddress(true);
     const payload = {
       title: cleanTitle,
-      address: cleanTitle,
+      ...(cleanAddress ? { address: cleanAddress } : {}),
+      ...(addressDraft.district ? { district: addressDraft.district } : {}),
       ...(typeof addressDraft.latitude === "number" && typeof addressDraft.longitude === "number"
         ? {
             lat: addressDraft.latitude,
@@ -412,6 +437,14 @@ export function ClientProfileScreen({ navigation, route }) {
         </SectionCard>
 
         <LanguageSelector />
+
+        <SectionCard title="Professional imkoniyatlar">
+          {session?.role === "provider" ? (
+            <ActionRow icon={BriefcaseBusiness} label="Usta rejimiga o'tish" onPress={() => setExperienceMode("worker")} />
+          ) : (
+            <ActionRow icon={BriefcaseBusiness} label="Usta bo'lish" onPress={() => navigation.navigate(ROUTES.BECOME_WORKER)} />
+          )}
+        </SectionCard>
 
         <SectionCard title="Qo'llab-quvvatlash">
           <ActionRow icon={CircleHelp} label="Yordam so'rash" onPress={() => setSupportOpen(true)} />
@@ -576,11 +609,11 @@ function AddressManager({ addresses, loading, error, onAdd, onEdit, onDelete, on
                 {address.addressText || address.address}
               </Text>
             ) : null}
-            <Text style={styles.addressDistrict} numberOfLines={1}>
-              {typeof address.lat === "number" && typeof address.lng === "number"
-                ? `${address.lat.toFixed(6)}, ${address.lng.toFixed(6)}`
-                : "Koordinata yo'q"}
-            </Text>
+            {address.district ? (
+              <Text style={styles.addressDistrict} numberOfLines={1}>
+                {address.district}
+              </Text>
+            ) : null}
             <View style={styles.addressActionsRow}>
               <Pressable onPress={() => onEdit(address)} style={styles.addressTextButton}>
                 <Edit3 size={13} color="#0F80B7" strokeWidth={2.6} />
@@ -648,11 +681,12 @@ function AddressFormModal({ visible, draft, saving, mode, onChange, onClose, onP
               ))}
             </View>
             <View style={styles.coordinateBox}>
-              <Text style={styles.coordinateLabel}>Xaritadan tanlangan koordinata</Text>
-              <Text style={styles.coordinateText} numberOfLines={1}>
-                {typeof draft.latitude === "number" && typeof draft.longitude === "number"
-                  ? `${draft.latitude.toFixed(6)}, ${draft.longitude.toFixed(6)}`
-                  : "Koordinata tanlanmagan"}
+              <Text style={styles.coordinateLabel}>Xaritadan tanlangan manzil</Text>
+              <Text style={styles.coordinateText} numberOfLines={2} translate={!draft.address}>
+                {draft.address ||
+                  (typeof draft.latitude === "number" && typeof draft.longitude === "number"
+                    ? "Manzil aniqlanmadi. Koordinata saqlanadi."
+                    : "Manzil tanlanmagan")}
               </Text>
             </View>
             <Pressable onPress={onPickLocation} disabled={saving} style={styles.pickLocationButton}>

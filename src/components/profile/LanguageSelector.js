@@ -5,43 +5,47 @@ import { LANGUAGES, SUPPORTED_LOCALES } from "../../i18n";
 import { Text } from "../../i18n/native";
 import { useUiStore } from "../../store/uiStore";
 import { colors, radius } from "../../theme";
+import { CountrySelector } from "./CountrySelector";
 
 export function LanguageSelector() {
   const locale = useUiStore((state) => state.locale);
   const setLocale = useUiStore((state) => state.setLocale);
 
   return (
-    <View style={styles.card}>
-      <View style={styles.titleRow}>
-        <View style={styles.iconWrap}>
-          <Languages size={20} color={colors.primary} strokeWidth={2.5} />
+    <>
+      <CountrySelector />
+      <View style={styles.card}>
+        <View style={styles.titleRow}>
+          <View style={styles.iconWrap}>
+            <Languages size={20} color={colors.primary} strokeWidth={2.5} />
+          </View>
+          <View style={styles.titleBody}>
+            <Text style={styles.title}>Til</Text>
+            <Text style={styles.subtitle}>Ilova tilini tanlang</Text>
+          </View>
         </View>
-        <View style={styles.titleBody}>
-          <Text style={styles.title}>Til</Text>
-          <Text style={styles.subtitle}>Ilova tilini tanlang</Text>
+        <View accessibilityRole="radiogroup" style={styles.options}>
+          {SUPPORTED_LOCALES.map((language) => {
+            const selected = locale === language;
+            return (
+              <Pressable
+                key={language}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                accessibilityLabel={LANGUAGES[language]}
+                onPress={() => setLocale(language)}
+                style={({ pressed }) => [styles.option, selected && styles.optionSelected, pressed && styles.optionPressed]}
+              >
+                <Text translate={false} style={[styles.optionText, selected && styles.optionTextSelected]}>
+                  {LANGUAGES[language]}
+                </Text>
+                {selected ? <Check size={17} color={colors.white} strokeWidth={3} /> : null}
+              </Pressable>
+            );
+          })}
         </View>
       </View>
-      <View accessibilityRole="radiogroup" style={styles.options}>
-        {SUPPORTED_LOCALES.map((language) => {
-          const selected = locale === language;
-          return (
-            <Pressable
-              key={language}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: selected }}
-              accessibilityLabel={LANGUAGES[language]}
-              onPress={() => setLocale(language)}
-              style={({ pressed }) => [styles.option, selected && styles.optionSelected, pressed && styles.optionPressed]}
-            >
-              <Text translate={false} style={[styles.optionText, selected && styles.optionTextSelected]}>
-                {LANGUAGES[language]}
-              </Text>
-              {selected ? <Check size={17} color={colors.white} strokeWidth={3} /> : null}
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
+    </>
   );
 }
 

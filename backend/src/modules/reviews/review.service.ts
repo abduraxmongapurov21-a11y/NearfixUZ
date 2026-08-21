@@ -4,7 +4,8 @@ import {
   OrderStatus,
   Prisma,
   ReviewStatus,
-  UserRole
+  UserRole,
+  WorkerProfileStatus
 } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import type { AuthUser } from "../auth/auth-context.js";
@@ -58,7 +59,7 @@ export async function setReviewVisibility(reviewId: string, status: ReviewStatus
 }
 
 export async function createOrderReview(user: AuthUser, orderId: string, input: CreateReviewInput) {
-  if (user.role !== UserRole.CLIENT.toLowerCase()) {
+  if (![UserRole.CLIENT.toLowerCase(), UserRole.PROVIDER.toLowerCase()].includes(user.role)) {
     throw Object.assign(new Error("Only clients can create reviews"), {
       status: 403,
       code: "CLIENT_REQUIRED"
@@ -158,23 +159,45 @@ export async function createOrderReview(user: AuthUser, orderId: string, input: 
 }
 
 export async function listWorkerReviews(workerId: string) {
-  return prisma.review.findMany({
+  const publicWorker = await prisma.workerProfile.findFirst({
+    where: { id: workerId, status: WorkerProfileStatus.APPROVED },
+    select: { id: true }
+  });
+  if (!publicWorker) {
+    throw Object.assign(new Error("Worker not found"), { status: 404, code: "WORKER_NOT_FOUND" });
+  }
+  const reviews = await prisma.review.findMany({
     where: {
       workerId,
       status: ReviewStatus.PUBLISHED
     },
-    include: {
-      client: true,
-      order: true
+    select: {
+      id: true,
+      rating: true,
+      text: true,
+      createdAt: true,
+      client: {
+        select: {
+          name: true
+        }
+      }
     },
     orderBy: { createdAt: "desc" }
   });
+
+  return reviews.map((review) => ({
+    id: review.id,
+    rating: review.rating,
+    text: review.text,
+    createdAt: review.createdAt,
+    authorName: review.client.name
+  }));
 }
 
 export async function getWorkerRating(workerId: string) {
   const [worker, reviewsCount] = await Promise.all([
-    prisma.workerProfile.findUnique({
-      where: { id: workerId },
+    prisma.workerProfile.findFirst({
+      where: { id: workerId, status: WorkerProfileStatus.APPROVED },
       select: {
         id: true,
         ratingAvg: true

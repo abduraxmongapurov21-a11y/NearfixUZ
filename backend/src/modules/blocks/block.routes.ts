@@ -2,6 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "../auth/middleware/auth.middleware.js";
 import { blockUser, listBlockedUsers, unblockUser } from "./block.service.js";
+import { prisma } from "../../db/prisma.js";
+import { WorkerProfileStatus } from "@prisma/client";
 
 const blockSchema = z.object({ blockedUserId: z.string().min(1) });
 export const blockRouter = Router();
@@ -20,6 +22,20 @@ blockRouter.post("/", async (request, response, next) => {
   try {
     const input = blockSchema.parse(request.body);
     response.status(201).json({ ok: true, block: await blockUser(request.user!, input.blockedUserId) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+blockRouter.post("/worker/:workerId", async (request, response, next) => {
+  try {
+    const worker = await prisma.workerProfile.findFirst({
+      where: { id: String(request.params.workerId), status: WorkerProfileStatus.APPROVED },
+      select: { userId: true }
+    });
+    if (!worker) throw Object.assign(new Error("Worker not found"), { status: 404, code: "WORKER_NOT_FOUND" });
+    await blockUser(request.user!, worker.userId);
+    response.status(201).json({ ok: true });
   } catch (error) {
     next(error);
   }

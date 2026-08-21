@@ -28,6 +28,8 @@ import { ReportModal } from "../../components/moderation/ReportModal";
 import { ReviewCard } from "../../components/profile/ReviewCard";
 import { blockUserApi } from "../../services/moderation/moderationService";
 import { fetchWorkerReviewsApi } from "../../services/workers/workerService";
+import { fetchPublicWorker } from "../../services/catalog/catalogService";
+import { requireAuthentication } from "../../navigation/protectedActions";
 import { formatDistanceMeters } from "../../services/catalog/catalogDistance.mjs";
 import { Alert, Text } from "../../i18n/native";
 
@@ -38,16 +40,34 @@ const font = {
   extra: "Inter_800ExtraBold"
 };
 
-export function WorkerProfileScreen({ navigation }) {
+export function WorkerProfileScreen({ navigation, route }) {
   const worker = useSelectedWorker();
   const session = useAuthStore((state) => state.session);
   const favoriteWorkerIds = useClientStore((state) => state.favoriteWorkerIds);
   const toggleFavoriteWorker = useClientStore((state) => state.toggleFavoriteWorker);
+  const upsertPublicWorker = useClientStore((state) => state.upsertPublicWorker);
   const [openingChat, setOpeningChat] = useState(false);
   const [savingFavorite, setSavingFavorite] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [blocking, setBlocking] = useState(false);
+  const [workerUnavailable, setWorkerUnavailable] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const workerId = route.params?.workerId || worker?.id;
+    if (!workerId) return undefined;
+    fetchPublicWorker(workerId).then((result) => {
+      if (!active) return;
+      if (result.ok) {
+        upsertPublicWorker(result.worker);
+        setWorkerUnavailable(false);
+      } else {
+        setWorkerUnavailable(true);
+      }
+    });
+    return () => { active = false; };
+  }, [route.params?.workerId, upsertPublicWorker, worker?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -59,9 +79,17 @@ export function WorkerProfileScreen({ navigation }) {
       mounted = false;
     };
   }, [worker?.id]);
-  if (!worker) {
+
+  function handleBack() {
+    if (navigation.canGoBack()) navigation.goBack();
+  }
+
+  if (!worker || workerUnavailable) {
     return (
       <View style={styles.screen}>
+        <View style={styles.unavailableHeader}>
+          <WorkerProfileBackButton onPress={handleBack} />
+        </View>
         <EmptyState title="Usta topilmadi" text="Katalogdan usta tanlang yoki keyinroq qayta urinib ko'ring." />
       </View>
     );
@@ -76,12 +104,14 @@ export function WorkerProfileScreen({ navigation }) {
     if (openingChat) return;
 
     if (!session?.token) {
-      Alert.alert("Login kerak", "Usta bilan yozishish uchun avval tizimga kiring.");
+      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id });
       return;
     }
 
+    const identity = useAuthStore.getState().captureAuthRequest(session.token);
     setOpeningChat(true);
     const result = await ensureWorkerChatRoomApi(session.token, worker.id, session.userId);
+    if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
     setOpeningChat(false);
 
     if (result.ok) {
@@ -98,17 +128,28 @@ export function WorkerProfileScreen({ navigation }) {
       return;
     }
 
-    navigation.navigate(ROUTES.BOOKING, { workerId: worker.id, flowId: Date.now() });
+    if (!session?.token) {
+      requireAuthentication(navigation, { kind: "BOOKING", workerId: worker.id });
+      return;
+    }
+    navigation.navigate(ROUTES.BOOKING, { workerId: worker.id });
   }
 
   async function handleToggleFavorite() {
     if (savingFavorite) return;
+    if (!session?.token) {
+      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id });
+      return;
+    }
 
     setSavingFavorite(true);
     try {
-      await toggleFavoriteWorker(worker.id);
-    } catch {
-      Alert.alert("Saqlanmadi", "Ustani yoqtirilganlarga qo'shishda xatolik yuz berdi.");
+      const result = await toggleFavoriteWorker(worker.id);
+      if (!result.ok && !result.stale) {
+        Alert.alert("Saqlanmadi", result.message || "Ustani yoqtirilganlarga qo'shishda xatolik yuz berdi.");
+      }
+    } catch (error) {
+      Alert.alert("Saqlanmadi", error?.message || "Ustani yoqtirilganlarga qo'shishda xatolik yuz berdi.");
     } finally {
       setSavingFavorite(false);
     }
@@ -124,7 +165,11 @@ export function WorkerProfileScreen({ navigation }) {
   }
 
   function confirmBlockWorker() {
-    if (!worker.userId || blocking) return;
+    if (blocking) return;
+    if (!session?.token) {
+      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id });
+      return;
+    }
     Alert.alert(
       "Ustani bloklash",
       "Yangi chat ochish cheklanadi. Faol buyurtma bo'lsa, avval yordam orqali hal qilish kerak.",
@@ -134,8 +179,10 @@ export function WorkerProfileScreen({ navigation }) {
           text: "Bloklash",
           style: "destructive",
           onPress: async () => {
+            const identity = useAuthStore.getState().captureAuthRequest(session.token);
             setBlocking(true);
-            const result = await blockUserApi(session?.token, worker.userId);
+            const result = await blockUserApi(session.token, undefined, worker.id);
+            if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
             setBlocking(false);
             Alert.alert(
               result.ok ? "Usta bloklandi" : "Bloklab bo'lmadi",
@@ -162,9 +209,7 @@ export function WorkerProfileScreen({ navigation }) {
           )}
           <View style={styles.heroScrim} />
           <View style={styles.topActions}>
-            <Pressable onPress={() => navigation.goBack()} style={styles.roundButton}>
-              <ArrowLeft size={24} color="#273248" strokeWidth={2.7} />
-            </Pressable>
+            <WorkerProfileBackButton onPress={handleBack} />
             <View style={styles.rightActions}>
               <Pressable onPress={handleToggleFavorite} disabled={savingFavorite} style={styles.roundButton}>
                 <Heart
@@ -239,15 +284,15 @@ export function WorkerProfileScreen({ navigation }) {
           <Text style={styles.aboutTitle}>Xavfsizlik</Text>
           <View style={styles.safetyActions}>
             <Pressable
-              onPress={() =>
-                setReportTarget({ targetType: "WORKER", targetId: worker.id, title: "Usta haqida shikoyat" })
-              }
+              onPress={() => session?.token
+                ? setReportTarget({ targetType: "WORKER", targetId: worker.id, title: "Usta haqida shikoyat" })
+                : requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id })}
               style={styles.safetyButton}
             >
               <Flag size={18} color="#EF4444" />
               <Text style={styles.reportText}>Usta haqida shikoyat</Text>
             </Pressable>
-            <Pressable onPress={confirmBlockWorker} disabled={!worker.userId || blocking} style={styles.safetyButton}>
+            <Pressable onPress={confirmBlockWorker} disabled={blocking} style={styles.safetyButton}>
               <Ban size={18} color="#EF4444" />
               <Text style={styles.reportText}>{blocking ? "Bloklanmoqda..." : "Ustani bloklash"}</Text>
             </Pressable>
@@ -261,9 +306,9 @@ export function WorkerProfileScreen({ navigation }) {
               <ReviewCard
                 key={review.id}
                 review={review}
-                onReport={() =>
-                  setReportTarget({ targetType: "REVIEW", targetId: review.id, title: "Sharh haqida shikoyat" })
-                }
+                onReport={() => session?.token
+                  ? setReportTarget({ targetType: "REVIEW", targetId: review.id, title: "Sharh haqida shikoyat" })
+                  : requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id })}
               />
             ))}
           </View>
@@ -295,6 +340,14 @@ export function WorkerProfileScreen({ navigation }) {
   );
 }
 
+function WorkerProfileBackButton({ onPress }) {
+  return (
+    <Pressable onPress={onPress} style={styles.roundButton}>
+      <ArrowLeft size={24} color="#273248" strokeWidth={2.7} />
+    </Pressable>
+  );
+}
+
 function StatItem({ icon, value, label }) {
   return (
     <View style={styles.statItem}>
@@ -308,7 +361,12 @@ function StatItem({ icon, value, label }) {
 }
 
 function ScreenBottomNav({ navigation }) {
+  const session = useAuthStore((state) => state.session);
   function goTab(screen) {
+    if (!session && screen !== ROUTES.HOME_TAB) {
+      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: screen });
+      return;
+    }
     navigation.navigate(ROUTES.CLIENT_TABS, { screen });
   }
 
@@ -367,6 +425,12 @@ const styles = StyleSheet.create({
   heroScrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(15,113,157,0.20)"
+  },
+  unavailableHeader: {
+    minHeight: 112,
+    paddingTop: 42,
+    paddingHorizontal: 24,
+    alignItems: "flex-start"
   },
   topActions: {
     position: "absolute",

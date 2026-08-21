@@ -11,13 +11,11 @@ export function mapApiWorker(worker) {
     : worker.profession
       ? [worker.profession]
       : ["Xizmat"];
-  const name = worker.user?.name || worker.profession || "NearFIX usta";
+  const name = worker.name || worker.user?.name || worker.profession || "NearFIX usta";
   const price = worker.basePrice ? `${Number(worker.basePrice).toLocaleString("uz-UZ")} so'm` : "Kelishiladi";
 
   return {
     id: worker.id,
-    userId: worker.userId,
-    phone: worker.user?.phone,
     name,
     specialty: worker.profession || professions[0] || "Usta",
     professions,
@@ -28,10 +26,10 @@ export function mapApiWorker(worker) {
     responseSpeed: "Odatda 1 soat ichida javob beradi",
     workingHours: "09:00 - 21:00",
     availability: mapAvailability(worker.availability?.status),
-    verification: worker.verifiedAt ? "NearFIX tasdiqlagan" : "Tekshiruvda",
+    verification: "NearFIX tasdiqlagan",
     guarantee: "NearFIX kafolati ostida",
     distanceMeters: normalizeDistanceMeters(worker.distanceMeters),
-    cityId: worker.user?.cityId || "",
+    cityId: worker.cityId || worker.user?.cityId || "",
     basePriceValue: worker.basePrice || 0,
     experience: worker.experienceYears ? `${worker.experienceYears} yil` : "Tasdiqlangan",
     price,
@@ -62,4 +60,11 @@ export async function fetchCatalogWorkers(cityId, profession, options = {}) {
       };
     }
   );
+}
+
+export async function fetchPublicWorker(workerId) {
+  return apiRequest(async () => {
+    const payload = await httpRequest(`/workers/${encodeURIComponent(workerId)}`);
+    return { ok: true, worker: mapApiWorker(payload.worker), source: "api" };
+  });
 }

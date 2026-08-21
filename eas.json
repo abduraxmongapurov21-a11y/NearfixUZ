@@ -3,6 +3,18 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "development",
+        "EXPO_PUBLIC_API_BASE_URL": "http://10.0.2.2:4000",
+        "EXPO_PUBLIC_AUTH_ENABLED": "true",
+        "EXPO_PUBLIC_PAYMENTS_ENABLED": "false",
+        "EXPO_PUBLIC_PRIVACY_POLICY_URL": "http://10.0.2.2:4000/legal/privacy",
+        "EXPO_PUBLIC_TERMS_URL": "http://10.0.2.2:4000/legal/terms"
+      }
+    },
     "production": {
       "distribution": "store",
       "environment": "production",
@@ -11,6 +23,7 @@
         "buildType": "app-bundle"
       },
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_API_BASE_URL": "https://nearfix-production-c0db.up.railway.app",
         "EXPO_PUBLIC_AUTH_ENABLED": "true",
         "EXPO_PUBLIC_PAYMENTS_ENABLED": "false",

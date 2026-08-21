@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { OtpPurpose, Prisma, UserRole, UserStatus } from "@prisma/client";
+import { OtpPurpose, Prisma, UserRole, UserStatus, WorkerProfileStatus } from "@prisma/client";
 import { env } from "../../config/env.js";
 import { prisma } from "../../db/prisma.js";
 import { normalizePhone } from "../../utils/phone.js";
@@ -22,7 +22,11 @@ const defaultAuthProvider = createAuthProvider();
 const OTP_SESSION_TTL_SECONDS = 10 * 60;
 
 type OtpRequestPurpose = "AUTH" | "PASSWORD_RESET";
-type OtpNextStep = "PASSWORD_REQUIRED" | "PASSWORD_SETUP_REQUIRED" | "PASSWORD_RESET_REQUIRED";
+type OtpNextStep =
+  | "PASSWORD_REQUIRED"
+  | "PASSWORD_SETUP_REQUIRED"
+  | "PASSWORD_RESET_REQUIRED"
+  | "REGISTRATION_REQUIRED";
 
 type DemoAccount = {
   phone: string;
@@ -224,7 +228,10 @@ function toAuthUser(user: UserWithPermissions) {
   };
 }
 
-async function createSessionForUser(user: UserWithPermissions) {
+async function createSessionForUser(
+  user: UserWithPermissions,
+  db: Prisma.TransactionClient | typeof prisma = prisma
+) {
   if (user.status !== UserStatus.ACTIVE) {
     throw Object.assign(new Error("User account is blocked"), {
       status: 403,
@@ -236,7 +243,7 @@ async function createSessionForUser(user: UserWithPermissions) {
   const refreshTokenHash = hashRefreshToken(refreshToken);
   const expiresAt = addDays(new Date(), env.SESSION_TTL_DAYS);
 
-  const session = await prisma.session.create({
+  const session = await db.session.create({
     data: {
       userId: user.id,
       refreshToken: refreshTokenHash,
@@ -267,13 +274,6 @@ function authTimingResponse(service: OtpService) {
   };
 }
 
-function phoneAlreadyRegisteredError() {
-  return Object.assign(new Error("Phone number is already registered"), {
-    status: 409,
-    code: "PHONE_ALREADY_REGISTERED"
-  });
-}
-
 async function deliverOtp(
   phone: string,
   purpose: OtpPurpose,
@@ -300,18 +300,7 @@ export async function requestRegistrationOtp(
   authProvider: AuthProvider = defaultAuthProvider,
   service: OtpService = otpService
 ) {
-  const phone = normalizePhone(input.phone);
-  const existingUser = await prisma.user.findUnique({
-    where: { phone },
-    select: { id: true }
-  });
-
-  if (existingUser) {
-    throw phoneAlreadyRegisteredError();
-  }
-
-  await deliverOtp(phone, OtpPurpose.REGISTER, authProvider, service);
-  return authTimingResponse(service);
+  return requestLegacyOtp(input, authProvider, service);
 }
 
 export async function requestLegacyOtp(
@@ -320,17 +309,6 @@ export async function requestLegacyOtp(
   service: OtpService = otpService
 ) {
   const phone = normalizePhone(input.phone);
-  const existingUser = await prisma.user.findUnique({
-    where: { phone },
-    select: { status: true }
-  });
-
-  if (existingUser?.status === UserStatus.BLOCKED) {
-    throw Object.assign(new Error("User account is blocked"), {
-      status: 403,
-      code: "USER_BLOCKED"
-    });
-  }
 
   await deliverOtp(phone, OtpPurpose.REGISTER, authProvider, service);
   return authTimingResponse(service);
@@ -369,7 +347,7 @@ export async function verifyAuthOtp(input: { phone: string; code: string; purpos
 
   await service.verifyChallenge(phone, OtpPurpose.REGISTER, input.code);
 
-  let user = await prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { phone },
     include: {
       adminPermissions: true
@@ -383,32 +361,112 @@ export async function verifyAuthOtp(input: { phone: string; code: string; purpos
     });
   }
 
-  if (!user) {
-    try {
-      user = await prisma.user.create({
-        data: {
-          phone,
-          role: UserRole.CLIENT
-        },
-        include: {
-          adminPermissions: true
-        }
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        user = await prisma.user.findUniqueOrThrow({
-          where: { phone },
-          include: {
-            adminPermissions: true
-          }
-        });
-      } else {
-        throw error;
-      }
-    }
+  if (user && isAdminRole(user.role)) {
+    throw Object.assign(new Error("This account cannot use mobile OTP authentication"), {
+      status: 403,
+      code: "OTP_AUTH_FORBIDDEN"
+    });
   }
 
-  return createSessionForUser(user);
+  if (!user) {
+    const registrationToken = await createOtpSessionToken({
+      phone,
+      purpose: "AUTH",
+      nextStep: "REGISTRATION_REQUIRED"
+    });
+
+    return {
+      ok: true,
+      status: "REGISTRATION_REQUIRED" as const,
+      registrationToken,
+      expiresIn: OTP_SESSION_TTL_SECONDS
+    };
+  }
+
+  return {
+    ok: true,
+    status: "AUTHENTICATED" as const,
+    ...(await createSessionForUser(user))
+  };
+}
+
+export async function completeOtpRegistration(input: { registrationToken: string; name: string }) {
+  const tokenHash = hashSessionToken(input.registrationToken);
+  const now = new Date();
+  const refreshToken = createRefreshToken();
+  const refreshTokenHash = hashRefreshToken(refreshToken);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const otpSession = await tx.otpSession.findUnique({
+      where: { tokenHash }
+    });
+
+    if (!otpSession) throw otpSessionError("OTP session is invalid");
+    if (otpSession.expiresAt <= now) {
+      throw otpSessionError("OTP session expired", "OTP_SESSION_EXPIRED");
+    }
+    if (
+      otpSession.consumedAt ||
+      otpSession.purpose !== "AUTH" ||
+      otpSession.nextStep !== "REGISTRATION_REQUIRED" ||
+      otpSession.userId
+    ) {
+      throw otpSessionError("OTP session is invalid");
+    }
+
+    const consumed = await tx.otpSession.updateMany({
+      where: {
+        id: otpSession.id,
+        consumedAt: null,
+        expiresAt: { gt: now },
+        purpose: "AUTH",
+        nextStep: "REGISTRATION_REQUIRED",
+        userId: null
+      },
+      data: { consumedAt: now }
+    });
+    if (consumed.count !== 1) throw otpSessionError("OTP session is invalid");
+
+    const user = await tx.user.upsert({
+      where: { phone: otpSession.phone },
+      update: {},
+      create: {
+        phone: otpSession.phone,
+        name: input.name.trim(),
+        role: UserRole.CLIENT
+      },
+      include: { adminPermissions: true }
+    });
+
+    if (user.status !== UserStatus.ACTIVE || user.role !== UserRole.CLIENT) {
+      throw otpSessionError("OTP session is invalid");
+    }
+
+    const session = await tx.session.create({
+      data: {
+        userId: user.id,
+        refreshToken: refreshTokenHash,
+        expiresAt: addDays(now, env.SESSION_TTL_DAYS)
+      }
+    });
+
+    return { user, session };
+  });
+
+  const accessToken = createAccessToken({
+    userId: result.user.id,
+    sessionId: result.session.id,
+    sessionVersion: result.user.sessionVersion
+  });
+
+  return {
+    ok: true,
+    status: "AUTHENTICATED" as const,
+    accessToken,
+    refreshToken,
+    token: accessToken,
+    user: toAuthUser(result.user)
+  };
 }
 
 export async function loginWithAppReviewDemo(input: { phone: string; password: string }) {
@@ -421,11 +479,26 @@ export async function loginWithAppReviewDemo(input: { phone: string; password: s
       phone: demoAccount.phone
     },
     include: {
-      adminPermissions: true
+      adminPermissions: true,
+      workerProfile: {
+        select: {
+          status: true
+        }
+      }
     }
   });
 
-  if (!user || user.role !== demoAccount.role || user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
+  const preservesClientCapability =
+    demoAccount.role === UserRole.CLIENT &&
+    user?.role === UserRole.PROVIDER &&
+    user.workerProfile?.status === WorkerProfileStatus.APPROVED;
+
+  if (
+    !user ||
+    (user.role !== demoAccount.role && !preservesClientCapability) ||
+    user.role === UserRole.ADMIN ||
+    user.role === UserRole.SUPER_ADMIN
+  ) {
     throw invalidDemoCredentialsError();
   }
 
@@ -736,45 +809,4 @@ export async function refreshAccessToken(rawRefreshToken: string) {
     token: accessToken,
     user: toAuthUser(session.user)
   };
-}
-
-export async function promoteClientToProvider(userId: string, tx: Prisma.TransactionClient | typeof prisma = prisma) {
-  const user = await tx.user.update({
-    where: { id: userId },
-    data: {
-      role: UserRole.PROVIDER,
-      sessionVersion: {
-        increment: 1
-      }
-    }
-  });
-
-  await tx.workerProfile.upsert({
-    where: { userId },
-    update: {},
-    create: {
-      userId,
-      status: "DRAFT"
-    }
-  });
-
-  const workerProfile = await tx.workerProfile.findUniqueOrThrow({
-    where: { userId }
-  });
-
-  await tx.workerAvailability.upsert({
-    where: { workerId: workerProfile.id },
-    update: {},
-    create: {
-      workerId: workerProfile.id,
-      status: "OFFLINE"
-    }
-  });
-
-  await tx.session.updateMany({
-    where: { userId, revoked: false },
-    data: { revoked: true }
-  });
-
-  return user;
 }

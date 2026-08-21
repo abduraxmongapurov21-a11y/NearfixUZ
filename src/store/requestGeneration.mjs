@@ -3,6 +3,17 @@ export function createAccountRequestGuard() {
   const requestGenerations = new Map();
 
   return {
+    capture(accountId) {
+      return { accountId, sessionGeneration };
+    },
+    isSessionCurrent(ticket, accountId) {
+      return Boolean(
+        ticket &&
+          ticket.accountId &&
+          ticket.accountId === accountId &&
+          ticket.sessionGeneration === sessionGeneration
+      );
+    },
     begin(scope, accountId) {
       const requestGeneration = (requestGenerations.get(scope) || 0) + 1;
       requestGenerations.set(scope, requestGeneration);
@@ -20,6 +31,22 @@ export function createAccountRequestGuard() {
     invalidateSession() {
       sessionGeneration += 1;
       requestGenerations.clear();
+    }
+  };
+}
+
+export function createOperationGuard() {
+  let generation = 0;
+  return {
+    begin() {
+      generation += 1;
+      return generation;
+    },
+    isCurrent(ticket) {
+      return ticket === generation;
+    },
+    invalidate() {
+      generation += 1;
     }
   };
 }

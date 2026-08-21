@@ -3,10 +3,9 @@ import { Router } from "express";
 import multer from "multer";
 import {
   createR2ObjectKey,
-  deleteObjectFromR2,
-  type R2ObjectPrefix,
-  uploadObjectToR2
+  type R2ObjectPrefix
 } from "../../storage/r2.storage.js";
+import { deleteMediaObject, uploadMediaObject } from "../../storage/media.storage.js";
 import { authenticate } from "../auth/middleware/auth.middleware.js";
 import { createUploadedMedia } from "./media.service.js";
 
@@ -77,12 +76,23 @@ mediaRouter.post("/upload", authenticate, upload.single("file"), async (request,
     const scope = resolveScope(request.body.scope);
     const mimeType = normalizeMimeType(file.mimetype);
     const objectKey = createR2ObjectKey(resolveObjectPrefix(scope), file.originalname, mimeType);
-    const uploaded = await uploadObjectToR2({
-      objectKey,
-      body: file.buffer,
-      contentType: mimeType,
-      contentLength: file.size
-    });
+    const requestHost = request.get("host");
+    if (!requestHost) {
+      throw Object.assign(new Error("Request host is required"), {
+        status: 400,
+        code: "REQUEST_HOST_REQUIRED"
+      });
+    }
+
+    const uploaded = await uploadMediaObject(
+      {
+        objectKey,
+        body: file.buffer,
+        contentType: mimeType,
+        contentLength: file.size
+      },
+      `${request.protocol}://${requestHost}`
+    );
 
     let media;
     try {
@@ -96,7 +106,7 @@ mediaRouter.post("/upload", authenticate, upload.single("file"), async (request,
         size: file.size
       });
     } catch (error) {
-      await deleteObjectFromR2(objectKey).catch(() => undefined);
+      await deleteMediaObject(uploaded).catch(() => undefined);
       throw error;
     }
 

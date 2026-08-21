@@ -98,6 +98,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   const token = useAuthStore((state) => state.session?.token);
   const logout = useAuthStore((state) => state.logout);
   const deleteAccount = useAuthStore((state) => state.deleteAccount);
+  const setExperienceMode = useAuthStore((state) => state.setExperienceMode);
   const sessionPhone = useAuthStore((state) => state.session?.phone);
   const worker = useWorkerStore((state) => state.workerProfile);
   const profileSyncStatus = useWorkerStore((state) => state.profileSyncStatus);
@@ -118,6 +119,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [pendingServiceLocation, setPendingServiceLocation] = useState(null);
+  const [pendingServiceAddress, setPendingServiceAddress] = useState(null);
   const [locationSaving, setLocationSaving] = useState(false);
   const [locationFeedback, setLocationFeedback] = useState(null);
   const locationSubmissionGuard = useRef(createSubmissionGuard());
@@ -179,6 +181,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     if (!selectedLocation) return;
 
     setPendingServiceLocation(selectedLocation);
+    setPendingServiceAddress(route.params.selectedServiceLocation.address || null);
     setLocationFeedback(null);
     navigation.setParams({ selectedServiceLocation: undefined });
   }, [navigation, route?.params?.selectedServiceLocation]);
@@ -335,6 +338,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     }
 
     setPendingServiceLocation(null);
+    setPendingServiceAddress(null);
     setLocationFeedback({ type: "success", message: "Lokatsiya muvaffaqiyatli saqlandi." });
   }
 
@@ -584,8 +588,8 @@ export function WorkerProfileManageScreen({ navigation, route }) {
                     : "Lokatsiya belgilanmagan"}
               </Text>
               {pendingServiceLocation ? (
-                <Text style={styles.locationStatusText}>
-                  Tanlangan nuqtani saqlash uchun quyidagi tugmani bosing.
+                <Text style={styles.locationStatusText} translate={!pendingServiceAddress}>
+                  {pendingServiceAddress || "Tanlangan nuqtani saqlash uchun quyidagi tugmani bosing."}
                 </Text>
               ) : locationUpdatedAt ? (
                 <Text style={styles.locationStatusText}>{`Yangilangan: ${locationUpdatedAt}`}</Text>
@@ -639,6 +643,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
         <LanguageSelector />
 
         <SectionCard title="Qo'llab-quvvatlash va huquqiy ma'lumotlar">
+          <ProfileAction icon={UserRound} label="Mijoz rejimiga o'tish" onPress={() => setExperienceMode("client")} />
           <ProfileAction
             icon={CircleHelp}
             label="Qo'llab-quvvatlash"

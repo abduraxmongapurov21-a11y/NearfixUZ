@@ -12,13 +12,14 @@ import { Text } from "../../i18n/native";
 export function SessionInvalidatedScreen() {
   const navigation = useNavigation();
   const acknowledgeInvalidation = useAuthStore((state) => state.acknowledgeInvalidation);
+  const invalidation = useAuthStore((state) => state.invalidation);
 
   function handleLoginAgain() {
     acknowledgeInvalidation();
     navigation.dispatch(
       CommonActions.reset({
         index: 0,
-        routes: [{ name: ROUTES.LOGIN }]
+        routes: [{ name: ROUTES.CLIENT_TABS, params: { screen: ROUTES.HOME_TAB } }]
       })
     );
   }
@@ -29,11 +30,11 @@ export function SessionInvalidatedScreen() {
       <View style={styles.iconWrap}>
         <ShieldCheck size={iconSizes.lg} color={colors.primary} strokeWidth={2.6} />
       </View>
-      <Text style={styles.title}>Profilingiz yangilandi</Text>
+      <Text style={styles.title}>{invalidation?.reason === "blocked" ? "Hisob bloklangan" : "Sessiya tugadi"}</Text>
       <Text style={styles.copy}>
-        Xavfsizlik sababli qayta kirish talab qilinadi. Qayta kirganingizdan keyin sizga mos app ochiladi.
+        {invalidation?.message || "Xavfsizlik sababli sessiya yakunlandi. Mehmon sifatida davom etishingiz mumkin."}
       </Text>
-      <PrimaryButton title="Qayta kirish" onPress={handleLoginAgain} />
+      <PrimaryButton title="Bosh sahifaga qaytish" onPress={handleLoginAgain} />
     </ScrollView>
   );
 }

@@ -12,14 +12,14 @@ export async function createReportApi(token, report) {
   });
 }
 
-export async function blockUserApi(token, blockedUserId) {
+export async function blockUserApi(token, blockedUserId, workerId) {
   return apiRequest(async () => {
-    const payload = await httpAuthRequest("/blocks", {
+    const payload = await httpAuthRequest(workerId ? `/blocks/worker/${encodeURIComponent(workerId)}` : "/blocks", {
       method: "POST",
       token,
-      body: { blockedUserId }
+      body: workerId ? undefined : { blockedUserId }
     });
-    return { ok: true, block: payload.block };
+    return { ok: true, ...(workerId ? {} : { block: payload.block }) };
   });
 }
 

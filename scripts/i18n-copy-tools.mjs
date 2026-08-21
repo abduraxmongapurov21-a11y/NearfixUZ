@@ -27,7 +27,24 @@ const NON_COPY = new Set([
   "Inter_500Medium",
   "Inter_600SemiBold",
   "Inter_700Bold",
-  "Inter_800ExtraBold"
+  "Inter_800ExtraBold",
+  "EXPO_PUBLIC_APP_ENV must be explicitly set to development or production.",
+  "EXPO_PUBLIC_API_BASE_URL must be a valid absolute URL.",
+  "Development API must use localhost, loopback, or the Android emulator host bridge.",
+  "Production API must use HTTPS.",
+  "worker-{{value0}}",
+  "missing-key",
+  "provider",
+  "worker",
+  "client",
+  "interactive",
+  "on-drag",
+  "NETWORK_REQUEST_FAILED",
+  "AUTHENTICATED",
+  "WORKER_PROFILE_INCOMPLETE",
+  "/auth/register/complete",
+  "/orders?mode=client",
+  "/orders?mode=worker"
 ]);
 
 export function normalizeCopy(value) {

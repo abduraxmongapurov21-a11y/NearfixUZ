@@ -24,9 +24,9 @@
 2. Copy the resulting EAS project UUID and create these variables in the EAS `production` environment:
 
    - `EXPO_PUBLIC_EAS_PROJECT_ID` — the EAS project UUID (plain text).
-   - `GOOGLE_MAPS_ANDROID_API_KEY` — an Android-restricted Google Maps Platform key (sensitive).
+   - `YANDEX_MAPKIT_API_KEY` — an Android/iOS-restricted Yandex MapKit SDK key (sensitive).
 
-   Restrict the Google Maps key to Android application ID `uz.nearfix.app` and the SHA-1 fingerprint of the production Android signing certificate shown by `eas credentials --platform android`.
+   Restrict the Yandex MapKit key to the NearFIX native application identifiers (`uz.nearfix.app`). This is a MapKit SDK key, not a Yandex Geocoder key.
 
 3. Configure store credentials:
 
@@ -34,6 +34,14 @@
    - Android: create the app in Google Play Console, enable Play App Signing, then upload a Google Service Account JSON key through `eas credentials --platform android`.
 
 Never commit Apple keys, Android keystores or Google Service Account JSON files.
+
+## Native project policy
+
+NearFIX uses Expo Continuous Native Generation. The root `android/` and `ios/` directories are generated from
+`app.base.json`, `app.config.js`, Expo config plugins and the package lock, so they stay ignored and are not part of
+the release commit. Generate them locally when native debugging is required; EAS generates clean native projects for
+store builds. APK/AAB/IPA outputs, local database dumps and `backend/uploads/` are local artifacts and must not be
+committed.
 
 ## Local release gate
 
@@ -91,4 +99,4 @@ Android is submitted to the internal track as a draft. Promote it in Play Consol
 
 ## Known external prerequisites
 
-The repository cannot supply or validate these without the owner accounts: Expo/EAS project access, Apple signing access, Google Play Developer access, the Google Service Account key, the production Google Maps key, store screenshots and the public support email.
+The repository cannot supply or validate these without the owner accounts: Expo/EAS project access, Apple signing access, Google Play Developer access, the Google Service Account key, the production Yandex MapKit key, store screenshots and the public support email.

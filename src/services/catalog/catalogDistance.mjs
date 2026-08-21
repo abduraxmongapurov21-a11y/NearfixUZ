@@ -46,7 +46,7 @@ export function hasAddressCoordinates(address) {
 }
 
 export function resolveCatalogOriginAddressId(currentAddressId, addresses = []) {
-  const eligibleAddresses = addresses.filter(hasAddressCoordinates);
+  const eligibleAddresses = addresses.filter((address) => !address?.isOptimistic && hasAddressCoordinates(address));
   const selected = eligibleAddresses.find((address) => address.id === currentAddressId);
   if (selected) return selected.id;
 

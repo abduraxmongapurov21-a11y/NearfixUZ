@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createInstance } from "i18next";
+import { WORKER_APPLICATION_STATES, workerApplicationStatusCopy } from "../src/services/workers/workerApplicationState.mjs";
 
 const root = process.cwd();
 const locales = Object.fromEntries(
@@ -26,14 +27,24 @@ await instance.init({
 
 assert.equal(instance.t("Uy"), "Uy");
 assert.equal(instance.t("{{value0}} ta manzil", { value0: 3 }), "3 ta manzil");
+for (const state of WORKER_APPLICATION_STATES) {
+  const copy = workerApplicationStatusCopy(state);
+  assert.notEqual(copy, state);
+  assert.equal(instance.exists(copy), true);
+}
+assert.equal(instance.t(workerApplicationStatusCopy("FUTURE_STATE")), "Noma'lum");
 
 await instance.changeLanguage("en");
 assert.equal(instance.t("Uy"), "Home");
 assert.equal(instance.t("Bosh"), "Home");
 assert.equal(instance.t("Usta"), "Professional");
 assert.equal(instance.t("{{value0}} ta manzil", { value0: 3 }), "3 addresses");
+assert.deepEqual(WORKER_APPLICATION_STATES.map((state) => instance.t(workerApplicationStatusCopy(state))), ["Draft", "Submitted", "Rejected", "Approved", "Suspended"]);
+assert.equal(instance.t(workerApplicationStatusCopy("FUTURE_STATE")), "Unknown");
 
 await instance.changeLanguage("ru");
+assert.deepEqual(WORKER_APPLICATION_STATES.map((state) => instance.t(workerApplicationStatusCopy(state))), ["Черновик", "Отправлено", "Отклонено", "Одобрено", "Приостановлено"]);
+assert.equal(instance.t(workerApplicationStatusCopy("FUTURE_STATE")), "Неизвестно");
 assert.equal(instance.t("Uy"), "Главная");
 assert.equal(instance.t("Bosh"), "Главная");
 assert.equal(instance.t("Usta"), "Специалист");

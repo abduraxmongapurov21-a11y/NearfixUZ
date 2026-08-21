@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
-import { configureClientStoreForTests, useClientStore } from "../../src/store/clientStore.js";
-import { configureWorkerStoreForTests, useWorkerStore } from "../../src/store/workerStore.js";
+
+process.env.EXPO_PUBLIC_APP_ENV = "development";
+process.env.EXPO_PUBLIC_API_BASE_URL = "http://127.0.0.1:4000";
+
+const { configureClientStoreForTests, useClientStore } = await import("../../src/store/clientStore.js");
+const { configureWorkerStoreForTests, useWorkerStore } = await import("../../src/store/workerStore.js");
+const { useAuthStore } = await import("../../src/store/authStore.js");
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
 
@@ -16,9 +21,14 @@ let session: { userId: string; token: string } | null = null;
 const clientCalls = {
   addresses: [] as Deferred<any>[],
   favorites: [] as Deferred<any>[],
+  favoriteAdd: [] as Deferred<any>[],
+  favoriteRemove: [] as Deferred<any>[],
   create: [] as Deferred<any>[],
   update: [] as Deferred<any>[],
-  remove: [] as Deferred<any>[]
+  remove: [] as Deferred<any>[],
+  orders: [] as Deferred<any>[],
+  orderCreate: [] as Deferred<any>[],
+  orderCancel: [] as Deferred<any>[]
 };
 const workerCalls = {
   profile: [] as Deferred<any>[],
@@ -45,9 +55,14 @@ const restoreClientDependencies = configureClientStoreForTests({
   getSession: () => session,
   getAddressesApi: () => take(clientCalls.addresses),
   fetchFavoritesApi: () => take(clientCalls.favorites),
+  addFavoriteApi: () => take(clientCalls.favoriteAdd),
+  removeFavoriteApi: () => take(clientCalls.favoriteRemove),
   createAddressApi: () => take(clientCalls.create),
   updateAddressApi: () => take(clientCalls.update),
-  deleteAddressApi: () => take(clientCalls.remove)
+  deleteAddressApi: () => take(clientCalls.remove),
+  fetchOrdersApi: () => take(clientCalls.orders),
+  createOrderApi: () => take(clientCalls.orderCreate),
+  cancelOrderApi: () => take(clientCalls.orderCancel)
 });
 const restoreWorkerDependencies = configureWorkerStoreForTests({
   getSession: () => session,
@@ -152,6 +167,52 @@ async function testClientAccountSwitches() {
   aRemoveResponse.resolve({ ok: true });
   assert.equal((await aRemove).stale, true);
   assert.deepEqual(useClientStore.getState().savedAddresses.map((item) => item.id), ["b-keep"]);
+
+  resetStores();
+  setAccount("a");
+  const aOrdersResponse = enqueue(clientCalls.orders);
+  const aOrders = useClientStore.getState().syncOrdersFromApi();
+  useClientStore.getState().clearUserData();
+  setAccount("b");
+  const bOrdersResponse = enqueue(clientCalls.orders);
+  const bOrders = useClientStore.getState().syncOrdersFromApi();
+  bOrdersResponse.resolve({ ok: true, orders: [{ id: "b-order", statusKey: "completed" }] });
+  await bOrders;
+  aOrdersResponse.resolve({ ok: true, orders: [{ id: "a-order", statusKey: "completed" }] });
+  assert.equal((await aOrders).stale, true);
+  assert.deepEqual(useClientStore.getState().orders.map((item) => item.id), ["b-order"]);
+
+  resetStores();
+  setAccount("a");
+  useClientStore.setState({ workers: [{ id: "a-worker", specialty: "A" }], selectedWorkerId: "a-worker", orderDraft: { selectedWorkerId: "a-worker" } });
+  const aCreateOrderResponse = enqueue(clientCalls.orderCreate);
+  const aCreateOrder = useClientStore.getState().createOrderFromDraft();
+  useClientStore.getState().clearUserData();
+  setAccount("b");
+  useClientStore.setState({ workers: [{ id: "b-worker", specialty: "B" }], selectedWorkerId: "b-worker", orderDraft: { selectedWorkerId: "b-worker" } });
+  const bCreateOrderResponse = enqueue(clientCalls.orderCreate);
+  const bCreateOrder = useClientStore.getState().createOrderFromDraft();
+  bCreateOrderResponse.resolve({ ok: true, order: { id: "b-created-order" } });
+  await bCreateOrder;
+  aCreateOrderResponse.resolve({ ok: true, order: { id: "a-created-order" } });
+  assert.equal((await aCreateOrder).stale, true);
+  assert.equal(useClientStore.getState().activeOrder.id, "b-created-order");
+
+  resetStores();
+  setAccount("a");
+  useClientStore.setState({ activeOrder: { id: "a-active" } });
+  const aCancelResponse = enqueue(clientCalls.orderCancel);
+  const aCancel = useClientStore.getState().cancelActiveOrder("a");
+  useClientStore.getState().clearUserData();
+  setAccount("b");
+  useClientStore.setState({ activeOrder: { id: "b-active" } });
+  const bCancelResponse = enqueue(clientCalls.orderCancel);
+  const bCancel = useClientStore.getState().cancelActiveOrder("b");
+  bCancelResponse.resolve({ ok: true, order: { id: "b-active", statusKey: "cancelled" } });
+  await bCancel;
+  aCancelResponse.resolve({ ok: true, order: { id: "a-active", statusKey: "cancelled" } });
+  assert.equal((await aCancel).stale, true);
+  assert.equal(useClientStore.getState().activeOrder.id, "b-active");
 }
 
 async function testClientSameAccountOrdering() {
@@ -177,6 +238,49 @@ async function testClientSameAccountOrdering() {
   olderUpdateResponse.resolve({ ok: true, address: { id: "same", title: "older saved", isDefault: true } });
   assert.equal((await olderUpdate).stale, true);
   assert.equal(useClientStore.getState().savedAddresses[0].title, "newer saved");
+}
+
+async function testFavoriteMutationRaces() {
+  resetStores();
+  setAccount("a");
+  const staleAddResponse = enqueue(clientCalls.favoriteAdd);
+  const staleAdd = useClientStore.getState().toggleFavoriteWorker("shared-worker");
+  useClientStore.getState().clearUserData();
+  setAccount("b");
+  useClientStore.setState({ favoriteWorkerIds: ["b-worker"] });
+  staleAddResponse.resolve({ ok: true });
+  assert.equal((await staleAdd).stale, true);
+  assert.deepEqual(useClientStore.getState().favoriteWorkerIds, ["b-worker"]);
+
+  resetStores();
+  setAccount("a");
+  useClientStore.setState({ favoriteWorkerIds: ["shared-worker"] });
+  const staleRemoveResponse = enqueue(clientCalls.favoriteRemove);
+  const staleRemove = useClientStore.getState().toggleFavoriteWorker("shared-worker");
+  useClientStore.getState().clearUserData();
+  setAccount("b");
+  useClientStore.setState({ favoriteWorkerIds: ["shared-worker", "b-worker"] });
+  staleRemoveResponse.resolve({ ok: true });
+  assert.equal((await staleRemove).stale, true);
+  assert.deepEqual(useClientStore.getState().favoriteWorkerIds, ["shared-worker", "b-worker"]);
+
+  resetStores();
+  setAccount("b");
+  const failedAddResponse = enqueue(clientCalls.favoriteAdd);
+  const failedAdd = useClientStore.getState().toggleFavoriteWorker("failed-worker");
+  failedAddResponse.resolve({ ok: false, message: "rejected" });
+  assert.equal((await failedAdd).ok, false);
+  assert.deepEqual(useClientStore.getState().favoriteWorkerIds, []);
+
+  const olderResponse = enqueue(clientCalls.favoriteAdd);
+  const newerResponse = enqueue(clientCalls.favoriteAdd);
+  const older = useClientStore.getState().toggleFavoriteWorker("overlap-worker");
+  const newer = useClientStore.getState().toggleFavoriteWorker("overlap-worker");
+  newerResponse.resolve({ ok: true });
+  assert.equal((await newer).ok, true);
+  olderResponse.resolve({ ok: true });
+  assert.equal((await older).stale, true);
+  assert.deepEqual(useClientStore.getState().favoriteWorkerIds, ["overlap-worker"]);
 }
 
 function queueWorkerSync() {
@@ -252,13 +356,47 @@ async function testWorkerRaces() {
   assert.equal(useWorkerStore.getState().workerProfile.serviceLat, 41.32);
 }
 
+async function testModeSwitchInvalidatesStaleRoleState() {
+  resetStores();
+  setAccount("a");
+  const persisted = new Map<string, string>();
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (key: string) => persisted.get(key) ?? null,
+      setItem: (key: string, value: string) => persisted.set(key, value),
+      removeItem: (key: string) => persisted.delete(key)
+    }
+  };
+  useAuthStore.setState({
+    session: { userId: "account-a", token: "test-token-a", role: "provider", experienceMode: "client", sessionVersion: 2 },
+    invalidation: null
+  });
+  const lateClientOrdersResponse = enqueue(clientCalls.orders);
+  const lateClientOrders = useClientStore.getState().syncOrdersFromApi();
+  assert.equal(useAuthStore.getState().setExperienceMode("worker"), true);
+  lateClientOrdersResponse.resolve({ ok: true, orders: [{ id: "stale-client-order" }] });
+  assert.equal((await lateClientOrders).stale, true);
+  assert.deepEqual(useClientStore.getState().orders, []);
+
+  const lateWorkerResponses = queueWorkerSync();
+  const lateWorkerSync = useWorkerStore.getState().syncWorkerFromApi();
+  assert.equal(useAuthStore.getState().setExperienceMode("client"), true);
+  resolveWorkerSync(lateWorkerResponses, "a");
+  assert.equal((await lateWorkerSync).stale, true);
+  assert.equal(useWorkerStore.getState().workerProfile, null);
+  assert.equal(useAuthStore.getState().session?.experienceMode, "client");
+}
+
 try {
   await testClientAccountSwitches();
   await testClientSameAccountOrdering();
+  await testFavoriteMutationRaces();
   await testWorkerRaces();
+  await testModeSwitchInvalidatesStaleRoleState();
   console.log("Real client and worker store deferred race tests passed.");
 } finally {
   resetStores();
+  useAuthStore.setState({ session: null, invalidation: null, pendingIntent: null });
   restoreClientDependencies();
   restoreWorkerDependencies();
 }

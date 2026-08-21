@@ -3,6 +3,7 @@ import { apiRequest, httpRequest } from "../api/client";
 function authSessionResult(payload) {
   return {
     ok: true,
+    status: payload.status || "AUTHENTICATED",
     token: payload.token,
     accessToken: payload.accessToken,
     refreshToken: payload.refreshToken,
@@ -39,6 +40,26 @@ export async function verifyAuthOtp(phone, code, purpose = "AUTH") {
     const payload = await httpRequest("/auth/otp/verify", {
       method: "POST",
       body: { phone, code, purpose }
+    });
+
+    if (payload.status === "REGISTRATION_REQUIRED") {
+      return {
+        ok: true,
+        status: payload.status,
+        registrationToken: payload.registrationToken,
+        expiresIn: payload.expiresIn
+      };
+    }
+
+    return authSessionResult(payload);
+  });
+}
+
+export async function completeOtpRegistration(registrationToken, name) {
+  return apiRequest(async () => {
+    const payload = await httpRequest("/auth/register/complete", {
+      method: "POST",
+      body: { registrationToken, name }
     });
 
     return authSessionResult(payload);

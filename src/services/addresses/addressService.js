@@ -8,7 +8,8 @@ function toAddressPayload(address) {
     title: address.title || address.label,
     address: address.address || address.addressText,
     lat: address.lat ?? address.latitude,
-    lng: address.lng ?? address.longitude
+    lng: address.lng ?? address.longitude,
+    district: address.district
   };
 
   if (address.isDefault !== undefined) {

@@ -7,6 +7,7 @@ import { colors } from "../../theme";
 import { AuthScreenLayout, authStyles } from "./AuthScreenLayout";
 import { authErrorMessage } from "./authHelpers";
 import { Alert, Text, TextInput } from "../../i18n/native";
+import { resumeAfterAuthentication } from "../../navigation/protectedActions";
 
 export function DemoPasswordScreen({ navigation, route }) {
   const { phone } = route.params || {};
@@ -33,6 +34,9 @@ export function DemoPasswordScreen({ navigation, route }) {
       const result = await loginWithDemoPassword(phone, password);
       if (!result.ok) {
         Alert.alert("Kirish amalga oshmadi", authErrorMessage(result, "Parol yoki demo hisob noto'g'ri."));
+      } else {
+        const resumed = await resumeAfterAuthentication(navigation, result.role);
+        if (!resumed.ok) Alert.alert("Usta mavjud emas", "Usta hozir buyurtma qabul qilmayapti. Boshqa ustani tanlang.");
       }
     } finally {
       setLoading(false);

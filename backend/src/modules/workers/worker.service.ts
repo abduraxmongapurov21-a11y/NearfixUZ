@@ -22,7 +22,52 @@ type WorkerProfilePatch = {
   serviceLng?: number;
 };
 
+type WorkerApplicationPatch = Omit<WorkerProfilePatch, "serviceLat" | "serviceLng">;
+
 const platformFeeRate = 0.05;
+
+const publicWorkerSelect = {
+  id: true,
+  profession: true,
+  professions: true,
+  experienceYears: true,
+  profileImageUrl: true,
+  bio: true,
+  basePrice: true,
+  ratingAvg: true,
+  completedOrdersCount: true,
+  user: {
+    select: {
+      name: true,
+      cityId: true
+    }
+  },
+  availability: {
+    select: {
+      status: true
+    }
+  }
+} satisfies Prisma.WorkerProfileSelect;
+
+type PublicWorkerRecord = Prisma.WorkerProfileGetPayload<{ select: typeof publicWorkerSelect }>;
+
+export function toPublicWorkerDto(worker: PublicWorkerRecord, distanceMeters: number | null = null) {
+  return {
+    id: worker.id,
+    name: worker.user.name,
+    cityId: worker.user.cityId,
+    profession: worker.profession,
+    professions: worker.professions,
+    experienceYears: worker.experienceYears,
+    profileImageUrl: worker.profileImageUrl,
+    bio: worker.bio,
+    basePrice: worker.basePrice,
+    ratingAvg: worker.ratingAvg,
+    completedOrdersCount: worker.completedOrdersCount,
+    availability: worker.availability ? { status: worker.availability.status } : null,
+    distanceMeters
+  };
+}
 
 function startOfDay(date: Date) {
   const value = new Date(date);
@@ -141,6 +186,128 @@ function assertProfileCompleteForReview(worker: Parameters<typeof missingRequire
   }
 }
 
+function toWorkerApplicationDto(worker: {
+  id: string;
+  status: WorkerProfileStatus;
+  profession: string | null;
+  professions: string[];
+  experienceYears: number | null;
+  profileImageUrl: string | null;
+  bio: string | null;
+  basePrice: number | null;
+  submittedAt: Date | null;
+  moderationReason: string | null;
+  user: { name: string | null; cityId: string | null };
+}) {
+  return {
+    id: worker.id,
+    state: worker.status === WorkerProfileStatus.APPROVED
+      ? "APPROVED"
+      : worker.submittedAt
+        ? "SUBMITTED"
+        : worker.moderationReason
+          ? "REJECTED"
+          : "DRAFT",
+    name: worker.user.name,
+    cityId: worker.user.cityId,
+    profession: worker.profession,
+    professions: worker.professions,
+    experienceYears: worker.experienceYears,
+    profileImageUrl: worker.profileImageUrl,
+    bio: worker.bio,
+    basePrice: worker.basePrice,
+    submittedAt: worker.submittedAt,
+    moderationReason: worker.moderationReason
+  };
+}
+
+const workerApplicationSelect = {
+  id: true,
+  status: true,
+  profession: true,
+  professions: true,
+  experienceYears: true,
+  profileImageUrl: true,
+  bio: true,
+  basePrice: true,
+  submittedAt: true,
+  moderationReason: true,
+  user: { select: { name: true, cityId: true } }
+} satisfies Prisma.WorkerProfileSelect;
+
+async function assertClientApplicant(userId: string, tx: Prisma.TransactionClient | typeof prisma = prisma) {
+  const user = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (!user) throw Object.assign(new Error("User not found"), { status: 404, code: "USER_NOT_FOUND" });
+  if (user.role !== UserRole.CLIENT) {
+    throw Object.assign(new Error("Only clients can create worker applications"), {
+      status: 403,
+      code: "CLIENT_REQUIRED"
+    });
+  }
+}
+
+export async function getOwnWorkerApplication(userId: string) {
+  await assertClientApplicant(userId);
+  const worker = await prisma.workerProfile.findUnique({ where: { userId }, select: workerApplicationSelect });
+  return worker ? toWorkerApplicationDto(worker) : null;
+}
+
+export async function saveOwnWorkerApplication(userId: string, patch: WorkerApplicationPatch) {
+  const { profileData, userData } = normalizeWorkerPatch(patch);
+  return prisma.$transaction(async (tx) => {
+    await assertClientApplicant(userId, tx);
+    if (Object.keys(userData).length) await tx.user.update({ where: { id: userId }, data: userData });
+    const existing = await tx.workerProfile.findUnique({ where: { userId }, select: { status: true, submittedAt: true } });
+    if (existing?.status === WorkerProfileStatus.APPROVED || existing?.status === WorkerProfileStatus.SUSPENDED) {
+      throw Object.assign(new Error("Worker profile already exists"), { status: 409, code: "WORKER_PROFILE_EXISTS" });
+    }
+    if (existing?.submittedAt) {
+      throw Object.assign(new Error("Submitted applications cannot be edited"), {
+        status: 409,
+        code: "WORKER_APPLICATION_SUBMITTED"
+      });
+    }
+    const worker = await tx.workerProfile.upsert({
+      where: { userId },
+      update: profileData,
+      create: { userId, status: WorkerProfileStatus.DRAFT, ...profileData },
+      select: workerApplicationSelect
+    });
+    return toWorkerApplicationDto(worker);
+  });
+}
+
+export async function submitOwnWorkerApplication(userId: string, patch: WorkerApplicationPatch) {
+  const { profileData, userData } = normalizeWorkerPatch(patch);
+  return prisma.$transaction(async (tx) => {
+    await assertClientApplicant(userId, tx);
+    if (Object.keys(userData).length) await tx.user.update({ where: { id: userId }, data: userData });
+    const existing = await tx.workerProfile.findUnique({ where: { userId }, select: { status: true, submittedAt: true } });
+    if (existing?.status === WorkerProfileStatus.APPROVED || existing?.status === WorkerProfileStatus.SUSPENDED) {
+      throw Object.assign(new Error("Worker profile already exists"), { status: 409, code: "WORKER_PROFILE_EXISTS" });
+    }
+    if (existing?.submittedAt) {
+      throw Object.assign(new Error("Application is already submitted"), {
+        status: 409,
+        code: "WORKER_APPLICATION_SUBMITTED"
+      });
+    }
+    const candidate = await tx.workerProfile.upsert({
+      where: { userId },
+      update: profileData,
+      create: { userId, status: WorkerProfileStatus.DRAFT, ...profileData },
+      include: { user: { select: { name: true, cityId: true } } }
+    });
+    assertProfileCompleteForReview(candidate);
+    const submitted = await tx.workerProfile.update({
+      where: { id: candidate.id },
+      data: { submittedAt: new Date(), moderationReason: null },
+      select: workerApplicationSelect
+    });
+    return toWorkerApplicationDto(submitted);
+  });
+}
+
 type CatalogWorkerOptions = {
   originAddressId?: string;
   requester?: Pick<AuthUser, "id" | "role">;
@@ -208,11 +375,7 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
   }
   const origin = await getCatalogOrigin(options);
   const workers = await prisma.workerProfile.findMany({
-    omit: {
-      serviceLat: false,
-      serviceLng: false,
-      serviceLocationUpdatedAt: false
-    },
+    select: publicWorkerSelect,
     where: {
       status: WorkerProfileStatus.APPROVED,
       availability: {
@@ -229,10 +392,6 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
         : undefined,
       user: cityId ? { cityId } : undefined
     },
-    include: {
-      user: true,
-      availability: true
-    },
     orderBy: [
       { availability: { status: "asc" } },
       { ratingAvg: "desc" },
@@ -240,14 +399,23 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
     ]
   });
 
-  const publicWorkers = workers.map((worker) => {
-    const { serviceLat, serviceLng, serviceLocationUpdatedAt: _serviceLocationUpdatedAt, ...publicWorker } = worker;
-    const distanceMeters =
-      origin && serviceLat !== null && serviceLng !== null
-        ? haversineDistanceMeters(origin, { lat: Number(serviceLat), lng: Number(serviceLng) })
-        : null;
+  const coordinatesByWorkerId = new Map<string, Coordinates>();
+  if (origin && workers.length) {
+    const coordinateRows = await prisma.workerProfile.findMany({
+      where: { id: { in: workers.map((worker) => worker.id) } },
+      select: { id: true, serviceLat: true, serviceLng: true }
+    });
+    coordinateRows.forEach((worker) => {
+      if (worker.serviceLat !== null && worker.serviceLng !== null) {
+        coordinatesByWorkerId.set(worker.id, { lat: Number(worker.serviceLat), lng: Number(worker.serviceLng) });
+      }
+    });
+  }
 
-    return { ...publicWorker, distanceMeters };
+  const publicWorkers = workers.map((worker) => {
+    const coordinates = coordinatesByWorkerId.get(worker.id);
+    const distanceMeters = origin && coordinates ? haversineDistanceMeters(origin, coordinates) : null;
+    return toPublicWorkerDto(worker, distanceMeters);
   });
 
   if (options.sort !== "nearest") return publicWorkers;
@@ -262,6 +430,25 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
     const completedDifference = second.completedOrdersCount - first.completedOrdersCount;
     return completedDifference || first.id.localeCompare(second.id);
   });
+}
+
+export async function getPublicWorker(workerId: string) {
+  const worker = await prisma.workerProfile.findFirst({
+    where: {
+      id: workerId,
+      status: WorkerProfileStatus.APPROVED
+    },
+    select: publicWorkerSelect
+  });
+
+  if (!worker) {
+    throw Object.assign(new Error("Worker not found"), {
+      status: 404,
+      code: "WORKER_NOT_FOUND"
+    });
+  }
+
+  return toPublicWorkerDto(worker);
 }
 
 export async function getOwnWorkerProfile(userId: string) {
@@ -462,18 +649,51 @@ export async function updateOwnWorkerServiceLocation(
 export async function approveWorkerProfile(workerId: string, patch: WorkerProfilePatch) {
   const { profileData } = normalizeWorkerPatch(patch);
   return prisma.$transaction(async (tx) => {
-    const worker = await tx.workerProfile.update({
+    const current = await tx.workerProfile.findUnique({
       where: { id: workerId },
-      omit: {
-        serviceLat: false,
-        serviceLng: false,
-        serviceLocationUpdatedAt: false
+      include: { user: true }
+    });
+    const validSubmittedApplication =
+      current?.user.role === UserRole.CLIENT &&
+      current.status === WorkerProfileStatus.DRAFT &&
+      current.submittedAt !== null &&
+      current.moderationReason === null;
+
+    if (!validSubmittedApplication) {
+      throw Object.assign(new Error("Only a submitted client application can be approved"), {
+        status: 409,
+        code: "WORKER_APPROVAL_INVALID_STATE"
+      });
+    }
+
+    const transition = await tx.workerProfile.updateMany({
+      where: {
+        id: workerId,
+        status: WorkerProfileStatus.DRAFT,
+        submittedAt: { not: null },
+        moderationReason: null,
+        user: { role: UserRole.CLIENT }
       },
       data: {
         ...profileData,
         status: WorkerProfileStatus.APPROVED,
         verifiedAt: new Date(),
         moderationReason: null
+      }
+    });
+    if (transition.count !== 1) {
+      throw Object.assign(new Error("Worker application state changed during approval"), {
+        status: 409,
+        code: "WORKER_APPROVAL_INVALID_STATE"
+      });
+    }
+
+    const worker = await tx.workerProfile.findUniqueOrThrow({
+      where: { id: workerId },
+      omit: {
+        serviceLat: false,
+        serviceLng: false,
+        serviceLocationUpdatedAt: false
       },
       include: {
         user: true

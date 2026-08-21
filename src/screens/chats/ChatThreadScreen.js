@@ -127,8 +127,9 @@ export function ChatThreadScreen({ navigation, route }) {
     async function loadMessages() {
       if (!isApiRoom) return;
 
+      const identity = useAuthStore.getState().captureAuthRequest(session.token);
       const result = await fetchChatMessagesApi(session.token, room.id, currentUserId);
-      if (mounted && result.ok) {
+      if (mounted && useAuthStore.getState().isAuthRequestCurrent(identity) && result.ok) {
         setMessages(result.messages.map(mapApiMessageToThread));
         await markChatRoomReadApi(session.token, room.id);
       }
@@ -142,17 +143,18 @@ export function ChatThreadScreen({ navigation, route }) {
   }, [currentUserId, isApiRoom, room.id, session?.token]);
 
   async function handleRefresh() {
+    const identity = useAuthStore.getState().captureAuthRequest(session?.token);
     setRefreshing(true);
 
     if (isApiRoom) {
       const result = await fetchChatMessagesApi(session.token, room.id, currentUserId);
-      if (result.ok) {
+      if (useAuthStore.getState().isAuthRequestCurrent(identity) && result.ok) {
         setMessages(result.messages.map(mapApiMessageToThread));
         await markChatRoomReadApi(session.token, room.id);
       }
     }
 
-    setRefreshing(false);
+    if (useAuthStore.getState().isAuthRequestCurrent(identity)) setRefreshing(false);
   }
 
   useEffect(() => {
@@ -231,6 +233,7 @@ export function ChatThreadScreen({ navigation, route }) {
     }
 
     const pendingId = `pending-text-${Date.now()}`;
+    const identity = useAuthStore.getState().captureAuthRequest(session.token);
     setMessages((current) => [
       ...current,
       {
@@ -244,6 +247,7 @@ export function ChatThreadScreen({ navigation, route }) {
     ]);
 
     const result = await sendChatMessageApi(session.token, room.id, { type: "TEXT", body }, currentUserId);
+    if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
     setMessages((current) =>
       current.map((message) =>
         message.id === pendingId
@@ -316,6 +320,7 @@ export function ChatThreadScreen({ navigation, route }) {
     }
 
     const pendingId = `pending-image-${Date.now()}`;
+    const identity = useAuthStore.getState().captureAuthRequest(session.token);
     setUploading(true);
 
     setMessages((current) => [
@@ -347,6 +352,8 @@ export function ChatThreadScreen({ navigation, route }) {
             }
       );
 
+      if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
+
       if (!uploadResult.ok) throw new Error(uploadResult.message || "Rasm yuklanmadi");
 
       const messageResult = await sendChatMessageApi(
@@ -359,6 +366,8 @@ export function ChatThreadScreen({ navigation, route }) {
         currentUserId
       );
 
+      if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
+
       if (!messageResult.ok) throw new Error(messageResult.message || "Rasmli xabar yuborilmadi");
 
       setMessages((current) =>
@@ -367,6 +376,7 @@ export function ChatThreadScreen({ navigation, route }) {
         )
       );
     } catch (error) {
+      if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
       Alert.alert(
         "Rasm yuborilmadi",
         error?.message || "Internet yoki server holatini tekshirib, qayta urinib ko'ring."
@@ -375,7 +385,7 @@ export function ChatThreadScreen({ navigation, route }) {
         current.map((message) => (message.id === pendingId ? { ...message, status: "failed" } : message))
       );
     } finally {
-      setUploading(false);
+      if (useAuthStore.getState().isAuthRequestCurrent(identity)) setUploading(false);
     }
   }
 
@@ -392,7 +402,9 @@ export function ChatThreadScreen({ navigation, route }) {
         text: "Foydalanuvchini bloklash",
         style: "destructive",
         onPress: async () => {
+          const identity = useAuthStore.getState().captureAuthRequest(session?.token);
           const result = await blockUserApi(session?.token, counterpartUserId);
+          if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
           Alert.alert(
             result.ok ? "Foydalanuvchi bloklandi" : "Bloklab bo‘lmadi",
             result.ok ? "Yangi chat ochish cheklanadi." : result.message || "Qayta urinib ko‘ring."

@@ -64,6 +64,15 @@ export function createApp() {
   const app = express();
 
   app.set("trust proxy", env.TRUST_PROXY);
+  if (env.NODE_ENV !== "production") {
+    app.use((request, response, next) => {
+      response.on("finish", () => {
+        const requestPath = request.originalUrl.split("?", 1)[0];
+        console.log(`[local-api] ${request.method} ${requestPath} ${response.statusCode}`);
+      });
+      next();
+    });
+  }
   app.use(cors(corsOptions));
   app.use(express.json({ limit: "1mb" }));
   app.use("/uploads", express.static(uploadDir));

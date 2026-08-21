@@ -12,6 +12,7 @@ const { OtpPurpose, UserRole } = await import("@prisma/client");
 const { prisma } = await import("../src/db/prisma.js");
 const { env } = await import("../src/config/env.js");
 const { createApp } = await import("../src/http/app.js");
+const { loginWithAppReviewDemo } = await import("../src/modules/auth/auth.service.js");
 const { hashOtpCode } = await import("../src/modules/auth/otp.service.js");
 
 const phone = "+998991119911";
@@ -235,6 +236,38 @@ async function main() {
     });
     assert.equal(nonAllowlistedDemo.response.status, 401);
     assert.equal(nonAllowlistedDemo.payload.code, "INVALID_CREDENTIALS");
+
+    await prisma.user.update({
+      where: { id: demoClient.id },
+      data: { role: UserRole.PROVIDER }
+    });
+    const escalatedProfile = await prisma.workerProfile.create({
+      data: {
+        userId: demoClient.id,
+        status: "APPROVED",
+        profession: "Escalated demo provider",
+        professions: ["Escalated demo provider"]
+      }
+    });
+    const escalatedClientDemo = await post("/auth/app-review/login", {
+      phone: demoClientPhone,
+      password: "DemoClient-123"
+    });
+    assert.equal(escalatedClientDemo.response.status, 200);
+    assert.equal(escalatedClientDemo.payload.user.role, "provider");
+
+    await prisma.workerProfile.update({
+      where: { id: escalatedProfile.id },
+      data: { status: "SUSPENDED" }
+    });
+    await assert.rejects(
+      loginWithAppReviewDemo({
+        phone: demoClientPhone,
+        password: "DemoClient-123"
+      }),
+      (error: unknown) =>
+        Boolean(error && typeof error === "object" && "code" in error && error.code === "INVALID_CREDENTIALS")
+    );
 
     env.APP_REVIEW_DEMO_ENABLED = false;
     const disabledDemo = await post("/auth/app-review/login", {

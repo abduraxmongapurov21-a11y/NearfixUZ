@@ -2,9 +2,20 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from "react-native";
 import * as Location from "expo-location";
 import { ArrowLeft, Crosshair, LocateFixed, MapPin } from "lucide-react-native";
-import MapView from "react-native-maps";
 import { colors, radius, shadow, spacing } from "../../theme";
 import { Alert, Text } from "../../i18n/native";
+import { reverseGeocodeLocation } from "../../services/location/reverseGeocodeLocation";
+import {
+  coordinatesMatch,
+  createLatestReverseGeocodeController
+} from "../../services/location/reverseGeocodeModel.mjs";
+import {
+  DEFAULT_ZOOM,
+  toCanonicalCoordinate,
+  toYandexInitialRegion,
+  toYandexPoint
+} from "../../services/maps/yandexMapAdapter.mjs";
+import { loadYandexMapKit } from "../../services/maps/yandexMapKit";
 
 const TASHKENT_REGION = {
   latitude: 41.311081,
@@ -13,44 +24,118 @@ const TASHKENT_REGION = {
   longitudeDelta: 0.012
 };
 
+const ADDRESS_STATUS = Object.freeze({ IDLE: 0, LOADING: 1, SUCCESS: 2, FAILURE: 3 });
+
 function toRegion(coordinate) {
-  if (typeof coordinate?.latitude !== "number" || typeof coordinate?.longitude !== "number") return TASHKENT_REGION;
+  const canonical = toCanonicalCoordinate(coordinate);
+  if (!canonical) return TASHKENT_REGION;
 
   return {
-    latitude: coordinate.latitude,
-    longitude: coordinate.longitude,
+    latitude: canonical.latitude,
+    longitude: canonical.longitude,
     latitudeDelta: coordinate.latitudeDelta || TASHKENT_REGION.latitudeDelta,
     longitudeDelta: coordinate.longitudeDelta || TASHKENT_REGION.longitudeDelta
   };
 }
 
 function toCoordinate(region) {
-  return {
-    latitude: Number(region.latitude.toFixed(7)),
-    longitude: Number(region.longitude.toFixed(7))
-  };
+  return toCanonicalCoordinate(region) || toCanonicalCoordinate(TASHKENT_REGION);
 }
 
 export function MapPickerScreen({ navigation, route, onSelect }) {
   const mapRef = useRef(null);
+  const mountedRef = useRef(true);
+  const geocoderRef = useRef(null);
+  const programmaticCoordinateRef = useRef(null);
+  const mapKit = useMemo(() => loadYandexMapKit(), []);
   const autoLocate = route?.params?.autoLocate !== false;
-  const showCoordinateText = route?.params?.showCoordinateText !== false;
   const [region, setRegion] = useState(() => toRegion(route?.params?.initialCoordinate));
+  const initialYandexRegionRef = useRef(toYandexInitialRegion(region));
   const [selectedCoordinate, setSelectedCoordinate] = useState(() =>
     toCoordinate(toRegion(route?.params?.initialCoordinate))
+  );
+  const selectedCoordinateRef = useRef(selectedCoordinate);
+  const resolvedLocationRef = useRef(
+    typeof route?.params?.initialCoordinate?.address === "string"
+      ? {
+          coordinate: selectedCoordinate,
+          location: {
+            address: route.params.initialCoordinate.address,
+            ...(route.params.initialCoordinate.city ? { city: route.params.initialCoordinate.city } : {}),
+            ...(route.params.initialCoordinate.district ? { district: route.params.initialCoordinate.district } : {}),
+            ...(route.params.initialCoordinate.street ? { street: route.params.initialCoordinate.street } : {}),
+            ...(route.params.initialCoordinate.postalCode
+              ? { postalCode: route.params.initialCoordinate.postalCode }
+              : {})
+          }
+        }
+      : null
   );
   const [loadingLocation, setLoadingLocation] = useState(autoLocate);
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [addressState, setAddressState] = useState(() => ({
+    status: resolvedLocationRef.current ? ADDRESS_STATUS.SUCCESS : ADDRESS_STATUS.IDLE,
+    coordinate: selectedCoordinate,
+    location: resolvedLocationRef.current?.location || null
+  }));
 
-  const coordinateText = useMemo(
-    () => `${selectedCoordinate.latitude.toFixed(6)}, ${selectedCoordinate.longitude.toFixed(6)}`,
-    [selectedCoordinate]
-  );
+  if (!geocoderRef.current) {
+    geocoderRef.current = createLatestReverseGeocodeController(reverseGeocodeLocation);
+  }
+
+  const readableAddress = useMemo(() => {
+    if (addressState.location && coordinatesMatch(addressState.coordinate, selectedCoordinate)) {
+      return addressState.location.address;
+    }
+    return null;
+  }, [addressState, selectedCoordinate]);
 
   useEffect(() => {
+    mountedRef.current = true;
     if (autoLocate) centerOnCurrentLocation();
-  }, [autoLocate]);
+    else resolveSelectedAddress(selectedCoordinateRef.current);
+
+    return () => {
+      mountedRef.current = false;
+      geocoderRef.current?.invalidate();
+    };
+    // Route configuration is immutable while this picker instance is mounted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function selectCoordinate(coordinate) {
+    const selected = toCoordinate(coordinate);
+    if (!coordinatesMatch(selectedCoordinateRef.current, selected)) {
+      resolvedLocationRef.current = null;
+    }
+    selectedCoordinateRef.current = selected;
+    setSelectedCoordinate(selected);
+    return selected;
+  }
+
+  async function resolveSelectedAddress(coordinate) {
+    const selected = toCoordinate(coordinate);
+    const preservedLocation = coordinatesMatch(resolvedLocationRef.current?.coordinate, selected)
+      ? resolvedLocationRef.current.location
+      : null;
+    setAddressState({ status: ADDRESS_STATUS.LOADING, coordinate: selected, location: preservedLocation });
+
+    const result = await geocoderRef.current.resolve(selected);
+    if (!mountedRef.current || result.stale || !coordinatesMatch(selectedCoordinateRef.current, result.coordinate)) {
+      return { ...result, stale: true };
+    }
+
+    if (result.ok) {
+      resolvedLocationRef.current = { coordinate: result.coordinate, location: result.location };
+      setAddressState({ status: ADDRESS_STATUS.SUCCESS, coordinate: result.coordinate, location: result.location });
+    } else {
+      setAddressState({ status: ADDRESS_STATUS.FAILURE, coordinate: result.coordinate, location: preservedLocation });
+    }
+
+    return result;
+  }
 
   async function centerOnCurrentLocation() {
     setLoadingLocation(true);
@@ -81,26 +166,60 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
       };
 
       setRegion(nextRegion);
-      setSelectedCoordinate(toCoordinate(nextRegion));
-      mapRef.current?.animateToRegion(nextRegion, 450);
-    } catch (error) {
+      const selected = selectCoordinate(nextRegion);
+      programmaticCoordinateRef.current = selected;
+      mapRef.current?.setCenter(toYandexPoint(selected), DEFAULT_ZOOM, 0, 0, 0.45);
+      await resolveSelectedAddress(selected);
+    } catch {
       setLocationPermissionGranted(false);
-      Alert.alert("Lokatsiya topilmadi", error?.message || "Joriy joylashuvni olishda xatolik yuz berdi.");
+      Alert.alert("Lokatsiya topilmadi", "Joriy joylashuvni olishda xatolik yuz berdi.");
     } finally {
       setLoadingLocation(false);
     }
   }
 
-  function handleRegionChangeComplete(nextRegion) {
-    setRegion(nextRegion);
-    setSelectedCoordinate(toCoordinate(nextRegion));
+  function handleCameraPositionChangeEnd(event) {
+    const nextCoordinate = toCanonicalCoordinate(event);
+    if (!nextCoordinate) return;
+
+    setRegion((current) => ({ ...current, ...nextCoordinate }));
+    const selected = selectCoordinate(nextCoordinate);
+    if (coordinatesMatch(programmaticCoordinateRef.current, selected)) {
+      programmaticCoordinateRef.current = null;
+      return;
+    }
+
+    programmaticCoordinateRef.current = null;
+    resolveSelectedAddress(selected);
   }
 
-  function handleConfirm() {
-    const selected = selectedCoordinate || toCoordinate(region);
+  async function handleConfirm() {
+    if (confirming) return;
+    setConfirming(true);
+
+    let selected = selectedCoordinateRef.current || toCoordinate(region);
+    let result = await resolveSelectedAddress(selected);
+
+    if (result.stale || !coordinatesMatch(selected, selectedCoordinateRef.current)) {
+      selected = selectedCoordinateRef.current;
+      result = await resolveSelectedAddress(selected);
+    }
+
+    if (!mountedRef.current || result.stale || !coordinatesMatch(selected, selectedCoordinateRef.current)) {
+      if (mountedRef.current) setConfirming(false);
+      return;
+    }
+
+    const matchingLocation = result.ok
+      ? result.location
+      : coordinatesMatch(resolvedLocationRef.current?.coordinate, selected)
+        ? resolvedLocationRef.current.location
+        : null;
+    const confirmedSelection = matchingLocation ? { ...selected, ...matchingLocation } : selected;
 
     if (typeof onSelect === "function") {
-      onSelect(selected);
+      onSelect(confirmedSelection);
+      setConfirming(false);
       return;
     }
 
@@ -109,14 +228,14 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
         navigation.navigate(route.params.returnTo, {
           screen: route.params.returnScreen,
           params: {
-            [route.params.returnParamKey || "selectedLocation"]: selected
+            [route.params.returnParamKey || "selectedLocation"]: confirmedSelection
           }
         });
         return;
       }
 
       navigation.navigate(route.params.returnTo, {
-        [route.params.returnParamKey || "selectedLocation"]: selected
+        [route.params.returnParamKey || "selectedLocation"]: confirmedSelection
       });
       return;
     }
@@ -129,21 +248,39 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
       <View style={styles.unsupported}>
         <Text style={styles.unsupportedTitle}>Xarita mobil ilovada ishlaydi</Text>
         <Text style={styles.unsupportedText}>
-          MapPickerScreen react-native-maps orqali Android va iOS uchun tayyorlangan.
+          MapPickerScreen Yandex MapKit orqali Android va iOS uchun tayyorlangan.
         </Text>
       </View>
     );
   }
 
+  if (!mapKit.ready) {
+    return (
+      <View style={styles.unsupported}>
+        <Text style={styles.unsupportedTitle}>Yandex xarita sozlanmagan</Text>
+        <Text style={styles.unsupportedText}>
+          {mapKit.reason === "missing-key"
+            ? "Native builddan oldin YANDEX_MAPKIT_API_KEY muhit o'zgaruvchisini kiriting."
+            : "Yandex MapKit Expo Go'da ishlamaydi. Native development buildni o'rnating."}
+        </Text>
+        <Pressable onPress={() => navigation.goBack()} style={styles.unavailableButton}>
+          <Text style={styles.unavailableButtonText}>Orqaga</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const YandexMap = mapKit.MapComponent;
+
   return (
     <View style={styles.screen}>
-      <MapView
+      <YandexMap
         ref={mapRef}
         style={styles.map}
-        initialRegion={region}
-        showsUserLocation={locationPermissionGranted && !permissionDenied}
-        showsMyLocationButton={false}
-        onRegionChangeComplete={handleRegionChangeComplete}
+        initialRegion={initialYandexRegionRef.current}
+        showUserPosition={locationPermissionGranted && !permissionDenied}
+        followUser={false}
+        onCameraPositionChangeEnd={handleCameraPositionChangeEnd}
       />
 
       <View pointerEvents="none" style={styles.centerPinWrap}>
@@ -170,19 +307,30 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
       <View style={styles.footer}>
         <View style={styles.coordinateRow}>
           <View style={styles.coordinateIcon}>
-            <Crosshair size={19} color={colors.primary} strokeWidth={2.7} />
+            {addressState.status === ADDRESS_STATUS.LOADING ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <Crosshair size={19} color={colors.primary} strokeWidth={2.7} />
+            )}
           </View>
           <View style={styles.coordinateBody}>
-            <Text style={styles.coordinateLabel}>Tanlangan nuqta</Text>
-            <Text style={styles.coordinateText} translate={!showCoordinateText}>
-              {showCoordinateText
-                ? coordinateText
-                : route?.params?.selectionDescription || "Xarita markazidagi pin xizmat boshlash nuqtasini belgilaydi."}
+            <Text style={styles.coordinateLabel}>Tanlangan manzil</Text>
+            <Text style={styles.coordinateText} translate={!readableAddress} numberOfLines={2}>
+              {readableAddress ||
+                (addressState.status === ADDRESS_STATUS.LOADING
+                  ? "Manzil aniqlanmoqda..."
+                  : addressState.status === ADDRESS_STATUS.FAILURE
+                    ? "Manzil aniqlanmadi. Koordinata saqlanadi."
+                    : route?.params?.selectionDescription || "Manzil aniqlanmoqda...")}
             </Text>
           </View>
         </View>
-        <Pressable onPress={handleConfirm} style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]}>
-          <Text style={styles.confirmText}>Tanlash</Text>
+        <Pressable
+          onPress={handleConfirm}
+          disabled={confirming}
+          style={({ pressed }) => [styles.confirmButton, (pressed || confirming) && styles.pressed]}
+        >
+          <Text style={styles.confirmText}>{confirming ? "Manzil tekshirilmoqda..." : "Tanlash"}</Text>
         </Pressable>
       </View>
     </View>
@@ -326,5 +474,19 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 21,
     textAlign: "center"
+  },
+  unavailableButton: {
+    minWidth: 120,
+    minHeight: 46,
+    marginTop: spacing.lg,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.secondary
+  },
+  unavailableButtonText: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: "900"
   }
 });

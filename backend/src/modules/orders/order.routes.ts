@@ -52,7 +52,8 @@ orderRouter.post("/", authenticate, async (request, response, next) => {
 
 orderRouter.get("/", authenticate, async (request, response, next) => {
   try {
-    const orders = await listOrdersForUser(request.user!);
+    const requestedMode = typeof request.query.mode === "string" ? request.query.mode : undefined;
+    const orders = await listOrdersForUser(request.user!, requestedMode);
 
     response.json({
       ok: true,
