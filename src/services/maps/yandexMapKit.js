@@ -1,8 +1,10 @@
 import Constants from "expo-constants";
+import { toYandexMapKitLocale } from "../location/reverseGeocodeModel.mjs";
 
 let cachedIntegration;
+let cachedGeocoder;
 
-export function loadYandexMapKit() {
+export function loadYandexMapKit(locale) {
   if (cachedIntegration) return cachedIntegration;
 
   const apiKey = Constants.expoConfig?.extra?.yandexMapKitApiKey;
@@ -17,11 +19,39 @@ export function loadYandexMapKit() {
     // crashing Expo Go or an older development binary before this fallback runs.
     const { Yamap } = require("react-native-yamap-plus/src/components/Yamap/Yamap");
     const { YamapInstance } = require("react-native-yamap-plus/src/modules/YamapInstance");
-    YamapInstance.init(apiKey);
-    cachedIntegration = { ready: true, MapComponent: Yamap };
+    const mapKitLocale = toYandexMapKitLocale(locale);
+    const initialization = Promise.resolve(mapKitLocale ? YamapInstance.setLocale(mapKitLocale) : undefined).then(() =>
+      YamapInstance.init(apiKey)
+    );
+    void initialization.catch(() => undefined);
+    cachedIntegration = { ready: true, MapComponent: Yamap, YamapInstance, initialization };
   } catch {
     cachedIntegration = { ready: false, reason: "native-module-unavailable" };
   }
 
   return cachedIntegration;
+}
+
+export function loadYandexGeocoder(locale) {
+  if (cachedGeocoder) return cachedGeocoder;
+
+  const mapKit = loadYandexMapKit(locale);
+  if (!mapKit.ready) {
+    cachedGeocoder = mapKit;
+    return cachedGeocoder;
+  }
+
+  try {
+    const { Search } = require("react-native-yamap-plus/src/modules/Search");
+    cachedGeocoder = {
+      ready: true,
+      Search,
+      YamapInstance: mapKit.YamapInstance,
+      initialization: mapKit.initialization
+    };
+  } catch {
+    cachedGeocoder = { ready: false, reason: "search-module-unavailable" };
+  }
+
+  return cachedGeocoder;
 }

@@ -13,6 +13,8 @@ import { useClientStore } from "../../store/clientStore";
 import { ReportModal } from "../../components/moderation/ReportModal";
 import { SupportRequestModal } from "../../components/support/SupportRequestModal";
 import { Alert, Text } from "../../i18n/native";
+import { OrderRatingCard } from "../../components/orders/OrderRatingCard";
+import { submitOrderReviewApi } from "../../services/orders/orderService";
 
 const font = {
   medium: "Inter_500Medium",
@@ -42,7 +44,7 @@ function resolveAmount(order) {
   return amount;
 }
 
-export function OrdersScreen({ navigation }) {
+export function OrdersScreen({ navigation, route }) {
   const session = useAuthStore((state) => state.session);
   const [tab, setTab] = useState("active");
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -50,15 +52,24 @@ export function OrdersScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [reportOrderId, setReportOrderId] = useState(null);
   const [supportOrderId, setSupportOrderId] = useState(null);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const orders = useClientStore((state) => state.orders);
   const activeOrder = useClientStore((state) => state.activeOrder);
   const workers = useClientStore((state) => state.workers);
   const cancelActiveOrder = useClientStore((state) => state.cancelActiveOrder);
   const syncOrdersFromApi = useClientStore((state) => state.syncOrdersFromApi);
+  const syncCatalogFromApi = useClientStore((state) => state.syncCatalogFromApi);
 
   useEffect(() => {
     syncOrdersFromApi();
   }, [syncOrdersFromApi]);
+
+  useEffect(() => {
+    const targetOrderId = route?.params?.orderId;
+    if (!targetOrderId) return;
+    const targetOrder = orders.find((order) => order.id === targetOrderId);
+    if (targetOrder) setDetailOrder(targetOrder);
+  }, [orders, route?.params?.orderId]);
 
   const activeOrders = useMemo(
     () =>
@@ -110,6 +121,27 @@ export function OrdersScreen({ navigation }) {
     setRefreshing(false);
   }
 
+  async function handleReview(rating, comment) {
+    if (!session?.token || !detailOrder?.id || reviewSubmitting) return;
+    setReviewSubmitting(true);
+    const result = await submitOrderReviewApi(session.token, detailOrder.id, rating, comment);
+    setReviewSubmitting(false);
+
+    if (!result.ok) {
+      const duplicate = result.code === "ORDER_REVIEW_EXISTS";
+      Alert.alert(
+        duplicate ? "Baho allaqachon yuborilgan" : "Bahoni yuborib bo‘lmadi",
+        result.message || "Qayta urinib ko‘ring."
+      );
+      if (duplicate) await syncOrdersFromApi();
+      return;
+    }
+
+    setDetailOrder((current) => current?.id === detailOrder.id ? { ...current, review: result.review } : current);
+    await Promise.all([syncOrdersFromApi(), syncCatalogFromApi()]);
+    Alert.alert("Rahmat!", "Bahoyingiz usta reytingiga qo‘shildi.");
+  }
+
   if (detailOrder) {
     const canCancel = activeStatusKeys.includes(detailOrder.statusKey) && activeOrder?.id === detailOrder.id;
 
@@ -141,6 +173,13 @@ export function OrdersScreen({ navigation }) {
             onReport={() => setReportOrderId(detailOrder.id)}
             onSupport={() => setSupportOrderId(detailOrder.id)}
           />
+          {detailOrder.statusKey === TRACKING_STATUSES.COMPLETED ? (
+            <OrderRatingCard
+              review={detailOrder.review}
+              submitting={reviewSubmitting}
+              onSubmit={handleReview}
+            />
+          ) : null}
         </ScrollView>
         <CancelReasonSheet visible={cancelOpen} onClose={() => setCancelOpen(false)} onSelectReason={handleCancel} />
         <ReportModal

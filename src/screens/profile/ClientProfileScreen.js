@@ -23,6 +23,14 @@ import { SupportRequestModal } from "../../components/support/SupportRequestModa
 import { LanguageSelector } from "../../components/profile/LanguageSelector";
 import { fetchBlockedUsersApi, unblockUserApi } from "../../services/moderation/moderationService";
 import { Alert, Text, TextInput } from "../../i18n/native";
+import { useTranslation } from "react-i18next";
+import {
+  ADDRESS_PRESET_IDS,
+  applyAddressPreset,
+  getAddressPresetLabel,
+  isAddressPresetActive,
+  localizeLegacyAddressPresetTitle
+} from "./addressPresets.mjs";
 
 const font = {
   medium: "Inter_500Medium",
@@ -30,8 +38,6 @@ const font = {
   bold: "Inter_700Bold",
   extra: "Inter_800ExtraBold"
 };
-
-const addressNameSuggestions = ["Uy", "Ofis", "Ish", "Ota-ona uyi"];
 
 function getInitials(value) {
   return String(value || "NF")
@@ -44,6 +50,7 @@ function getInitials(value) {
 }
 
 export function ClientProfileScreen({ navigation, route }) {
+  const { t } = useTranslation();
   const session = useAuthStore((state) => state.session);
   const logout = useAuthStore((state) => state.logout);
   const deleteAccount = useAuthStore((state) => state.deleteAccount);
@@ -236,7 +243,7 @@ export function ClientProfileScreen({ navigation, route }) {
     setAddressFormMode("edit");
     setEditingAddressId(address.id);
     setAddressDraft({
-      title: address.title || address.label || "",
+      title: localizeLegacyAddressPresetTitle(address.title || address.label || "", t),
       address: address.address || address.addressText || "",
       district: address.district || null,
       latitude: address.latitude ?? address.lat ?? null,
@@ -635,6 +642,8 @@ function AddressManager({ addresses, loading, error, onAdd, onEdit, onDelete, on
 }
 
 function AddressFormModal({ visible, draft, saving, mode, onChange, onClose, onPickLocation, onSave }) {
+  const { t } = useTranslation();
+
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -663,22 +672,24 @@ function AddressFormModal({ visible, draft, saving, mode, onChange, onClose, onP
               onSubmitEditing={Keyboard.dismiss}
             />
             <View style={styles.addressSuggestionRow}>
-              {addressNameSuggestions.map((name) => (
-                <Pressable
-                  key={name}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    onChange((current) => ({ ...current, title: name }));
-                  }}
-                  style={[styles.addressSuggestionChip, draft.title === name && styles.addressSuggestionChipActive]}
-                >
-                  <Text
-                    style={[styles.addressSuggestionText, draft.title === name && styles.addressSuggestionTextActive]}
+              {ADDRESS_PRESET_IDS.map((presetId) => {
+                const label = getAddressPresetLabel(presetId, t);
+                const active = isAddressPresetActive(draft.title, presetId, t);
+                return (
+                  <Pressable
+                    key={presetId}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      onChange((current) => applyAddressPreset(current, presetId, t));
+                    }}
+                    style={[styles.addressSuggestionChip, active && styles.addressSuggestionChipActive]}
                   >
-                    {name}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Text translate={false} style={[styles.addressSuggestionText, active && styles.addressSuggestionTextActive]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
             <View style={styles.coordinateBox}>
               <Text style={styles.coordinateLabel}>Xaritadan tanlangan manzil</Text>

@@ -410,9 +410,11 @@ export async function createMessage(user: AuthUser, roomId: string, input: Creat
     recipients.map((participant) => ({
       userId: participant.userId,
       orderId: room.orderId,
+      dedupeKey: `chat-message:${message.id}:${participant.userId}`,
       type: "CHAT_MESSAGE",
       title: "Yangi xabar",
-      body: input.body?.trim() || "Rasm yuborildi",
+      body: input.body?.trim() || "Media yuborildi",
+      pushBody: "Sizga yangi xabar keldi.",
       payload: {
         roomId,
         orderId: room.orderId,

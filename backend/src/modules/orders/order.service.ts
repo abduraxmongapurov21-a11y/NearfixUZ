@@ -11,7 +11,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import type { AuthUser } from "../auth/auth-context.js";
-import { createNotification } from "../notifications/notification.service.js";
+import { createNotificationSafely } from "../notifications/notification.service.js";
 import { ensureWorkerAvailableForOrder } from "../workers/worker.service.js";
 import {
   assertApprovedProviderOwnership,
@@ -21,25 +21,9 @@ import {
   ownsOrderAsClient,
   resolveOrderExperienceMode
 } from "./order-access.js";
+import type { CreateOrderInput } from "./order.contracts.js";
+import { orderInclude } from "./order.dto.js";
 import { eventByTransition, transitionOrderStatus } from "./order-state.js";
-
-type CreateOrderInput = {
-  workerId: string;
-  addressId?: string;
-  cityId: string;
-  serviceType: string;
-  problemTitle: string;
-  problemDescription?: string;
-  urgency: "NORMAL" | "FAST" | "URGENT";
-  priceEstimate?: number;
-};
-
-const orderInclude = {
-  worker: { include: { user: true, availability: true } },
-  client: true,
-  address: true,
-  events: { orderBy: { createdAt: "asc" as const } }
-};
 
 function createPublicCode() {
   return `NF-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -61,6 +45,29 @@ function isAdmin(user: AuthUser) {
 
 function isProvider(user: AuthUser) {
   return user.role === UserRole.PROVIDER.toLowerCase();
+}
+
+function invalidLocation(message: string, code = "ORDER_LOCATION_SOURCE_INVALID") {
+  return Object.assign(new Error(message), { status: 400, code });
+}
+
+function validateDirectLocationInput(input: CreateOrderInput) {
+  const sourceCount = Number(Boolean(input.addressId)) + Number(Boolean(input.location));
+  if (sourceCount !== 1) {
+    throw invalidLocation("Exactly one of addressId or location is required");
+  }
+
+  if (!input.location) return;
+  const { latitude, longitude, addressText } = input.location;
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+    throw invalidLocation("Latitude is invalid", "ORDER_LOCATION_COORDINATES_INVALID");
+  }
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    throw invalidLocation("Longitude is invalid", "ORDER_LOCATION_COORDINATES_INVALID");
+  }
+  if (typeof addressText !== "string" || addressText.trim().length < 4) {
+    throw invalidLocation("Readable address is required", "ORDER_LOCATION_ADDRESS_INVALID");
+  }
 }
 
 async function releaseWorkerAvailability(tx: Prisma.TransactionClient, workerId: string, orderId: string) {
@@ -103,9 +110,10 @@ async function notifyOrderCancelled(input: {
   const uniqueRecipients = Array.from(new Set(recipients));
 
   for (const userId of uniqueRecipients) {
-    await createNotification({
+    await createNotificationSafely({
       userId,
       orderId: input.orderId,
+      dedupeKey: `order:${input.orderId}:ORDER_CANCELLED:${userId}`,
       type: "ORDER_CANCELLED",
       title: "Buyurtma bekor qilindi",
       body: `${input.serviceType} buyurtmasi bekor qilindi.`,
@@ -145,6 +153,8 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
     });
   }
 
+  validateDirectLocationInput(input);
+
   const now = new Date();
   const responseDeadlineAt = addMinutes(now, 60);
 
@@ -168,20 +178,39 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
       });
     }
 
+    let savedAddress: {
+      id: string;
+      userId: string;
+      label: string;
+      cityId: string;
+      district: string | null;
+      addressText: string;
+      lat: Prisma.Decimal | null;
+      lng: Prisma.Decimal | null;
+    } | null = null;
     if (input.addressId) {
-      const address = await tx.address.findUnique({
+      savedAddress = await tx.address.findUnique({
         where: { id: input.addressId },
-        select: { userId: true }
+        select: {
+          id: true,
+          userId: true,
+          label: true,
+          cityId: true,
+          district: true,
+          addressText: true,
+          lat: true,
+          lng: true
+        }
       });
 
-      if (!address) {
+      if (!savedAddress) {
         throw Object.assign(new Error("Address not found"), {
           status: 404,
           code: "ADDRESS_NOT_FOUND"
         });
       }
 
-      if (address.userId !== user.id) {
+      if (savedAddress.userId !== user.id) {
         throw Object.assign(new Error("Address access denied"), {
           status: 403,
           code: "ADDRESS_ACCESS_DENIED"
@@ -189,13 +218,30 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
       }
     }
 
+    const savedLatitude = savedAddress?.lat === null || savedAddress?.lat === undefined ? null : Number(savedAddress.lat);
+    const savedLongitude = savedAddress?.lng === null || savedAddress?.lng === undefined ? null : Number(savedAddress.lng);
+    const savedCoordinatesAreValid =
+      savedLatitude !== null &&
+      savedLongitude !== null &&
+      Number.isFinite(savedLatitude) &&
+      Number.isFinite(savedLongitude) &&
+      savedLatitude >= -90 &&
+      savedLatitude <= 90 &&
+      savedLongitude >= -180 &&
+      savedLongitude <= 180;
+
     const order = await tx.order.create({
       data: {
         publicCode: createPublicCode(),
         clientId: user.id,
         workerId: worker.id,
-        addressId: input.addressId,
-        cityId: input.cityId,
+        addressId: savedAddress?.id,
+        locationLabel: savedAddress?.label || input.location?.label,
+        locationAddressText: savedAddress?.addressText || input.location?.addressText.trim(),
+        locationDistrict: savedAddress?.district || input.location?.district,
+        locationLat: savedCoordinatesAreValid ? savedAddress?.lat : input.location?.latitude,
+        locationLng: savedCoordinatesAreValid ? savedAddress?.lng : input.location?.longitude,
+        cityId: savedAddress?.cityId || input.cityId,
         serviceType: input.serviceType,
         problemTitle: input.problemTitle,
         problemDescription: input.problemDescription,
@@ -252,15 +298,16 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
       }
     });
 
-    return {
-      ...order,
-      workerUserId: worker.userId
-    };
+    return tx.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: orderInclude
+    });
   });
 
-  await createNotification({
-    userId: createdOrder.workerUserId,
+  await createNotificationSafely({
+    userId: createdOrder.worker.userId,
     orderId: createdOrder.id,
+    dedupeKey: `order:${createdOrder.id}:ORDER_CREATED:${createdOrder.worker.userId}`,
     type: "ORDER_CREATED",
     title: "Yangi buyurtma",
     body: `${createdOrder.serviceType} buyurtmasi keldi.`,
@@ -271,8 +318,7 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
     }
   });
 
-  const { workerUserId: _workerUserId, ...order } = createdOrder;
-  return order;
+  return createdOrder;
 }
 
 export async function getOrderForUser(user: AuthUser, orderId: string) {
@@ -345,11 +391,7 @@ export async function listIncomingOrdersForProvider(user: AuthUser) {
         status: WorkerProfileStatus.APPROVED
       }
     },
-    include: {
-      client: true,
-      address: true,
-      worker: { include: { availability: true } }
-    },
+    include: orderInclude,
     orderBy: { createdAt: "desc" }
   });
 }
@@ -427,9 +469,10 @@ export async function acceptOrder(user: AuthUser, orderId: string) {
     });
   });
 
-  await createNotification({
+  await createNotificationSafely({
     userId: acceptedOrder.clientId,
     orderId: acceptedOrder.id,
+    dedupeKey: `order:${acceptedOrder.id}:ORDER_ACCEPTED:${acceptedOrder.clientId}`,
     type: "ORDER_ACCEPTED",
     title: "Buyurtma qabul qilindi",
     body: `${acceptedOrder.serviceType} buyurtmangiz usta tomonidan qabul qilindi.`,
@@ -498,13 +541,15 @@ export async function rejectOrder(user: AuthUser, orderId: string, reason: strin
     });
 
     return tx.order.findUniqueOrThrow({
-      where: { id: order.id }
+      where: { id: order.id },
+      include: orderInclude
     });
   });
 
-  await createNotification({
+  await createNotificationSafely({
     userId: rejectedOrder.clientId,
     orderId: rejectedOrder.id,
+    dedupeKey: `order:${rejectedOrder.id}:ORDER_REJECTED:${rejectedOrder.clientId}`,
     type: "ORDER_REJECTED",
     title: "Buyurtma rad etildi",
     body: `${rejectedOrder.serviceType} buyurtmangiz usta tomonidan rad etildi.`,
@@ -592,9 +637,10 @@ export async function transitionOrder(user: AuthUser, orderId: string, toStatus:
 
   const notificationCopy = lifecycleNotificationCopy[toStatus];
   if (notificationCopy) {
-    await createNotification({
+    await createNotificationSafely({
       userId: transitionedOrder.clientId,
       orderId: transitionedOrder.id,
+      dedupeKey: `order:${transitionedOrder.id}:${notificationCopy.type}:${transitionedOrder.clientId}`,
       type: notificationCopy.type,
       title: notificationCopy.title,
       body: notificationCopy.body,
@@ -663,9 +709,7 @@ export async function cancelOrder(
 
     return tx.order.findUniqueOrThrow({
       where: { id: order.id },
-      include: {
-        worker: true
-      }
+      include: orderInclude
     });
   });
 

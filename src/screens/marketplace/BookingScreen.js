@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import {
   ArrowLeft,
@@ -13,6 +13,13 @@ import {
 import { ROUTES } from "../../constants/routes";
 import { WORKER_STATUS } from "../../constants/workerStatus";
 import { useClientStore } from "../../store/clientStore";
+import {
+  bookingLocationDraft,
+  createBookingSubmissionLock,
+  createOrderThenOptionallySave,
+  normalizeBookingMapSelection,
+  sortBookingAddresses
+} from "../../services/orders/bookingLocation.mjs";
 import { Alert, Text, TextInput } from "../../i18n/native";
 
 const font = {
@@ -85,6 +92,7 @@ export function BookingScreen({ navigation, route }) {
   const updateOrderDraft = useClientStore((state) => state.updateOrderDraft);
   const resetOrderDraft = useClientStore((state) => state.resetOrderDraft);
   const createOrderFromDraft = useClientStore((state) => state.createOrderFromDraft);
+  const createAddress = useClientStore((state) => state.createAddress);
   const syncClientProfileFromApi = useClientStore((state) => state.syncClientProfileFromApi);
   const getSelectedWorker = useClientStore((state) => state.getSelectedWorker);
   const worker = getSelectedWorker();
@@ -92,9 +100,12 @@ export function BookingScreen({ navigation, route }) {
   const [selectedProblem, setSelectedProblem] = useState("");
   const [otherProblem, setOtherProblem] = useState("");
   const [selectedAddressId, setSelectedAddressId] = useState(getDefaultAddress(savedAddresses)?.id);
+  const [oneTimeLocation, setOneTimeLocation] = useState(null);
+  const [saveOneTimeLocation, setSaveOneTimeLocation] = useState(false);
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const submissionLockRef = useRef(createBookingSubmissionLock());
 
   useEffect(() => {
     if (route.params?.workerId && route.params.workerId !== selectedWorkerId) {
@@ -107,16 +118,33 @@ export function BookingScreen({ navigation, route }) {
   }, [syncClientProfileFromApi]);
 
   useEffect(() => {
-    if (!selectedAddressId && savedAddresses.length) {
+    if (!oneTimeLocation && !selectedAddressId && savedAddresses.length) {
       setSelectedAddressId(getDefaultAddress(savedAddresses)?.id);
     }
-  }, [savedAddresses, selectedAddressId]);
+  }, [oneTimeLocation, savedAddresses, selectedAddressId]);
+
+  useEffect(() => {
+    const selectedLocation = route.params?.selectedBookingLocation;
+    if (!selectedLocation) return;
+    const normalized = normalizeBookingMapSelection(selectedLocation);
+    navigation.setParams({ selectedBookingLocation: undefined });
+    if (!normalized) {
+      Alert.alert("Manzil aniqlanmadi", "Xaritadan o'qiladigan manzilni qayta tanlang.");
+      return;
+    }
+    setOneTimeLocation(normalized);
+    setSelectedAddressId(null);
+    setSaveOneTimeLocation(false);
+    setAddressModalOpen(false);
+  }, [navigation, route.params?.selectedBookingLocation]);
 
   const problemOptions = useMemo(() => getProblemOptions(worker), [worker]);
-  const selectedAddress = useMemo(
-    () => savedAddresses.find((address) => address.id === selectedAddressId) || getDefaultAddress(savedAddresses),
-    [savedAddresses, selectedAddressId]
+  const orderedAddresses = useMemo(() => sortBookingAddresses(savedAddresses), [savedAddresses]);
+  const selectedSavedAddress = useMemo(
+    () => orderedAddresses.find((address) => address.id === selectedAddressId) || (!oneTimeLocation ? orderedAddresses[0] : null),
+    [oneTimeLocation, orderedAddresses, selectedAddressId]
   );
+  const selectedLocation = oneTimeLocation || selectedSavedAddress;
   const isOtherProblem = selectedProblem === "Boshqa";
 
   async function handleRefresh() {
@@ -146,7 +174,7 @@ export function BookingScreen({ navigation, route }) {
       return false;
     }
 
-    if (!selectedAddress) {
+    if (!selectedLocation) {
       Alert.alert("Manzil kerak", "Buyurtma uchun manzil tanlang.");
       return false;
     }
@@ -155,23 +183,38 @@ export function BookingScreen({ navigation, route }) {
   }
 
   async function handleSubmit() {
-    if (submitting || !validate()) return;
+    if (!submissionLockRef.current.acquire()) return;
+    if (!validate()) {
+      submissionLockRef.current.release();
+      return;
+    }
 
     setSubmitting(true);
 
     try {
       const problemTitle = isOtherProblem ? otherProblem.trim() : selectedProblem;
-      const backendAddressId = selectedAddress.addressText ? selectedAddress.id : undefined;
+      const locationDraft = bookingLocationDraft(selectedSavedAddress, oneTimeLocation);
+      if (!locationDraft) throw new Error("Buyurtma uchun manzil tanlang.");
 
       updateOrderDraft({
         selectedWorkerId: worker.id,
         problemTitle,
         description: undefined,
-        addressId: backendAddressId,
-        address: selectedAddress.addressText || selectedAddress.address
+        ...locationDraft
       });
 
-      const result = await createOrderFromDraft();
+      const { orderResult: result, saveResult } = await createOrderThenOptionallySave({
+        createOrder: createOrderFromDraft,
+        shouldSave: Boolean(oneTimeLocation && saveOneTimeLocation),
+        saveAddress: () =>
+          createAddress({
+            title: `Manzil ${savedAddresses.length + 1}`,
+            address: oneTimeLocation.addressText,
+            district: oneTimeLocation.district,
+            lat: oneTimeLocation.latitude,
+            lng: oneTimeLocation.longitude
+          })
+      });
 
       if (!result.ok) {
         throw new Error(result.message || "Buyurtma yaratilmadi");
@@ -180,19 +223,50 @@ export function BookingScreen({ navigation, route }) {
       resetOrderDraft({
         selectedWorkerId: worker.id,
         serviceId: worker.specialty,
-        addressId: backendAddressId,
-        address: selectedAddress.addressText || selectedAddress.address
+        addressId: null,
+        address: "",
+        location: null
       });
 
       navigation.navigate(ROUTES.CLIENT_TABS, { screen: ROUTES.ORDERS_TAB });
+      if (saveResult && !saveResult.ok) {
+        Alert.alert("Manzil saqlanmadi", "Buyurtma yaratildi, ammo manzil Manzillarimga saqlanmadi.");
+      }
     } catch (error) {
       Alert.alert(
         "Buyurtma yuborilmadi",
         error?.message || "Internet yoki server holatini tekshirib qayta urinib ko'ring."
       );
     } finally {
+      submissionLockRef.current.release();
       setSubmitting(false);
     }
+  }
+
+  function openMapPicker() {
+    setAddressModalOpen(false);
+    const initial = oneTimeLocation || selectedSavedAddress;
+    navigation.navigate(ROUTES.MAP_PICKER, {
+      returnTo: ROUTES.BOOKING,
+      returnParamKey: "selectedBookingLocation",
+      initialCoordinate:
+        typeof initial?.latitude === "number" && typeof initial?.longitude === "number"
+          ? {
+              latitude: initial.latitude,
+              longitude: initial.longitude,
+              ...(initial.addressText ? { address: initial.addressText } : {}),
+              ...(initial.district ? { district: initial.district } : {})
+            }
+          : undefined
+    });
+  }
+
+  function openAddressChoices() {
+    if (!orderedAddresses.length) {
+      openMapPicker();
+      return;
+    }
+    setAddressModalOpen(true);
   }
 
   return (
@@ -214,23 +288,36 @@ export function BookingScreen({ navigation, route }) {
       >
         <View style={styles.formCard}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Adres</Text>
-            <Pressable onPress={() => setAddressModalOpen(true)}>
+            <Text style={styles.cardTitle}>{savedAddresses.length ? "Manzil tanlang" : "Qayerga usta chaqiramiz?"}</Text>
+            <Pressable onPress={openAddressChoices}>
               <Text style={styles.addText}>O'zgartirish</Text>
             </Pressable>
           </View>
-          <Pressable style={styles.addressBox} onPress={() => setAddressModalOpen(true)}>
+          <Pressable style={styles.addressBox} onPress={openAddressChoices}>
             <View style={styles.addressIcon}>
               <MapPin size={22} color="#FFFFFF" fill="#FFFFFF" strokeWidth={2.6} />
             </View>
             <View style={styles.addressTextWrap}>
-              <Text style={styles.addressTitle}>{selectedAddress?.label || "Manzil"}</Text>
+              <Text style={styles.addressTitle}>{oneTimeLocation ? "Bir martalik manzil" : selectedSavedAddress?.label || "Manzil"}</Text>
               <Text style={styles.addressText} numberOfLines={1}>
-                {selectedAddress?.addressText || selectedAddress?.address || "Manzil tanlang"}
+                {oneTimeLocation?.addressText || selectedSavedAddress?.addressText || selectedSavedAddress?.address || "Xaritadan manzil tanlang"}
               </Text>
             </View>
             <ChevronRight size={22} color="#A3ABB8" strokeWidth={2.6} />
           </Pressable>
+          {oneTimeLocation ? (
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: saveOneTimeLocation }}
+              onPress={() => setSaveOneTimeLocation((value) => !value)}
+              style={styles.saveAddressRow}
+            >
+              <View style={[styles.checkbox, saveOneTimeLocation && styles.checkboxActive]}>
+                {saveOneTimeLocation ? <Check size={15} color="#FFFFFF" strokeWidth={3} /> : null}
+              </View>
+              <Text style={styles.saveAddressText}>Manzillarimga saqlash</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.formCard}>
@@ -273,13 +360,16 @@ export function BookingScreen({ navigation, route }) {
 
       <AddressModal
         visible={addressModalOpen}
-        addresses={savedAddresses}
-        selectedAddressId={selectedAddress?.id}
+        addresses={orderedAddresses}
+        selectedAddressId={selectedSavedAddress?.id}
         onClose={() => setAddressModalOpen(false)}
         onSelect={(address) => {
           setSelectedAddressId(address.id);
+          setOneTimeLocation(null);
+          setSaveOneTimeLocation(false);
           setAddressModalOpen(false);
         }}
+        onMap={openMapPicker}
       />
 
       <ScreenBottomNav navigation={navigation} />
@@ -287,7 +377,7 @@ export function BookingScreen({ navigation, route }) {
   );
 }
 
-function AddressModal({ visible, addresses, selectedAddressId, onClose, onSelect }) {
+function AddressModal({ visible, addresses, selectedAddressId, onClose, onSelect, onMap }) {
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
@@ -296,9 +386,7 @@ function AddressModal({ visible, addresses, selectedAddressId, onClose, onSelect
           {!addresses.length ? (
             <View style={styles.modalEmpty}>
               <Text style={styles.modalEmptyTitle}>Manzillar yo'q</Text>
-              <Text style={styles.modalEmptyText}>
-                Profilingizda manzil qo'shilgandan keyin buyurtmaga ulash mumkin bo'ladi.
-              </Text>
+              <Text style={styles.modalEmptyText}>Xaritadan yangi manzil tanlab buyurtmani davom ettiring.</Text>
             </View>
           ) : null}
           {addresses.map((address) => {
@@ -323,6 +411,13 @@ function AddressModal({ visible, addresses, selectedAddressId, onClose, onSelect
               </Pressable>
             );
           })}
+          <Pressable style={styles.mapOption} onPress={onMap}>
+            <View style={styles.optionIcon}>
+              <MapPin size={19} color="#0F80B7" strokeWidth={2.6} />
+            </View>
+            <Text style={styles.mapOptionText}>Xaritadan boshqa manzil tanlash</Text>
+            <ChevronRight size={21} color="#0F80B7" strokeWidth={2.6} />
+          </Pressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -493,6 +588,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: font.medium
   },
+  saveAddressRow: {
+    marginTop: 14,
+    minHeight: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: "#A3ABB8",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  checkboxActive: {
+    borderColor: "#2CD8A5",
+    backgroundColor: "#2CD8A5"
+  },
+  saveAddressText: {
+    color: "#273248",
+    fontSize: 14,
+    fontFamily: font.bold
+  },
   ctaBar: {
     position: "absolute",
     left: 0,
@@ -598,6 +718,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     fontFamily: font.medium
+  },
+  mapOption: {
+    minHeight: 64,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#CFE8F0",
+    backgroundColor: "#EEF9FC",
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
+  },
+  mapOptionText: {
+    flex: 1,
+    color: "#0F80B7",
+    fontSize: 15,
+    fontFamily: font.extra
   },
   bottomNav: {
     position: "absolute",

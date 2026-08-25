@@ -7,6 +7,7 @@ import { fetchNotificationsApi, markNotificationReadApi } from "../../services/n
 import { useAuthStore } from "../../store/authStore";
 import { colors, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
+import { navigateToNotificationTarget } from "../../services/notifications/notificationNavigation.mjs";
 
 function readPayloadText(notification, key, fallback = "") {
   const payload = notification?.payload;
@@ -24,11 +25,13 @@ function formatDate(value) {
 }
 
 export function NotificationsScreen({ navigation }) {
-  const token = useAuthStore((state) => state.session?.token);
+  const session = useAuthStore((state) => state.session);
+  const token = session?.token;
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [readingId, setReadingId] = useState(null);
+  const [error, setError] = useState("");
 
   const unreadCount = useMemo(
     () => notifications.filter((notification) => !notification.readAt).length,
@@ -45,6 +48,9 @@ export function NotificationsScreen({ navigation }) {
     const result = await fetchNotificationsApi(token);
     if (result.ok) {
       setNotifications(result.notifications);
+      setError("");
+    } else {
+      setError(result.message || "Bildirishnomalarni yuklab bo‘lmadi.");
     }
     setLoading(false);
   }, [token]);
@@ -59,18 +65,19 @@ export function NotificationsScreen({ navigation }) {
     setRefreshing(false);
   }
 
-  async function handleRead(notification) {
-    if (!token || notification.readAt || readingId) return;
-
-    setReadingId(notification.id);
-    const result = await markNotificationReadApi(token, notification.id);
-    setReadingId(null);
-
-    if (result.ok) {
-      setNotifications((current) =>
-        current.map((item) => (item.id === notification.id ? { ...item, readAt: result.notification.readAt } : item))
-      );
+  async function handlePress(notification) {
+    if (!token || readingId) return;
+    if (!notification.readAt) {
+      setReadingId(notification.id);
+      const result = await markNotificationReadApi(token, notification.id);
+      setReadingId(null);
+      if (result.ok) {
+        setNotifications((current) =>
+          current.map((item) => (item.id === notification.id ? { ...item, readAt: result.notification.readAt } : item))
+        );
+      }
     }
+    navigateToNotificationTarget(navigation, notification.payload, session?.role);
   }
 
   return (
@@ -96,7 +103,14 @@ export function NotificationsScreen({ navigation }) {
             />
           }
         >
-          {!notifications.length ? (
+          {error ? (
+            <View style={styles.errorState}>
+              <Text style={styles.errorText}>{error}</Text>
+              <Pressable onPress={loadNotifications} style={styles.retryButton}>
+                <Text style={styles.retryText}>Qayta urinish</Text>
+              </Pressable>
+            </View>
+          ) : !notifications.length ? (
             <EmptyState
               title="Bildirishnoma yo'q"
               text="Yangi buyurtma, chat va status xabarlari shu yerda ko'rinadi."
@@ -110,7 +124,7 @@ export function NotificationsScreen({ navigation }) {
               return (
                 <Pressable
                   key={notification.id}
-                  onPress={() => handleRead(notification)}
+                  onPress={() => handlePress(notification)}
                   style={({ pressed }) => [styles.card, unread && styles.cardUnread, pressed && styles.pressed]}
                 >
                   <View style={[styles.iconShell, unread && styles.iconShellUnread]}>
@@ -223,5 +237,25 @@ const styles = StyleSheet.create({
     color: colors.subtle,
     fontSize: 11,
     fontWeight: "800"
+  },
+  errorState: {
+    alignItems: "center",
+    gap: 12,
+    padding: 24
+  },
+  errorText: {
+    color: colors.danger,
+    textAlign: "center",
+    fontWeight: "700"
+  },
+  retryButton: {
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 11
+  },
+  retryText: {
+    color: colors.white,
+    fontWeight: "900"
   }
 });

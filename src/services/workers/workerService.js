@@ -181,8 +181,9 @@ export async function fetchIncomingOrdersApi(token) {
       requests: (payload.orders || []).map((order) => ({
         id: order.id,
         clientName: order.client?.name || "Mijoz",
-        district: order.address?.district || order.cityId,
-        address: order.address?.addressText || "Manzil kiritilgan",
+        district: order.location?.district || order.cityId,
+        address: order.location?.addressText || "Manzil ma'lumoti yo'q",
+        location: order.location || null,
         distance: order.distance || order.distanceKm ? `${order.distance || order.distanceKm} km` : "Yaqin hudud",
         service: order.serviceType,
         problemTitle: order.problemTitle,

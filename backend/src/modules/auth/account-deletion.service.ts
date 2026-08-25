@@ -1,6 +1,6 @@
 import { UserRole, UserStatus, WorkerAvailabilityStatus, WorkerProfileStatus } from "@prisma/client";
-import { env } from "../../config/env.js";
 import { prisma } from "../../db/prisma.js";
+import { isAppReviewDemoPhone } from "./auth.service.js";
 
 function deletedPhone(userId: string) {
   return `deleted+${userId}@nearfix.invalid`;
@@ -11,15 +11,7 @@ function normalizePhone(phone: string | null | undefined) {
 }
 
 function isProtectedDemoAccount(phone: string | null | undefined) {
-  if (!env.APP_REVIEW_DEMO_ENABLED) return false;
-
-  const normalizedPhone = normalizePhone(phone);
-  const protectedPhones = [
-    env.APP_REVIEW_DEMO_CLIENT_PHONE,
-    env.APP_REVIEW_DEMO_WORKER_PHONE
-  ].map(normalizePhone).filter(Boolean);
-
-  return protectedPhones.includes(normalizedPhone);
+  return Boolean(phone && isAppReviewDemoPhone(normalizePhone(phone)));
 }
 
 export async function deleteCurrentUserAccount(userId: string) {

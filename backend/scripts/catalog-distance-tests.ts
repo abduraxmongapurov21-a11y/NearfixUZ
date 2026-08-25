@@ -272,15 +272,45 @@ async function main() {
     const secondDefault = await request("/addresses", {
       token: clientToken,
       method: "POST",
-      body: { title: "Default two", address: "Second default", lat: 41.32, lng: 69.25, isDefault: true }
+      body: {
+        title: "Default two",
+        address: "Second default",
+        cityId,
+        district: "Chilonzor",
+        lat: 41.32,
+        lng: 69.25,
+        isDefault: true
+      }
     });
     assert.equal(secondDefault.response.status, 201);
+    assert.equal(secondDefault.payload.address.cityId, cityId);
+    assert.equal(secondDefault.payload.address.district, "Chilonzor");
     const addressList = await request("/addresses", { token: clientToken });
     assert.equal(addressList.response.status, 200);
     assert.deepEqual(
       addressList.payload.addresses.filter((item: any) => item.isDefault).map((item: any) => item.id),
       [secondDefault.payload.address.id]
     );
+    const refetchedSecondDefault = addressList.payload.addresses.find(
+      (item: any) => item.id === secondDefault.payload.address.id
+    );
+    assert.equal(refetchedSecondDefault.cityId, cityId);
+    assert.equal(refetchedSecondDefault.district, "Chilonzor");
+
+    const editedSecondDefault = await request(`/addresses/${secondDefault.payload.address.id}`, {
+      token: clientToken,
+      method: "PATCH",
+      body: { title: "Default two edited" }
+    });
+    assert.equal(editedSecondDefault.response.status, 200);
+    assert.equal(editedSecondDefault.payload.address.cityId, cityId);
+    assert.equal(editedSecondDefault.payload.address.district, "Chilonzor");
+    const reopenedAddressList = await request("/addresses", { token: clientToken });
+    const reopenedSecondDefault = reopenedAddressList.payload.addresses.find(
+      (item: any) => item.id === secondDefault.payload.address.id
+    );
+    assert.equal(reopenedSecondDefault.cityId, cityId);
+    assert.equal(reopenedSecondDefault.district, "Chilonzor");
 
     const invalidAddressLatitude = await request("/addresses", {
       token: clientToken,

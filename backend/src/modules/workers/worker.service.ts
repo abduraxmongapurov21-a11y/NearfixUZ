@@ -7,6 +7,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import type { AuthUser } from "../auth/auth-context.js";
+import { createNotificationSafely } from "../notifications/notification.service.js";
 import { haversineDistanceMeters, type Coordinates } from "./distance.js";
 
 type WorkerProfilePatch = {
@@ -648,7 +649,7 @@ export async function updateOwnWorkerServiceLocation(
 
 export async function approveWorkerProfile(workerId: string, patch: WorkerProfilePatch) {
   const { profileData } = normalizeWorkerPatch(patch);
-  return prisma.$transaction(async (tx) => {
+  const approvedWorker = await prisma.$transaction(async (tx) => {
     const current = await tx.workerProfile.findUnique({
       where: { id: workerId },
       include: { user: true }
@@ -734,6 +735,17 @@ export async function approveWorkerProfile(workerId: string, patch: WorkerProfil
       }
     });
   });
+
+  await createNotificationSafely({
+    userId: approvedWorker.userId,
+    dedupeKey: `worker-application:${approvedWorker.id}:approved`,
+    type: "WORKER_APPLICATION_APPROVED",
+    title: "Usta arizasi tasdiqlandi",
+    body: "Profilingiz tasdiqlandi. Usta rejimiga qayta kirishingiz mumkin.",
+    payload: { workerId: approvedWorker.id, status: approvedWorker.status }
+  });
+
+  return approvedWorker;
 }
 
 export async function rejectWorkerProfile(workerId: string, reason: string) {
@@ -759,7 +771,7 @@ export async function rejectWorkerProfile(workerId: string, reason: string) {
     });
   }
 
-  return prisma.workerProfile.update({
+  const rejectedWorker = await prisma.workerProfile.update({
     where: { id: worker.id },
     data: {
       submittedAt: null,
@@ -771,6 +783,18 @@ export async function rejectWorkerProfile(workerId: string, reason: string) {
       user: true
     }
   });
+
+  await createNotificationSafely({
+    userId: rejectedWorker.userId,
+    dedupeKey: `worker-application:${rejectedWorker.id}:rejected:${rejectedWorker.updatedAt.toISOString()}`,
+    type: "WORKER_APPLICATION_REJECTED",
+    title: "Usta arizasi qaytarildi",
+    body: "Arizangiz bo‘yicha tuzatish talab qilinadi.",
+    pushBody: "Usta arizangiz holati yangilandi.",
+    payload: { workerId: rejectedWorker.id, status: rejectedWorker.status, reason }
+  });
+
+  return rejectedWorker;
 }
 
 export async function suspendWorkerProfile(workerId: string, reason: string) {

@@ -18,8 +18,10 @@ import { resetRoleStores } from "./sessionReset";
 import { createAccountRequestGuard, createOperationGuard } from "./requestGeneration.mjs";
 import { sanitizePendingIntent } from "../navigation/pendingIntent.mjs";
 import { defaultExperienceModeForRole, normalizeExperienceMode } from "../navigation/experienceMode.mjs";
+import { waitForPendingPushRegistration } from "../services/notifications/pushRegistrationQueue.mjs";
 
 const PUSH_TOKEN_STORAGE_KEY = "nearfix-push-token";
+const PUSH_DEVICE_ID_STORAGE_KEY = "nearfix-push-device-id";
 const authRequestGuard = createAccountRequestGuard();
 const authAttemptGuard = createOperationGuard();
 const defaultAuthStoreDependencies = { getCurrentUserApi, refreshAccessTokenApi, updateCurrentUserApi };
@@ -273,8 +275,10 @@ export const useAuthStore = create(
       navigationGeneration: state.navigationGeneration + 1
     }));
     if (current?.token) {
+      await waitForPendingPushRegistration();
       const pushToken = await AsyncStorage.getItem(PUSH_TOKEN_STORAGE_KEY);
-      await logoutApi(current.token, pushToken);
+      const deviceId = await AsyncStorage.getItem(PUSH_DEVICE_ID_STORAGE_KEY);
+      await logoutApi(current.token, pushToken, deviceId);
       if (pushToken) await AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY);
     }
   },

@@ -73,7 +73,8 @@ export async function createOrderReview(user: AuthUser, orderId: string, input: 
         include: {
           reviews: {
             take: 1
-          }
+          },
+          worker: { select: { userId: true } }
         }
       });
 
@@ -88,6 +89,13 @@ export async function createOrderReview(user: AuthUser, orderId: string, input: 
         throw Object.assign(new Error("Only the order owner can review this order"), {
           status: 403,
           code: "ORDER_REVIEW_ACCESS_DENIED"
+        });
+      }
+
+      if (order.worker.userId === user.id) {
+        throw Object.assign(new Error("You cannot review yourself"), {
+          status: 403,
+          code: "SELF_REVIEW_NOT_ALLOWED"
         });
       }
 
@@ -113,10 +121,23 @@ export async function createOrderReview(user: AuthUser, orderId: string, input: 
           rating: input.rating,
           text: input.comment?.trim() || null
         },
-        include: {
-          client: true,
-          worker: { include: { user: true } },
-          order: true
+        select: {
+          id: true,
+          orderId: true,
+          clientId: true,
+          workerId: true,
+          rating: true,
+          text: true,
+          status: true,
+          createdAt: true,
+          client: { select: { id: true, name: true } },
+          worker: {
+            select: {
+              id: true,
+              profession: true,
+              user: { select: { id: true, name: true } }
+            }
+          }
         }
       });
 

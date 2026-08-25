@@ -28,3 +28,17 @@ export function mapApiAddress(address) {
     isDefault: Boolean(address.isDefault)
   };
 }
+
+export function toAddressPayload(address) {
+  const payload = {
+    title: address.title || address.label,
+    address: address.address || address.addressText,
+    lat: address.lat ?? address.latitude,
+    lng: address.lng ?? address.longitude,
+    district: address.district,
+    cityId: address.cityId
+  };
+
+  if (address.isDefault !== undefined) payload.isDefault = Boolean(address.isDefault);
+  return payload;
+}

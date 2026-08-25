@@ -27,7 +27,9 @@ const initialOrderDraft = {
   description: "",
   urgency: "fast",
   photos: [],
+  addressId: null,
   address: "",
+  location: null,
   useCurrentLocation: false,
   selectedWorkerId: null,
   status: ORDER_STATES.CREATED
@@ -326,6 +328,7 @@ export const useClientStore = create((set, get) => ({
       latitude: address.lat ?? address.latitude ?? null,
       longitude: address.lng ?? address.longitude ?? null,
       district: address.district,
+      cityId: address.cityId,
       isDefault: Boolean(address.isDefault)
     };
 
@@ -391,6 +394,7 @@ export const useClientStore = create((set, get) => ({
       ...(patch.lat !== undefined || patch.latitude !== undefined ? { lat: patch.lat ?? patch.latitude, latitude: patch.lat ?? patch.latitude } : {}),
       ...(patch.lng !== undefined || patch.longitude !== undefined ? { lng: patch.lng ?? patch.longitude, longitude: patch.lng ?? patch.longitude } : {}),
       ...(patch.district !== undefined ? { district: patch.district } : {}),
+      ...(patch.cityId !== undefined ? { cityId: patch.cityId } : {}),
       ...(patch.isDefault !== undefined ? { isDefault: patch.isDefault } : {})
     };
 

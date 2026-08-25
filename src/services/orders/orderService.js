@@ -33,8 +33,9 @@ export function mapApiOrder(order) {
     workerId: order.workerId,
     provider: workerName,
     date: new Date(order.createdAt).toLocaleDateString("uz-UZ"),
-    district: order.address?.district || order.cityId,
-    address: order.address?.addressText || "Manzil kiritilgan",
+    district: order.location?.district || order.cityId,
+    address: order.location?.addressText || "Manzil ma'lumoti yo'q",
+    location: order.location || null,
     price: amount ? `${Number(amount).toLocaleString("uz-UZ")} so'm` : "Kelishiladi",
     amount: amount ? `${Number(amount).toLocaleString("uz-UZ")} so'm` : "Kelishiladi",
     status: order.status,
@@ -42,7 +43,8 @@ export function mapApiOrder(order) {
     eta: order.status === "ON_THE_WAY" ? "Yo'lda" : "1 soat ichida",
     createdAt: order.createdAt ? new Date(order.createdAt).getTime() : Date.now(),
     responseDeadlineAt: order.responseDeadlineAt ? new Date(order.responseDeadlineAt).getTime() : undefined,
-    events: order.events || []
+    events: order.events || [],
+    review: order.review || null
   };
 }
 
@@ -53,7 +55,19 @@ export async function createOrderApi(token, draft, service, worker) {
       token,
       body: {
         workerId: worker.id,
-        addressId: draft.addressId || undefined,
+        ...(draft.addressId
+          ? { addressId: draft.addressId }
+          : draft.location
+            ? {
+                location: {
+                  latitude: draft.location.latitude,
+                  longitude: draft.location.longitude,
+                  addressText: draft.location.addressText,
+                  ...(draft.location.label ? { label: draft.location.label } : {}),
+                  ...(draft.location.district ? { district: draft.location.district } : {})
+                }
+              }
+            : {}),
         cityId: worker.cityId || "tashkent",
         serviceType: service?.title || worker.specialty || "Xizmat",
         problemTitle: draft.problemTitle || `${service?.title || "Xizmat"} buyurtmasi`,
@@ -92,6 +106,25 @@ export async function cancelOrderApi(token, orderId, reason) {
     return {
       ok: true,
       order: mapApiOrder(payload.order)
+    };
+  });
+}
+
+export async function submitOrderReviewApi(token, orderId, rating, comment) {
+  return apiRequest(async () => {
+    const payload = await httpAuthRequest(`/orders/${orderId}/review`, {
+      method: "POST",
+      token,
+      body: {
+        rating,
+        ...(comment?.trim() ? { comment: comment.trim() } : {})
+      }
+    });
+
+    return {
+      ok: true,
+      review: payload.review,
+      rating: payload.rating
     };
   });
 }

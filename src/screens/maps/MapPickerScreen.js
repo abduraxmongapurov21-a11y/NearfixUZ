@@ -16,6 +16,7 @@ import {
   toYandexPoint
 } from "../../services/maps/yandexMapAdapter.mjs";
 import { loadYandexMapKit } from "../../services/maps/yandexMapKit";
+import { useUiStore } from "../../store/uiStore";
 
 const TASHKENT_REGION = {
   latitude: 41.311081,
@@ -47,7 +48,11 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
   const mountedRef = useRef(true);
   const geocoderRef = useRef(null);
   const programmaticCoordinateRef = useRef(null);
-  const mapKit = useMemo(() => loadYandexMapKit(), []);
+  const locale = useUiStore((state) => state.locale);
+  const mapKit = useMemo(() => loadYandexMapKit(locale), [locale]);
+  const previousLocaleRef = useRef(locale);
+  const [mapKitInitialized, setMapKitInitialized] = useState(false);
+  const [mapKitInitializationFailed, setMapKitInitializationFailed] = useState(false);
   const autoLocate = route?.params?.autoLocate !== false;
   const [region, setRegion] = useState(() => toRegion(route?.params?.initialCoordinate));
   const initialYandexRegionRef = useRef(toYandexInitialRegion(region));
@@ -85,6 +90,23 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
     geocoderRef.current = createLatestReverseGeocodeController(reverseGeocodeLocation);
   }
 
+  useEffect(() => {
+    if (!mapKit.ready) return undefined;
+
+    let active = true;
+    void mapKit.initialization
+      .then(() => {
+        if (active) setMapKitInitialized(true);
+      })
+      .catch(() => {
+        if (active) setMapKitInitializationFailed(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [mapKit]);
+
   const readableAddress = useMemo(() => {
     if (addressState.location && coordinatesMatch(addressState.coordinate, selectedCoordinate)) {
       return addressState.location.address;
@@ -105,6 +127,16 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (previousLocaleRef.current === locale) return;
+    previousLocaleRef.current = locale;
+    geocoderRef.current?.invalidate();
+    resolvedLocationRef.current = null;
+    void resolveSelectedAddress(selectedCoordinateRef.current);
+    // The active app locale must invalidate any in-flight device-locale result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale]);
+
   function selectCoordinate(coordinate) {
     const selected = toCoordinate(coordinate);
     if (!coordinatesMatch(selectedCoordinateRef.current, selected)) {
@@ -122,7 +154,7 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
       : null;
     setAddressState({ status: ADDRESS_STATUS.LOADING, coordinate: selected, location: preservedLocation });
 
-    const result = await geocoderRef.current.resolve(selected);
+    const result = await geocoderRef.current.resolve({ ...selected, locale });
     if (!mountedRef.current || result.stale || !coordinatesMatch(selectedCoordinateRef.current, result.coordinate)) {
       return { ...result, stale: true };
     }
@@ -266,6 +298,18 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
         <Pressable onPress={() => navigation.goBack()} style={styles.unavailableButton}>
           <Text style={styles.unavailableButtonText}>Orqaga</Text>
         </Pressable>
+      </View>
+    );
+  }
+
+  if (!mapKitInitialized || mapKitInitializationFailed) {
+    return (
+      <View style={styles.unsupported}>
+        {mapKitInitializationFailed ? (
+          <Text style={styles.unsupportedText}>Yandex MapKit ishga tushmadi.</Text>
+        ) : (
+          <ActivityIndicator color={colors.primary} size="large" />
+        )}
       </View>
     );
   }

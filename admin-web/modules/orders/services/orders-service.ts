@@ -72,14 +72,18 @@ function mapOrderDetail(order: any): AdminOrderDetail {
       profession: order.worker?.profession || "",
       availability: String(order.worker?.availability?.status || "")
     },
-    address: order.address
+    location: order.location
       ? {
-          label: order.address.label || "Manzil",
-          cityId: order.address.cityId || order.cityId || "",
-          district: order.address.district || undefined,
-          addressText: order.address.addressText || "",
-          lat: order.address.lat ? String(order.address.lat) : undefined,
-          lng: order.address.lng ? String(order.address.lng) : undefined
+          label: order.location.label || "Manzil",
+          cityId: order.cityId || "",
+          district: order.location.district || undefined,
+          addressText: order.location.addressText || "",
+          lat: order.location.latitude === null || order.location.latitude === undefined
+            ? undefined
+            : String(order.location.latitude),
+          lng: order.location.longitude === null || order.location.longitude === undefined
+            ? undefined
+            : String(order.location.longitude)
         }
       : null,
     city: (order.cityId || "Tashkent") as City,

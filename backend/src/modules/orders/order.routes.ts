@@ -16,6 +16,7 @@ import {
   rejectOrder,
   transitionOrder
 } from "./order.service.js";
+import { toOrderDto } from "./order.dto.js";
 
 export const orderRouter = Router();
 
@@ -43,7 +44,7 @@ orderRouter.post("/", authenticate, async (request, response, next) => {
 
     response.status(201).json({
       ok: true,
-      order
+      order: toOrderDto(order)
     });
   } catch (error) {
     next(error);
@@ -57,7 +58,7 @@ orderRouter.get("/", authenticate, async (request, response, next) => {
 
     response.json({
       ok: true,
-      orders
+      orders: orders.map(toOrderDto)
     });
   } catch (error) {
     next(error);
@@ -70,7 +71,7 @@ orderRouter.get("/worker/incoming", authenticate, requireRole("PROVIDER"), async
 
     response.json({
       ok: true,
-      orders
+      orders: orders.map(toOrderDto)
     });
   } catch (error) {
     next(error);
@@ -83,7 +84,7 @@ orderRouter.get("/:orderId", authenticate, requireAdminPermissionIfAdmin("orders
 
     response.json({
       ok: true,
-      order
+      order: toOrderDto(order)
     });
   } catch (error) {
     next(error);
@@ -96,7 +97,7 @@ orderRouter.post("/:orderId/accept", authenticate, requireAdminPermissionIfAdmin
 
     response.json({
       ok: true,
-      order
+      order: toOrderDto(order)
     });
   } catch (error) {
     next(error);
@@ -110,7 +111,7 @@ orderRouter.post("/:orderId/reject", authenticate, requireRole("PROVIDER"), asyn
 
     response.json({
       ok: true,
-      order
+      order: toOrderDto(order)
     });
   } catch (error) {
     next(error);
@@ -124,7 +125,7 @@ orderRouter.post("/:orderId/status", authenticate, requireAdminPermissionIfAdmin
 
     response.json({
       ok: true,
-      order
+      order: toOrderDto(order)
     });
   } catch (error) {
     next(error);
@@ -153,7 +154,7 @@ orderRouter.post("/:orderId/cancel", authenticate, requireAdminPermissionIfAdmin
 
     response.json({
       ok: true,
-      order
+      order: toOrderDto(order)
     });
   } catch (error) {
     next(error);

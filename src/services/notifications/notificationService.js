@@ -6,6 +6,19 @@ import { apiRequest } from "../api/client";
 import { httpAuthRequest } from "../api/authenticatedClient";
 
 export const PUSH_TOKEN_STORAGE_KEY = "nearfix-push-token";
+export const PUSH_DEVICE_ID_STORAGE_KEY = "nearfix-push-device-id";
+
+function createDeviceId() {
+  return `nearfix-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+export async function getOrCreatePushDeviceId() {
+  const existing = await AsyncStorage.getItem(PUSH_DEVICE_ID_STORAGE_KEY);
+  if (existing) return existing;
+  const deviceId = createDeviceId();
+  await AsyncStorage.setItem(PUSH_DEVICE_ID_STORAGE_KEY, deviceId);
+  return deviceId;
+}
 
 export async function fetchNotificationsApi(token) {
   return apiRequest(async () => {
@@ -31,14 +44,15 @@ export async function markNotificationReadApi(token, notificationId) {
   });
 }
 
-export async function savePushTokenApi(token, pushToken) {
+export async function savePushTokenApi(token, pushToken, deviceId) {
   return apiRequest(async () => {
     const payload = await httpAuthRequest("/notifications/push-token", {
       method: "POST",
       token,
       body: {
         token: pushToken,
-        platform: Platform.OS
+        platform: Platform.OS,
+        deviceId
       }
     });
 
@@ -49,28 +63,45 @@ export async function savePushTokenApi(token, pushToken) {
   });
 }
 
-export async function registerPushTokenApi(token) {
+export async function registerPushTokenApi(token, isCurrent = () => true) {
   return apiRequest(async () => {
-    const permission = await Notifications.requestPermissionsAsync();
-    if (!permission.granted) {
-      return { ok: false, message: "Push notification permission denied" };
-    }
-
-    const projectId = Constants.easConfig?.projectId || Constants.expoConfig?.extra?.eas?.projectId;
+    if (!isCurrent()) return { ok: false, stale: true };
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
     if (!projectId) {
       return { ok: false, message: "EAS project ID is not configured" };
     }
 
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("orders", {
+        name: "NearFIX buyurtma va chatlar",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 180, 250],
+        lightColor: "#0F719D",
+        sound: "default"
+      });
+    }
+
+    const currentPermission = await Notifications.getPermissionsAsync();
+    const permission = currentPermission.granted
+      ? currentPermission
+      : await Notifications.requestPermissionsAsync();
+    if (!permission.granted) {
+      return { ok: false, message: "Push notification permission denied" };
+    }
+
     const result = await Notifications.getExpoPushTokenAsync({ projectId });
     const pushToken = result.data;
-    const saveResult = await savePushTokenApi(token, pushToken);
+    const deviceId = await getOrCreatePushDeviceId();
+    if (!isCurrent()) return { ok: false, stale: true };
+    const saveResult = await savePushTokenApi(token, pushToken, deviceId);
     if (!saveResult.ok) return saveResult;
 
     await AsyncStorage.setItem(PUSH_TOKEN_STORAGE_KEY, pushToken);
 
     return {
       ok: true,
-      pushToken
+      pushToken,
+      deviceId
     };
   });
 }

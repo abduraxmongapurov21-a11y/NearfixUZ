@@ -35,8 +35,8 @@
       [
         "react-native-yamap-plus",
         {
-          "android_useYandexMapKitLite": true,
-          "ios_useYandexMapKitLite": true
+          "android_useYandexMapKitLite": false,
+          "ios_useYandexMapKitLite": false
         }
       ],
       [
@@ -69,6 +69,7 @@
     },
     "android": {
       "package": "uz.nearfix.app",
+      "googleServicesFile": "./google-services.json",
       "icon": "./assets/images/icon.png",
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
@@ -79,7 +80,10 @@
     },
     "extra": {
       "authEnabled": true,
-      "paymentsEnabled": false
+      "paymentsEnabled": false,
+      "eas": {
+        "projectId": "cb752bd0-f6d9-4240-9215-7193ac16755a"
+      }
     }
   }
 }

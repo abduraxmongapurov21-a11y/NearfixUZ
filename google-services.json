@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "764246890118",
+    "project_id": "nearfix-e2a17",
+    "storage_bucket": "nearfix-e2a17.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:764246890118:android:fbd03915f362cba9ed2307",
+        "android_client_info": {
+          "package_name": "uz.nearfix.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCq9OU1GMQVjUa8YWqV3RHjBuF_8hx6XEk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

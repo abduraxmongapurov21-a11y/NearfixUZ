@@ -25,7 +25,7 @@ const avatarPalette = [
   { avatarBg: "#EFE0FF", avatarColor: "#7C3DFF" }
 ];
 
-export function WorkerJobsScreen({ navigation }) {
+export function WorkerJobsScreen({ navigation, route }) {
   const session = useAuthStore((state) => state.session);
   const incomingRequests = useWorkerStore((state) => state.incomingRequests);
   const activeJob = useWorkerStore((state) => state.activeJob);
@@ -42,6 +42,14 @@ export function WorkerJobsScreen({ navigation }) {
   useEffect(() => {
     syncWorkerFromApi();
   }, [syncWorkerFromApi]);
+
+  useEffect(() => {
+    const targetOrderId = route?.params?.orderId;
+    if (!targetOrderId) return;
+    if (incomingRequests.some((order) => order.id === targetOrderId)) setSelectedTab("new");
+    else if (activeJob?.id === targetOrderId) setSelectedTab("active");
+    else if (completedOrders.some((order) => order.id === targetOrderId)) setSelectedTab("done");
+  }, [activeJob?.id, completedOrders, incomingRequests, route?.params?.orderId]);
 
   const newJobs = useMemo(() => {
     if (!incomingRequests.length) return [];

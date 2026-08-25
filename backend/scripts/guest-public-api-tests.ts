@@ -18,6 +18,7 @@ const forbidden = new Set([
   "user", "userId", "serviceLat", "serviceLng", "serviceLocationUpdatedAt", "moderationReason",
   "submittedAt", "verifiedAt", "updatedAt", "client", "clientId", "order", "orderId",
   "address", "addressId", "problemDescription", "priceEstimate", "finalAmount", "cancelReason"
+  , "location", "locationLabel", "locationAddressText", "locationDistrict", "locationLat", "locationLng"
 ]);
 
 function assertNoForbiddenFields(value: unknown, path = "response") {

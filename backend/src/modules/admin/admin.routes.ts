@@ -29,6 +29,38 @@ adminRouter.use(authenticate, requireRole("ADMIN"));
 
 const maxAdminOrdersLimit = 100;
 
+function toAdminOrderListDto(order: any) {
+  return {
+    id: order.id,
+    publicCode: order.publicCode,
+    clientId: order.clientId,
+    workerId: order.workerId,
+    cityId: order.cityId,
+    serviceType: order.serviceType,
+    problemTitle: order.problemTitle,
+    urgency: order.urgency,
+    status: order.status,
+    priceEstimate: order.priceEstimate,
+    finalAmount: order.finalAmount,
+    responseDeadlineAt: order.responseDeadlineAt,
+    cancelReason: order.cancelReason,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    client: order.client
+      ? { id: order.client.id, name: order.client.name, phone: order.client.phone }
+      : null,
+    worker: order.worker
+      ? {
+          id: order.worker.id,
+          profession: order.worker.profession,
+          user: order.worker.user
+            ? { id: order.worker.user.id, name: order.worker.user.name, phone: order.worker.user.phone }
+            : null
+        }
+      : null
+  };
+}
+
 function readQueryValue(value: unknown) {
   const raw = Array.isArray(value) ? value[0] : value;
   return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
@@ -228,7 +260,7 @@ adminRouter.get("/orders", requirePermission("orders.read"), async (request, res
 
     response.json({
       ok: true,
-      items,
+      items: items.map(toAdminOrderListDto),
       total,
       page,
       limit,

@@ -23,7 +23,6 @@
 
 2. Copy the resulting EAS project UUID and create these variables in the EAS `production` environment:
 
-   - `EXPO_PUBLIC_EAS_PROJECT_ID` — the EAS project UUID (plain text).
    - `YANDEX_MAPKIT_API_KEY` — an Android/iOS-restricted Yandex MapKit SDK key (sensitive).
 
    Restrict the Yandex MapKit key to the NearFIX native application identifiers (`uz.nearfix.app`). This is a MapKit SDK key, not a Yandex Geocoder key.

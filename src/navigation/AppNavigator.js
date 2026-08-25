@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { registerPushTokenApi } from "../services/notifications/notificationService";
+import { enqueuePushRegistration } from "../services/notifications/pushRegistrationQueue.mjs";
 import { useAuthStore } from "../store/authStore";
 import { colors } from "../theme";
 import { ClientNavigator } from "./ClientNavigator";
@@ -20,7 +21,15 @@ export function AppNavigator() {
 
   useEffect(() => {
     if (session?.token) {
-      registerPushTokenApi(session.token);
+      const sessionToken = session.token;
+      enqueuePushRegistration(() =>
+        registerPushTokenApi(
+          sessionToken,
+          () => useAuthStore.getState().session?.token === sessionToken
+        )
+      ).then((result) => {
+        if (!result?.ok && !result?.stale) console.warn("Push registration unavailable", result?.message);
+      });
     }
   }, [session?.token]);
 

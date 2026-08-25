@@ -1,23 +1,7 @@
 import { apiRequest, httpRequest } from "../api/client";
-import { mapApiAddress } from "./addressMapper.mjs";
+import { mapApiAddress, toAddressPayload } from "./addressMapper.mjs";
 
-export { mapApiAddress } from "./addressMapper.mjs";
-
-function toAddressPayload(address) {
-  const payload = {
-    title: address.title || address.label,
-    address: address.address || address.addressText,
-    lat: address.lat ?? address.latitude,
-    lng: address.lng ?? address.longitude,
-    district: address.district
-  };
-
-  if (address.isDefault !== undefined) {
-    payload.isDefault = Boolean(address.isDefault);
-  }
-
-  return payload;
-}
+export { mapApiAddress, toAddressPayload } from "./addressMapper.mjs";
 
 export async function getAddressesApi(token) {
   return apiRequest(async () => {

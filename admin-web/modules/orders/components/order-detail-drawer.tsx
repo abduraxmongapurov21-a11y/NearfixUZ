@@ -164,17 +164,17 @@ export function OrderDetailDrawer({
               </Section>
 
               <Section title="Address Information">
-                {order.address ? (
+                {order.location ? (
                   <>
-                    <Field label="Label" value={order.address.label} />
-                    <Field label="City" value={order.address.cityId} />
-                    <Field label="District" value={order.address.district} />
-                    <Field label="Address" value={order.address.addressText} />
+                    <Field label="Label" value={order.location.label} />
+                    <Field label="City" value={order.location.cityId} />
+                    <Field label="District" value={order.location.district} />
+                    <Field label="Address" value={order.location.addressText} />
                     <Field
                       label="Coordinates"
                       value={
-                        order.address.lat && order.address.lng
-                          ? `${order.address.lat}, ${order.address.lng}`
+                        order.location.lat && order.location.lng
+                          ? `${order.location.lat}, ${order.location.lng}`
                           : null
                       }
                     />

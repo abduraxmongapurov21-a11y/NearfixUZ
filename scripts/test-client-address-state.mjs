@@ -5,6 +5,7 @@ import {
   replaceUpdatedAddress
 } from "../src/store/clientAddressState.mjs";
 import { createAccountRequestGuard } from "../src/store/requestGeneration.mjs";
+import { mapApiAddress, toAddressPayload } from "../src/services/addresses/addressMapper.mjs";
 
 function deferred() {
   let resolve;
@@ -89,6 +90,29 @@ assert.deepEqual(
     catalogSort: "nearest"
   }
 );
+
+const createdAddressDto = {
+  id: "created-address",
+  title: "Uy",
+  address: "Bunyodkor ko'chasi 12",
+  district: "Chilonzor",
+  cityId: "tashkent",
+  lat: "41.311081",
+  lng: "69.240562",
+  isDefault: true
+};
+const normalizedCreated = mapApiAddress(createdAddressDto);
+assert.equal(normalizedCreated.district, "Chilonzor");
+assert.equal(normalizedCreated.cityId, "tashkent");
+assert.equal(toAddressPayload(normalizedCreated).district, "Chilonzor");
+assert.equal(toAddressPayload(normalizedCreated).cityId, "tashkent");
+const reopenedAddress = replaceUpdatedAddress(
+  [normalizedCreated],
+  normalizedCreated.id,
+  mapApiAddress({ ...createdAddressDto, title: "Uy tahrirlangan" })
+)[0];
+assert.equal(reopenedAddress.district, "Chilonzor");
+assert.equal(reopenedAddress.cityId, "tashkent");
 
 assert.deepEqual(
   reconcileCatalogAddressState(

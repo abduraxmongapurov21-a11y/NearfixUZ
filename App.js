@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { StatusBar, StyleSheet, View } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
+import * as Notifications from "expo-notifications";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { enableScreens } from "react-native-screens";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold } from "@expo-google-fonts/inter";
@@ -8,8 +9,21 @@ import { AppNavigator } from "./src/navigation/AppNavigator";
 import { colors } from "./src/theme";
 import "./src/i18n";
 import { Text } from "./src/i18n/native";
+import { useAuthStore } from "./src/store/authStore";
+import { navigateToNotificationTarget } from "./src/services/notifications/notificationNavigation.mjs";
 
 enableScreens();
+
+const navigationRef = createNavigationContainerRef();
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true
+  })
+});
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -36,6 +50,9 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function App() {
+  const handledNotificationId = useRef(null);
+  const pendingNotificationResponse = useRef(null);
+  const session = useAuthStore((state) => state.session);
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -43,6 +60,32 @@ export default function App() {
     Inter_700Bold,
     Inter_800ExtraBold
   });
+
+  const handleNotificationResponse = useCallback((response) => {
+    const identifier = response?.notification?.request?.identifier;
+    if (!identifier || identifier === handledNotificationId.current) return;
+    const currentSession = useAuthStore.getState().session;
+    if (!currentSession || !navigationRef.isReady()) {
+      pendingNotificationResponse.current = response;
+      return;
+    }
+    handledNotificationId.current = identifier;
+    pendingNotificationResponse.current = null;
+    navigateToNotificationTarget(
+      navigationRef,
+      response.notification.request.content.data,
+      currentSession.role
+    );
+  }, []);
+
+  useEffect(() => {
+    const handleResponse = (response) => handleNotificationResponse(response);
+
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    Notifications.getLastNotificationResponseAsync().then(handleResponse).catch(() => null);
+    if (pendingNotificationResponse.current) handleResponse(pendingNotificationResponse.current);
+    return () => subscription.remove();
+  }, [handleNotificationResponse, session?.role, session?.userId]);
 
   if (!fontsLoaded) {
     return <View style={styles.app} />;
@@ -52,7 +95,10 @@ export default function App() {
     <SafeAreaProvider>
       <ErrorBoundary>
         <SafeAreaView style={styles.app}>
-          <NavigationContainer>
+          <NavigationContainer
+            ref={navigationRef}
+            onReady={() => handleNotificationResponse(pendingNotificationResponse.current)}
+          >
             <StatusBar barStyle="dark-content" />
             <AppNavigator />
           </NavigationContainer>

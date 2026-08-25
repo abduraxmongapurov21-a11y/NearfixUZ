@@ -55,7 +55,7 @@ export type AdminOrderDetail = {
     profession: string;
     availability: string;
   };
-  address: {
+  location: {
     label: string;
     cityId: string;
     district?: string;

@@ -186,6 +186,31 @@ function configuredDemoAccounts(): DemoAccount[] {
     });
   }
 
+  if (env.APP_REVIEW_DEMO_EXTRA_ACCOUNTS_JSON) {
+    const configuredAccounts = JSON.parse(env.APP_REVIEW_DEMO_EXTRA_ACCOUNTS_JSON) as unknown;
+    if (!Array.isArray(configuredAccounts)) {
+      throw new Error("APP_REVIEW_DEMO_EXTRA_ACCOUNTS_JSON must be a JSON array");
+    }
+
+    for (const account of configuredAccounts) {
+      if (
+        !account ||
+        typeof account !== "object" ||
+        typeof account.phone !== "string" ||
+        typeof account.password !== "string" ||
+        ![UserRole.CLIENT, UserRole.PROVIDER].includes(account.role)
+      ) {
+        throw new Error("APP_REVIEW_DEMO_EXTRA_ACCOUNTS_JSON contains an invalid account");
+      }
+
+      accounts.push({
+        phone: normalizePhone(account.phone),
+        password: account.password,
+        role: account.role
+      });
+    }
+  }
+
   return accounts;
 }
 

@@ -43,7 +43,7 @@ notificationRouter.patch("/:id/read", async (request, response, next) => {
 notificationRouter.delete("/push-token", async (request, response, next) => {
   try {
     const input = deletePushTokenSchema.parse(request.body);
-    const result = await deletePushToken(request.user!.id, input.token);
+    const result = await deletePushToken(request.user!.id, input);
     response.json({ ok: true, deletedCount: result.count });
   } catch (error) {
     next(error);
@@ -53,7 +53,7 @@ notificationRouter.delete("/push-token", async (request, response, next) => {
 notificationRouter.post("/push-token", async (request, response, next) => {
   try {
     const input = pushTokenSchema.parse(request.body);
-    const token = await savePushToken(request.user!.id, input.token, input.platform);
+    const token = await savePushToken(request.user!.id, input.token, input.platform, input.deviceId);
     response.json({ ok: true, token });
   } catch (error) {
     next(error);

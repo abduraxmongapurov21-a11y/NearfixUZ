@@ -16,6 +16,11 @@ const suffix = String(Date.now()).slice(-7);
 const phones = [`+99890${suffix}`, `+99891${suffix}`, `+99892${suffix}`, `+99893${suffix}`, `+99894${suffix}`];
 const otpServiceStub = { verifyChallenge: async () => ({}) } as any;
 const adminUsernames = [`p12-limited-${suffix}`, `p12-manager-${suffix}`, `p12-super-${suffix}`];
+const bookingLocation = {
+  latitude: 41.311081,
+  longitude: 69.240562,
+  addressText: "Toshkent, provider client-mode test manzili"
+};
 
 async function cleanup() {
   const admins = await prisma.adminAccount.findMany({ where: { username: { in: adminUsernames } }, select: { id: true } });
@@ -73,6 +78,7 @@ async function main() {
     },
     {
       workerId: targetWorker.id,
+      location: bookingLocation,
       cityId: "tashkent",
       serviceType: "Plumber",
       problemTitle: "Pre-approval client order",
@@ -113,6 +119,11 @@ async function main() {
   assert.equal(activeBeforeModeration, 1, "submission must preserve the client session");
 
   await rejectWorkerProfile(submitted.id, "Please update your application");
+  assert.equal(
+    await prisma.notification.count({ where: { userId: clientId, type: "WORKER_APPLICATION_REJECTED" } }),
+    1,
+    "rejection must create a durable user notification"
+  );
   client = await prisma.user.findUniqueOrThrow({ where: { id: clientId } });
   assert.equal(client.role, UserRole.CLIENT, "rejection must keep CLIENT");
   const rejectedVersion = client.sessionVersion;
@@ -126,6 +137,11 @@ async function main() {
 
   const versionBeforeApproval = client.sessionVersion;
   await approveWorkerProfile(resubmitted.id, {});
+  assert.equal(
+    await prisma.notification.count({ where: { userId: clientId, type: "WORKER_APPLICATION_APPROVED" } }),
+    1,
+    "approval must create a durable user notification"
+  );
   const provider = await prisma.user.findUniqueOrThrow({ where: { id: clientId } });
   assert.equal(provider.role, UserRole.PROVIDER, "approval is the role grant operation");
   assert.equal(provider.sessionVersion, versionBeforeApproval + 1);
@@ -142,6 +158,7 @@ async function main() {
   await assert.rejects(
     createOrder(providerAuth, {
       workerId: resubmitted.id,
+      location: bookingLocation,
       cityId: "tashkent",
       serviceType: "Electrician",
       problemTitle: "Self booking must fail",
@@ -163,6 +180,7 @@ async function main() {
   );
   const providerClientOrder = await createOrder(providerAuth, {
     workerId: targetWorker.id,
+    location: bookingLocation,
     cityId: "tashkent",
     serviceType: "Plumber",
     problemTitle: "Post-approval client-mode order",

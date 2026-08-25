@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { MoreVertical, Search } from "lucide-react-native";
 import { ROUTES } from "../../constants/routes";
@@ -52,11 +52,21 @@ function uniqueRoomsByCounterpart(rooms, currentUserId) {
   });
 }
 
-export function ChatScreen({ navigation }) {
+function preparePrivateRooms(rooms, currentUserId, targetRoomId) {
+  const privateRooms = rooms.filter((room) => ["direct", "order"].includes(room.type));
+  const targetRoom = targetRoomId ? privateRooms.find((room) => room.id === targetRoomId) : null;
+  const ordered = targetRoom ? [targetRoom, ...privateRooms.filter((room) => room.id !== targetRoomId)] : privateRooms;
+  return uniqueRoomsByCounterpart(ordered, currentUserId).map((room, index) =>
+    resolvePrivateRoom(room, currentUserId, index)
+  );
+}
+
+export function ChatScreen({ navigation, route }) {
   const session = useAuthStore((state) => state.session);
   const [apiRooms, setApiRooms] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const openedRoomId = useRef(null);
 
   async function loadRooms() {
     if (!session?.token) {
@@ -65,12 +75,7 @@ export function ChatScreen({ navigation }) {
 
     const result = await fetchChatRoomsApi(session.token, undefined, session.userId);
     if (result.ok) {
-      const privateRooms = result.rooms.filter((room) => ["direct", "order"].includes(room.type));
-      setApiRooms(
-        uniqueRoomsByCounterpart(privateRooms, session.userId).map((room, index) =>
-          resolvePrivateRoom(room, session.userId, index)
-        )
-      );
+      setApiRooms(preparePrivateRooms(result.rooms, session.userId, route?.params?.roomId));
     }
   }
 
@@ -84,12 +89,7 @@ export function ChatScreen({ navigation }) {
 
       const result = await fetchChatRoomsApi(session.token, undefined, session.userId);
       if (mounted && result.ok) {
-        const privateRooms = result.rooms.filter((room) => ["direct", "order"].includes(room.type));
-        setApiRooms(
-          uniqueRoomsByCounterpart(privateRooms, session.userId).map((room, index) =>
-            resolvePrivateRoom(room, session.userId, index)
-          )
-        );
+        setApiRooms(preparePrivateRooms(result.rooms, session.userId, route?.params?.roomId));
       }
     }
 
@@ -98,7 +98,16 @@ export function ChatScreen({ navigation }) {
     return () => {
       mounted = false;
     };
-  }, [session?.token, session?.userId]);
+  }, [route?.params?.roomId, session?.token, session?.userId]);
+
+  useEffect(() => {
+    const targetRoomId = route?.params?.roomId;
+    if (!targetRoomId || openedRoomId.current === targetRoomId) return;
+    const targetRoom = apiRooms.find((room) => room.id === targetRoomId);
+    if (!targetRoom) return;
+    openedRoomId.current = targetRoomId;
+    navigation.navigate(ROUTES.CHAT_THREAD, { room: targetRoom });
+  }, [apiRooms, navigation, route?.params?.roomId]);
 
   async function handleRefresh() {
     setRefreshing(true);

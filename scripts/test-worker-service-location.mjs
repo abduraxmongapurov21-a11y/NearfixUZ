@@ -7,6 +7,7 @@ import {
 } from "../src/services/workers/serviceLocation.mjs";
 import { createAccountRequestGuard } from "../src/store/requestGeneration.mjs";
 import { buildWorkerProfileSyncStatus } from "../src/store/workerSyncState.mjs";
+import fs from "node:fs";
 
 assert.deepEqual(normalizeServiceLocation({ serviceLat: "41.3110810", serviceLng: "69.2405620" }), {
   latitude: 41.311081,
@@ -51,6 +52,11 @@ assert.equal(submitCalls, 1);
 releaseRequest({ ok: true });
 assert.equal((await firstSubmission).ok, true);
 assert.equal(guard.isActive(), false);
+
+const workerProfileSource = fs.readFileSync("src/screens/worker/WorkerProfileManageScreen.js", "utf8");
+assert.equal(workerProfileSource.includes("ROUTES.MAP_PICKER"), true);
+assert.equal(workerProfileSource.includes('returnParamKey: "selectedServiceLocation"'), true);
+assert.equal(workerProfileSource.includes("route?.params?.selectedServiceLocation"), true);
 
 const failedProfileStatus = buildWorkerProfileSyncStatus(
   { ok: false, message: "Profile fetch failed" },

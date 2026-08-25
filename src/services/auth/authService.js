@@ -156,13 +156,16 @@ export async function refreshAccessTokenApi(refreshToken) {
   });
 }
 
-export async function logoutApi(token, pushToken) {
+export async function logoutApi(token, pushToken, deviceId) {
   return apiRequest(async () => {
-    if (pushToken) {
+    if (pushToken || deviceId) {
       await httpRequest("/notifications/push-token", {
         method: "DELETE",
         token,
-        body: { token: pushToken }
+        body: {
+          ...(pushToken ? { token: pushToken } : {}),
+          ...(deviceId ? { deviceId } : {})
+        }
       }).catch(() => null);
     }
 

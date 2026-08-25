@@ -35,14 +35,7 @@ function resolveMobileRuntimeConfig(source = process.env) {
 module.exports = () => {
   const runtimeConfig = resolveMobileRuntimeConfig();
   const yandexMapKitApiKey = process.env.YANDEX_MAPKIT_API_KEY;
-  const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
   const isProductionBuild = process.env.EAS_BUILD_PROFILE === "production";
-
-  if (isProductionBuild && !easProjectId) {
-    throw new Error(
-      "EXPO_PUBLIC_EAS_PROJECT_ID is required for production push notifications. Configure it in the EAS production environment."
-    );
-  }
 
   if (isProductionBuild && !yandexMapKitApiKey) {
     throw new Error(
@@ -55,15 +48,7 @@ module.exports = () => {
     extra: {
       ...expo.extra,
       ...runtimeConfig,
-      ...(yandexMapKitApiKey ? { yandexMapKitApiKey } : {}),
-      ...(easProjectId
-        ? {
-            eas: {
-              ...expo.extra?.eas,
-              projectId: easProjectId
-            }
-          }
-        : {})
+      ...(yandexMapKitApiKey ? { yandexMapKitApiKey } : {})
     }
   };
 };

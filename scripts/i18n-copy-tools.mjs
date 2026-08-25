@@ -23,6 +23,8 @@ const NON_COPY = new Set([
   "NearFIX",
   "Near",
   "FIX",
+  "NearfixProcessRestart",
+  "large",
   "Inter_400Regular",
   "Inter_500Medium",
   "Inter_600SemiBold",
