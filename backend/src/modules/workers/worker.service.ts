@@ -60,7 +60,8 @@ const publicWorkerSelect = {
   },
   availability: {
     select: {
-      status: true
+      status: true,
+      activeOrderId: true
     }
   },
   categories: {
@@ -72,6 +73,10 @@ const publicWorkerSelect = {
 type PublicWorkerRecord = Prisma.WorkerProfileGetPayload<{ select: typeof publicWorkerSelect }>;
 
 export function toPublicWorkerDto(worker: PublicWorkerRecord, distanceMeters: number | null = null) {
+  const publicAvailabilityStatus = worker.availability?.activeOrderId
+    ? WorkerAvailabilityStatus.BUSY
+    : worker.availability?.status;
+
   return {
     id: worker.id,
     name: worker.user.name,
@@ -86,7 +91,7 @@ export function toPublicWorkerDto(worker: PublicWorkerRecord, distanceMeters: nu
     basePrice: worker.basePrice,
     ratingAvg: worker.ratingAvg,
     completedOrdersCount: worker.completedOrdersCount,
-    availability: worker.availability ? { status: worker.availability.status } : null,
+    availability: publicAvailabilityStatus ? { status: publicAvailabilityStatus } : null,
     distanceMeters
   };
 }

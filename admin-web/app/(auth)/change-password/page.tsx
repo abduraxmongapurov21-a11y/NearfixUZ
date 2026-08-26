@@ -25,7 +25,7 @@ function changePasswordErrorMessage(error: unknown) {
     if (error.code === "INVALID_ADMIN_PASSWORD") {
       return "New password kamida 10 belgi bo'lsin, username ichida bo'lmasin va oddiy password bo'lmasin.";
     }
-    if (error.code === "ADMIN_ACCOUNT_REQUIRED") return "Env-admin password Railway env orqali boshqariladi.";
+    if (error.code === "ADMIN_ACCOUNT_REQUIRED") return "Env-admin password deployment muhiti orqali boshqariladi.";
   }
 
   return "Password o'zgartirilmadi.";

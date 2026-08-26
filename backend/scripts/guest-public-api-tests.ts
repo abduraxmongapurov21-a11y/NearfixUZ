@@ -100,10 +100,13 @@ async function main() {
   }
   const clientToken = await tokenFor(client, "client");
   const providerToken = await tokenFor(provider, "provider");
-  const request = async (path: string, options: { method?: string; token?: string } = {}) => {
+  const request = async (path: string, options: { method?: string; token?: string; headers?: Record<string, string> } = {}) => {
     const response = await fetch(`http://127.0.0.1:${addressInfo.port}${path}`, {
       method: options.method,
-      headers: options.token ? { Authorization: `Bearer ${options.token}` } : undefined
+      headers: {
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+        ...options.headers
+      }
     });
     return { response, payload: await response.json() };
   };
@@ -111,15 +114,35 @@ async function main() {
   try {
     const catalog = await request(`/workers/catalog?cityId=${encodeURIComponent(`city-${suffix}`)}`);
     assert.equal(catalog.response.status, 200);
+    assert.match(catalog.response.headers.get("cache-control") || "", /no-store/);
+    assert.match(catalog.response.headers.get("cache-control") || "", /no-cache/);
     assert.equal(catalog.payload.workers.length, 1);
     assertNoForbiddenFields(catalog.payload.workers);
     assert.equal("createdAt" in catalog.payload.workers[0], false);
 
     const detail = await request(`/workers/${approved.id}`);
     assert.equal(detail.response.status, 200);
+    assert.match(detail.response.headers.get("cache-control") || "", /no-store/);
     assertNoForbiddenFields(detail.payload.worker);
     assert.equal("createdAt" in detail.payload.worker, false);
     assert.deepEqual(Object.keys(detail.payload.worker).sort(), Object.keys(catalog.payload.workers[0]).sort());
+
+    const catalogEtag = catalog.response.headers.get("etag");
+    if (catalogEtag) {
+      const revalidatedCatalog = await request(`/workers/catalog?cityId=${encodeURIComponent(`city-${suffix}`)}`, {
+        headers: { "If-None-Match": catalogEtag }
+      });
+      assert.equal(revalidatedCatalog.response.status, 200, "realtime catalog must never return a stale 304");
+    }
+
+    await prisma.workerAvailability.update({
+      where: { workerId: approved.id },
+      data: { status: WorkerAvailabilityStatus.AVAILABLE, activeOrderId: order.id, lockedUntil: new Date(Date.now() + 60_000) }
+    });
+    const busyDetail = await request(`/workers/${approved.id}`);
+    assert.equal(busyDetail.payload.worker.availability.status, WorkerAvailabilityStatus.BUSY);
+    const busyCatalog = await request(`/workers/catalog?cityId=${encodeURIComponent(`city-${suffix}`)}`);
+    assert.equal(busyCatalog.payload.workers.length, 0);
 
     const privateDetail = await request(`/workers/${draft.id}`);
     assert.equal(privateDetail.response.status, 404);
@@ -155,6 +178,10 @@ async function main() {
     assert.equal(selfBlock.payload.code, "BLOCK_SELF_FORBIDDEN");
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await prisma.workerAvailability.updateMany({
+      where: { workerId: approved.id },
+      data: { activeOrderId: null, lockedUntil: null }
+    });
     await prisma.review.deleteMany({ where: { orderId: order.id } });
     await prisma.order.deleteMany({ where: { id: order.id } });
     await prisma.address.deleteMany({ where: { id: address.id } });

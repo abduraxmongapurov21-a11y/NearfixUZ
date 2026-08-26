@@ -28,7 +28,8 @@ const clientCalls = {
   remove: [] as Deferred<any>[],
   orders: [] as Deferred<any>[],
   orderCreate: [] as Deferred<any>[],
-  orderCancel: [] as Deferred<any>[]
+  orderCancel: [] as Deferred<any>[],
+  catalog: [] as Deferred<any>[]
 };
 const workerCalls = {
   profile: [] as Deferred<any>[],
@@ -62,7 +63,8 @@ const restoreClientDependencies = configureClientStoreForTests({
   deleteAddressApi: () => take(clientCalls.remove),
   fetchOrdersApi: () => take(clientCalls.orders),
   createOrderApi: () => take(clientCalls.orderCreate),
-  cancelOrderApi: () => take(clientCalls.orderCancel)
+  cancelOrderApi: () => take(clientCalls.orderCancel),
+  fetchCatalogWorkers: () => take(clientCalls.catalog)
 });
 const restoreWorkerDependencies = configureWorkerStoreForTests({
   getSession: () => session,
@@ -197,6 +199,24 @@ async function testClientAccountSwitches() {
   aCreateOrderResponse.resolve({ ok: true, order: { id: "a-created-order" } });
   assert.equal((await aCreateOrder).stale, true);
   assert.equal(useClientStore.getState().activeOrder.id, "b-created-order");
+
+  resetStores();
+  setAccount("a");
+  useClientStore.setState({
+    categories: [{ id: "category-a", nameUz: "Service A" }],
+    workers: [{ id: "stale-worker", specialty: "A", cityId: "tashkent" }],
+    selectedWorkerId: "stale-worker",
+    orderDraft: { serviceId: "category-a", selectedWorkerId: "stale-worker" }
+  });
+  const unavailableOrderResponse = enqueue(clientCalls.orderCreate);
+  const refreshedCatalogResponse = enqueue(clientCalls.catalog);
+  const unavailableOrder = useClientStore.getState().createOrderFromDraft();
+  unavailableOrderResponse.resolve({ ok: false, code: "WORKER_NOT_AVAILABLE", message: "Worker is not available for a new order" });
+  refreshedCatalogResponse.resolve({ ok: true, workers: [{ id: "fresh-worker", specialty: "A", cityId: "tashkent" }] });
+  const unavailableResult = await unavailableOrder;
+  assert.equal(unavailableResult.code, "WORKER_NOT_AVAILABLE");
+  assert.match(unavailableResult.message, /Katalog yangilandi/);
+  assert.deepEqual(useClientStore.getState().workers.map((worker) => worker.id), ["fresh-worker"]);
 
   resetStores();
   setAccount("a");

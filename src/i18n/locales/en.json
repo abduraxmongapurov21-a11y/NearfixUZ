@@ -1015,5 +1015,7 @@
   "Kategoriyalar yuklanmadi": "Categories could not be loaded",
   "Kategoriyalar yuklanmoqda...": "Loading categories...",
   "Tanlangan kategoriya faol emas yoki mavjud emas.": "The selected category is unavailable or inactive.",
-  "Yangi xizmatlar qo'shilganda shu yerda ko'rinadi.": "New services will appear here when they are added."
+  "Yangi xizmatlar qo'shilganda shu yerda ko'rinadi.": "New services will appear here when they are added.",
+  "Buyurtma ma'lumotlari to'liq emas.": "Order information is incomplete.",
+  "Usta hozir boshqa buyurtma bilan band. Katalog yangilandi, boshqa mavjud ustani tanlang.": "The worker is currently busy with another order. The catalog has been refreshed; please select another available worker."
 }

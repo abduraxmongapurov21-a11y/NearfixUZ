@@ -1015,5 +1015,7 @@
   "Kategoriyalar yuklanmadi": "Не удалось загрузить категории",
   "Kategoriyalar yuklanmoqda...": "Загрузка категорий...",
   "Tanlangan kategoriya faol emas yoki mavjud emas.": "Выбранная категория недоступна или неактивна.",
-  "Yangi xizmatlar qo'shilganda shu yerda ko'rinadi.": "Новые услуги появятся здесь после добавления."
+  "Yangi xizmatlar qo'shilganda shu yerda ko'rinadi.": "Новые услуги появятся здесь после добавления.",
+  "Buyurtma ma'lumotlari to'liq emas.": "Данные заказа заполнены не полностью.",
+  "Usta hozir boshqa buyurtma bilan band. Katalog yangilandi, boshqa mavjud ustani tanlang.": "Мастер сейчас занят другим заказом. Каталог обновлён — выберите другого доступного мастера."
 }

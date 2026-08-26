@@ -7,6 +7,7 @@ module.exports = [
       "backend/**",
       "dist-test/**",
       "dist-test-ios/**",
+      "dist-test-store/**",
       "dist-test-web/**",
       "node_modules/**"
     ]

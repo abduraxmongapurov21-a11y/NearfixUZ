@@ -52,6 +52,7 @@ const defaultClientStoreDependencies = {
   fetchOrdersApi,
   createOrderApi,
   cancelOrderApi,
+  fetchCatalogWorkers,
   fetchCategoriesApi,
   loadCategoryCache,
   saveCategoryCache
@@ -219,7 +220,7 @@ export const useClientStore = create((set, get) => ({
       catalogRequestVersion: requestVersion
     });
 
-    const result = await fetchCatalogWorkers(stateAtRequest.selectedCityId, categoryId, {
+    const result = await clientStoreDependencies.fetchCatalogWorkers(stateAtRequest.selectedCityId, categoryId, {
       originAddressId,
       sort,
       token
@@ -640,6 +641,14 @@ export const useClientStore = create((set, get) => ({
           }
         }));
         return result;
+      }
+
+      if (result.code === "WORKER_NOT_AVAILABLE") {
+        await get().syncCatalogFromApi(service?.id);
+        return {
+          ...result,
+          message: "Usta hozir boshqa buyurtma bilan band. Katalog yangilandi, boshqa mavjud ustani tanlang."
+        };
       }
 
       return result;

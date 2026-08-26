@@ -30,6 +30,22 @@ npm run dev
 
 `DATABASE_URL` and `DIRECT_URL` must both point to PostgreSQL before running migrations.
 
+## Production deployment contract
+
+The backend is portable across Node hosting platforms and uses environment variables for PostgreSQL, the listening
+port, Cloudflare R2 and Eskiz. For DigitalOcean App Platform, configure:
+
+```text
+Root directory: backend
+Build command: npm run prisma:generate && npm run build
+Run command: npm start
+Pre-deploy job: npx prisma migrate deploy
+Health check: /health
+```
+
+Run the migration as a separate blocking `PRE_DEPLOY` job, not as part of the web service start command. Keep
+`DATABASE_URL` and `DIRECT_URL` environment-driven; do not commit connection strings.
+
 ## Pixel_7 local runtime
 
 The checked-in examples isolate the Android emulator from production:

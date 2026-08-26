@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { authenticate } from "../auth/middleware/auth.middleware.js";
 import { requireRole } from "../auth/middleware/role.guard.js";
 import { getWorkerRating, listWorkerReviews } from "../reviews/review.service.js";
@@ -25,6 +25,14 @@ import {
 } from "./worker.service.js";
 
 export const workerRouter = Router();
+
+function disableRealtimeCaching(response: Response) {
+  response.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0"
+  });
+}
 
 workerRouter.get("/application", authenticate, requireRole("CLIENT"), async (request, response, next) => {
   try {
@@ -55,6 +63,7 @@ workerRouter.post("/application/submit", authenticate, requireRole("CLIENT"), as
 });
 
 workerRouter.get("/catalog", (request, response, next) => {
+  disableRealtimeCaching(response);
   if (request.query.originAddressId === undefined) {
     next();
     return;
@@ -82,6 +91,7 @@ workerRouter.get("/catalog", (request, response, next) => {
 
 workerRouter.get("/me", authenticate, requireRole("PROVIDER"), async (request, response, next) => {
   try {
+    disableRealtimeCaching(response);
     const worker = await getOwnWorkerProfile(request.user!.id);
 
     response.json({
@@ -147,6 +157,7 @@ workerRouter.get("/:workerId/rating", async (request, response, next) => {
 
 workerRouter.get("/:workerId", async (request, response, next) => {
   try {
+    disableRealtimeCaching(response);
     const worker = await getPublicWorker(String(request.params.workerId));
     response.json({ ok: true, worker });
   } catch (error) {

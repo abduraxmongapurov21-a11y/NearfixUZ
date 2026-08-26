@@ -22,6 +22,7 @@ dist-test-*/
 dist-test-ios/
 web-build/
 backend/uploads/
+/backend/null/
 db-backups/
 expo-qr.png
 nearfixFront/
