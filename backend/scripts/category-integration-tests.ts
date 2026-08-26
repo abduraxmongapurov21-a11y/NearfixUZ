@@ -19,7 +19,22 @@ let bannerId: string | undefined;
 let plumbingOriginalName: string | undefined;
 
 try {
-  const referenced = await createCategory({ slug: `integration-${suffix}`, nameUz: "Sinov", nameRu: "Тест", nameEn: "Test", iconKey: "grid" });
+  const maxSortOrderBeforeCreate = (await prisma.category.aggregate({ _max: { sortOrder: true } }))._max.sortOrder ?? -1;
+  const referenced = await createCategory({
+    slug: `integration-${suffix}`,
+    nameUz: "Sinov",
+    nameRu: "Тест",
+    nameEn: "Test",
+    iconKey: "grid",
+    sortOrder: maxSortOrderBeforeCreate + 1000
+  } as any);
+  assert.equal(referenced.sortOrder, maxSortOrderBeforeCreate + 1, "create service must ignore injected sortOrder");
+  await updateCategory(referenced.id, { sortOrder: referenced.sortOrder + 1000 } as any);
+  assert.equal(
+    (await prisma.category.findUniqueOrThrow({ where: { id: referenced.id } })).sortOrder,
+    referenced.sortOrder,
+    "update service must ignore injected sortOrder"
+  );
   const free = await createCategory({ slug: `free-${suffix}`, nameUz: "Erkin", nameRu: "Свободная", nameEn: "Free", iconKey: "wrench" });
   referencedCategoryId = referenced.id;
   freeCategoryId = free.id;

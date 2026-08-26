@@ -19,7 +19,6 @@ export type CategoryInput = {
   nameRu: string;
   nameEn: string;
   iconKey: string;
-  sortOrder?: number;
   isActive?: boolean;
 };
 

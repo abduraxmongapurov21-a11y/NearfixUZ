@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   bookingLocationDraft,
+  bookingProblemOptions,
+  categoryBookingDraft,
   createBookingSubmissionLock,
   createOrderThenOptionallySave,
   normalizeBookingMapSelection,
@@ -41,6 +43,37 @@ assert.deepEqual(bookingLocationDraft(null, mapLocation), {
   addressId: null,
   location: mapLocation,
   address: mapLocation.addressText
+});
+
+const adminCreatedCategory = {
+  id: "cat_appliance_repair",
+  slug: "appliance-repair",
+  nameUz: "Maishiy texnika",
+  nameRu: "Бытовая техника",
+  nameEn: "Appliance repair"
+};
+const adminCategoryWorker = { id: "worker-new-category", categoryIds: [adminCreatedCategory.id] };
+assert.deepEqual(bookingProblemOptions(adminCreatedCategory), [
+  "Ta'mirlash kerak",
+  "Ishlamayapti",
+  "O'rnatish kerak",
+  "Almashtirish kerak",
+  "Tekshirib berish kerak",
+  "Boshqa"
+]);
+assert.deepEqual(categoryBookingDraft({
+  category: adminCreatedCategory,
+  worker: adminCategoryWorker,
+  problemTitle: "Ishlamayapti",
+  locationDraft: { addressId: "saved", location: null, address: "Saved address" }
+}), {
+  selectedWorkerId: adminCategoryWorker.id,
+  serviceId: adminCreatedCategory.id,
+  problemTitle: "Ishlamayapti",
+  description: undefined,
+  addressId: "saved",
+  location: null,
+  address: "Saved address"
 });
 
 let saveCalls = 0;

@@ -15,6 +15,8 @@ import { WORKER_STATUS } from "../../constants/workerStatus";
 import { useClientStore } from "../../store/clientStore";
 import {
   bookingLocationDraft,
+  bookingProblemOptions,
+  categoryBookingDraft,
   createBookingSubmissionLock,
   createOrderThenOptionallySave,
   normalizeBookingMapSelection,
@@ -30,51 +32,6 @@ const font = {
   bold: "Inter_700Bold",
   extra: "Inter_800ExtraBold"
 };
-
-const problemPresets = {
-  electric: [
-    "Lyustra ulash",
-    "Rozetka ishlamayapti",
-    "Patron almashtirish",
-    "Sim tortish",
-    "Avtomat urib tashlayapti",
-    "Boshqa"
-  ],
-  plumbing: [
-    "Kran oqyapti",
-    "Unitaz tiqilib qolgan",
-    "Truba yorilgan",
-    "Rakovina oqyapti",
-    "Suv bosimi past",
-    "Boshqa"
-  ],
-  ac: ["Sovutmayapti", "Gaz tugagan", "O'rnatish kerak", "Tozalash kerak", "Shovqin chiqaryapti", "Boshqa"],
-  washer: [
-    "Suv olmayapti",
-    "Suv chiqarmayapti",
-    "Aylanmayapti",
-    "Eshigi ochilmayapti",
-    "Xato kodi chiqyapti",
-    "Boshqa"
-  ],
-  tv: ["Yonmayapti", "Ekran qoraygan", "Ovoz chiqmayapti", "Signal yo'q", "Devorga o'rnatish kerak", "Boshqa"]
-};
-
-const defaultProblems = [
-  "Ta'mirlash kerak",
-  "Ishlamayapti",
-  "O'rnatish kerak",
-  "Almashtirish kerak",
-  "Tekshirib berish kerak",
-  "Boshqa"
-];
-
-function getProblemOptions(category) {
-  if (category?.slug === "electric") return problemPresets.electric;
-  if (category?.slug === "plumbing") return problemPresets.plumbing;
-  if (category?.slug === "ac") return problemPresets.ac;
-  return defaultProblems;
-}
 
 function getDefaultAddress(addresses) {
   return addresses.find((address) => address.isDefault) || addresses[0];
@@ -146,7 +103,7 @@ export function BookingScreen({ navigation, route }) {
     setAddressModalOpen(false);
   }, [navigation, route.params?.selectedBookingLocation]);
 
-  const problemOptions = useMemo(() => getProblemOptions(category), [category]);
+  const problemOptions = useMemo(() => bookingProblemOptions(category), [category]);
   const orderedAddresses = useMemo(() => sortBookingAddresses(savedAddresses), [savedAddresses]);
   const selectedSavedAddress = useMemo(
     () => orderedAddresses.find((address) => address.id === selectedAddressId) || (!oneTimeLocation ? orderedAddresses[0] : null),
@@ -208,13 +165,9 @@ export function BookingScreen({ navigation, route }) {
       const locationDraft = bookingLocationDraft(selectedSavedAddress, oneTimeLocation);
       if (!locationDraft) throw new Error("Buyurtma uchun manzil tanlang.");
 
-      updateOrderDraft({
-        selectedWorkerId: worker.id,
-        serviceId: categoryId,
-        problemTitle,
-        description: undefined,
-        ...locationDraft
-      });
+      const bookingDraft = categoryBookingDraft({ category, worker, problemTitle, locationDraft });
+      if (!bookingDraft) throw new Error("Buyurtma ma'lumotlari to'liq emas.");
+      updateOrderDraft(bookingDraft);
 
       const { orderResult: result, saveResult } = await createOrderThenOptionallySave({
         createOrder: createOrderFromDraft,

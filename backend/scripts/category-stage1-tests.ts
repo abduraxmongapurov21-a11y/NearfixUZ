@@ -8,7 +8,9 @@ import { workerApplicationDraftSchema } from "../src/modules/workers/worker.cont
 const category = { slug: "appliance-repair", nameUz: "Maishiy texnika", nameRu: "Бытовая техника", nameEn: "Appliance repair", iconKey: "wrench" };
 assert.equal(createCategorySchema.safeParse(category).success, true);
 assert.equal(createCategorySchema.safeParse({ ...category, iconKey: "arbitrary-icon" }).success, false);
+assert.equal(createCategorySchema.safeParse({ ...category, sortOrder: 99 }).success, false, "create must not accept sortOrder");
 assert.equal(updateCategorySchema.safeParse({ slug: "changed" }).success, false, "slug updates must be rejected");
+assert.equal(updateCategorySchema.safeParse({ sortOrder: 99 }).success, false, "update must not accept sortOrder");
 assert.equal(workerApplicationDraftSchema.safeParse({ categoryIds: ["cat_one"] }).success, true);
 assert.equal(workerApplicationDraftSchema.safeParse({ categoryIds: [] }).success, false);
 assert.equal(releasedCategorySlugForLegacyValue(" Santexnik "), "plumbing");

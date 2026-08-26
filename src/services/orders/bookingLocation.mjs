@@ -3,6 +3,30 @@ function finiteCoordinate(value, minimum, maximum) {
   return Number.isFinite(number) && number >= minimum && number <= maximum ? number : null;
 }
 
+export const GENERIC_BOOKING_PROBLEMS = Object.freeze([
+  "Ta'mirlash kerak",
+  "Ishlamayapti",
+  "O'rnatish kerak",
+  "Almashtirish kerak",
+  "Tekshirib berish kerak",
+  "Boshqa"
+]);
+
+export function bookingProblemOptions(category) {
+  return category?.id ? [...GENERIC_BOOKING_PROBLEMS] : [];
+}
+
+export function categoryBookingDraft({ category, worker, problemTitle, locationDraft }) {
+  if (!category?.id || !worker?.id || !problemTitle || !locationDraft) return null;
+  return {
+    selectedWorkerId: worker.id,
+    serviceId: category.id,
+    problemTitle,
+    description: undefined,
+    ...locationDraft
+  };
+}
+
 export function normalizeBookingMapSelection(value) {
   const latitude = finiteCoordinate(value?.latitude, -90, 90);
   const longitude = finiteCoordinate(value?.longitude, -180, 180);

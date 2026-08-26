@@ -20,7 +20,6 @@ export const createCategorySchema = z.object({
   nameRu: z.string().trim().min(2).max(80),
   nameEn: z.string().trim().min(2).max(80),
   iconKey: categoryIconKeySchema,
-  sortOrder: z.number().int().min(0).optional(),
   isActive: z.boolean().optional()
 }).strict();
 
@@ -30,7 +29,6 @@ export const updateCategorySchema = z.object({
   nameRu: z.string().trim().min(2).max(80).optional(),
   nameEn: z.string().trim().min(2).max(80).optional(),
   iconKey: categoryIconKeySchema.optional(),
-  sortOrder: z.number().int().min(0).optional(),
   isActive: z.boolean().optional()
 }).strict();
 

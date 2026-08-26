@@ -8,7 +8,6 @@ export type CategoryInput = {
   nameRu: string;
   nameEn: string;
   iconKey: string;
-  sortOrder?: number;
   isActive?: boolean;
 };
 
@@ -76,15 +75,25 @@ async function nextSortOrder(tx: Prisma.TransactionClient | typeof prisma = pris
   return (aggregate._max.sortOrder ?? -1) + 1;
 }
 
+async function lockCategoryOrder(tx: Prisma.TransactionClient) {
+  await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext('nearfix-category-reorder'))");
+}
+
 export async function createCategory(input: CategoryInput) {
   try {
-    return await prisma.category.create({
-      data: {
-        ...input,
-        slug: input.slug.toLowerCase(),
-        sortOrder: input.sortOrder ?? await nextSortOrder(),
-        isActive: input.isActive ?? true
-      }
+    return await prisma.$transaction(async (tx) => {
+      await lockCategoryOrder(tx);
+      return tx.category.create({
+        data: {
+          slug: input.slug.toLowerCase(),
+          nameUz: input.nameUz,
+          nameRu: input.nameRu,
+          nameEn: input.nameEn,
+          iconKey: input.iconKey,
+          sortOrder: await nextSortOrder(tx),
+          isActive: input.isActive ?? true
+        }
+      });
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -96,7 +105,16 @@ export async function createCategory(input: CategoryInput) {
 
 export async function updateCategory(categoryId: string, patch: CategoryPatch) {
   try {
-    return await prisma.category.update({ where: { id: categoryId }, data: patch });
+    return await prisma.category.update({
+      where: { id: categoryId },
+      data: {
+        ...(patch.nameUz !== undefined ? { nameUz: patch.nameUz } : {}),
+        ...(patch.nameRu !== undefined ? { nameRu: patch.nameRu } : {}),
+        ...(patch.nameEn !== undefined ? { nameEn: patch.nameEn } : {}),
+        ...(patch.iconKey !== undefined ? { iconKey: patch.iconKey } : {}),
+        ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {})
+      }
+    });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") throw notFound();
     throw error;
@@ -105,7 +123,7 @@ export async function updateCategory(categoryId: string, patch: CategoryPatch) {
 
 export async function reorderCategories(items: { id: string; sortOrder: number }[]) {
   return prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext('nearfix-category-reorder'))");
+    await lockCategoryOrder(tx);
     const existing = await tx.category.findMany({ select: { id: true } });
     const existingIds = new Set(existing.map((category) => category.id));
     const submittedIds = new Set(items.map((item) => item.id));
