@@ -8,6 +8,8 @@ import {
 import { prisma } from "../../db/prisma.js";
 import type { AuthUser } from "../auth/auth-context.js";
 import { createNotificationSafely } from "../notifications/notification.service.js";
+import { immutableLegacyNameForCategory } from "../categories/category.legacy.js";
+import { getActiveCategoriesByIds, matchCategoriesByLegacyValues, resolveCategoryByLegacyValue } from "../categories/category.service.js";
 import { haversineDistanceMeters, type Coordinates } from "./distance.js";
 
 type WorkerProfilePatch = {
@@ -15,6 +17,7 @@ type WorkerProfilePatch = {
   cityId?: string;
   profession?: string;
   professions?: string[];
+  categoryIds?: string[];
   experienceYears?: number;
   profileImageUrl?: string;
   bio?: string;
@@ -24,6 +27,18 @@ type WorkerProfilePatch = {
 };
 
 type WorkerApplicationPatch = Omit<WorkerProfilePatch, "serviceLat" | "serviceLng">;
+type CategorySummary = Pick<import("@prisma/client").Category, "id" | "slug" | "nameUz" | "nameRu" | "nameEn" | "iconKey" | "sortOrder" | "isActive">;
+
+const categorySummarySelect = {
+  id: true,
+  slug: true,
+  nameUz: true,
+  nameRu: true,
+  nameEn: true,
+  iconKey: true,
+  sortOrder: true,
+  isActive: true
+} satisfies Prisma.CategorySelect;
 
 const platformFeeRate = 0.05;
 
@@ -47,6 +62,10 @@ const publicWorkerSelect = {
     select: {
       status: true
     }
+  },
+  categories: {
+    orderBy: { sortOrder: "asc" as const },
+    select: { categoryId: true, category: { select: categorySummarySelect } }
   }
 } satisfies Prisma.WorkerProfileSelect;
 
@@ -59,6 +78,8 @@ export function toPublicWorkerDto(worker: PublicWorkerRecord, distanceMeters: nu
     cityId: worker.user.cityId,
     profession: worker.profession,
     professions: worker.professions,
+    categoryIds: worker.categories.map((item) => item.categoryId),
+    categories: worker.categories.map((item) => item.category),
     experienceYears: worker.experienceYears,
     profileImageUrl: worker.profileImageUrl,
     bio: worker.bio,
@@ -122,15 +143,41 @@ function activeHoursForOrder(order: { events?: { toStatus: string | null; create
   return (completedAt.getTime() - startedAt.getTime()) / (1000 * 60 * 60);
 }
 
-function normalizeWorkerPatch(patch: WorkerProfilePatch) {
-  const professions = patch.professions?.map((item) => item.trim()).filter(Boolean);
-  const primaryProfession = patch.profession || professions?.[0];
+async function normalizeWorkerPatch(
+  patch: WorkerProfilePatch,
+  tx: Prisma.TransactionClient | typeof prisma,
+  current?: { profession: string | null; professions: string[] } | null
+) {
+  const requestedProfessions = patch.professions?.map((item) => item.trim()).filter(Boolean);
+  const hasLegacyCategoryPatch = patch.profession !== undefined || patch.professions !== undefined;
+  const effectiveLegacyProfessions = patch.categoryIds
+    ? undefined
+    : patch.professions !== undefined
+      ? requestedProfessions
+      : patch.profession !== undefined
+        ? [
+            patch.profession.trim(),
+            ...((current?.professions.length ? current.professions : [current?.profession].filter((item): item is string => Boolean(item))) || [])
+              .filter((item) => item.trim().toLowerCase() !== patch.profession!.trim().toLowerCase())
+          ]
+        : undefined;
+  const selectedCategories = patch.categoryIds
+    ? await getActiveCategoriesByIds(patch.categoryIds, tx)
+    : hasLegacyCategoryPatch
+      ? await matchCategoriesByLegacyValues([
+          patch.profession || effectiveLegacyProfessions?.[0] || "",
+          ...(effectiveLegacyProfessions || [])
+        ], tx)
+      : undefined;
+  const categoryNames = patch.categoryIds ? selectedCategories?.map(immutableLegacyNameForCategory) : undefined;
+  const legacyProfessions = categoryNames || effectiveLegacyProfessions;
+  const primaryProfession = categoryNames?.[0] || patch.profession?.trim() || legacyProfessions?.[0];
   const hasServiceLocation = patch.serviceLat !== undefined && patch.serviceLng !== undefined;
 
   return {
     profileData: {
       profession: primaryProfession,
-      professions,
+      professions: legacyProfessions,
       experienceYears: patch.experienceYears,
       profileImageUrl: patch.profileImageUrl,
       bio: patch.bio,
@@ -146,8 +193,28 @@ function normalizeWorkerPatch(patch: WorkerProfilePatch) {
     userData: {
       ...(patch.name ? { name: patch.name.trim() } : {}),
       ...(patch.cityId ? { cityId: patch.cityId.trim() } : {})
-    }
+    },
+    selectedCategories
   };
+}
+
+async function replaceWorkerCategories(
+  tx: Prisma.TransactionClient,
+  workerId: string,
+  selectedCategories: Awaited<ReturnType<typeof getActiveCategoriesByIds>> | undefined
+) {
+  if (selectedCategories === undefined) return;
+  await tx.workerCategory.deleteMany({ where: { workerId } });
+  if (selectedCategories.length) {
+    await tx.workerCategory.createMany({
+      data: selectedCategories.map((category, index) => ({
+        workerId,
+        categoryId: category.id,
+        sortOrder: index,
+        isPrimary: index === 0
+      }))
+    });
+  }
 }
 
 function missingRequiredProfileFields(worker: {
@@ -198,6 +265,7 @@ function toWorkerApplicationDto(worker: {
   basePrice: number | null;
   submittedAt: Date | null;
   moderationReason: string | null;
+  categories: { categoryId: string; category: CategorySummary }[];
   user: { name: string | null; cityId: string | null };
 }) {
   return {
@@ -213,6 +281,8 @@ function toWorkerApplicationDto(worker: {
     cityId: worker.user.cityId,
     profession: worker.profession,
     professions: worker.professions,
+    categoryIds: worker.categories.map((item) => item.categoryId),
+    categories: worker.categories.map((item) => item.category),
     experienceYears: worker.experienceYears,
     profileImageUrl: worker.profileImageUrl,
     bio: worker.bio,
@@ -233,7 +303,8 @@ const workerApplicationSelect = {
   basePrice: true,
   submittedAt: true,
   moderationReason: true,
-  user: { select: { name: true, cityId: true } }
+  user: { select: { name: true, cityId: true } },
+  categories: { orderBy: { sortOrder: "asc" }, select: { categoryId: true, category: { select: categorySummarySelect } } }
 } satisfies Prisma.WorkerProfileSelect;
 
 async function assertClientApplicant(userId: string, tx: Prisma.TransactionClient | typeof prisma = prisma) {
@@ -254,11 +325,14 @@ export async function getOwnWorkerApplication(userId: string) {
 }
 
 export async function saveOwnWorkerApplication(userId: string, patch: WorkerApplicationPatch) {
-  const { profileData, userData } = normalizeWorkerPatch(patch);
   return prisma.$transaction(async (tx) => {
     await assertClientApplicant(userId, tx);
+    const existing = await tx.workerProfile.findUnique({
+      where: { userId },
+      select: { status: true, submittedAt: true, profession: true, professions: true }
+    });
+    const { profileData, userData, selectedCategories } = await normalizeWorkerPatch(patch, tx, existing);
     if (Object.keys(userData).length) await tx.user.update({ where: { id: userId }, data: userData });
-    const existing = await tx.workerProfile.findUnique({ where: { userId }, select: { status: true, submittedAt: true } });
     if (existing?.status === WorkerProfileStatus.APPROVED || existing?.status === WorkerProfileStatus.SUSPENDED) {
       throw Object.assign(new Error("Worker profile already exists"), { status: 409, code: "WORKER_PROFILE_EXISTS" });
     }
@@ -274,16 +348,21 @@ export async function saveOwnWorkerApplication(userId: string, patch: WorkerAppl
       create: { userId, status: WorkerProfileStatus.DRAFT, ...profileData },
       select: workerApplicationSelect
     });
-    return toWorkerApplicationDto(worker);
+    await replaceWorkerCategories(tx, worker.id, selectedCategories);
+    const result = await tx.workerProfile.findUniqueOrThrow({ where: { id: worker.id }, select: workerApplicationSelect });
+    return toWorkerApplicationDto(result);
   });
 }
 
 export async function submitOwnWorkerApplication(userId: string, patch: WorkerApplicationPatch) {
-  const { profileData, userData } = normalizeWorkerPatch(patch);
   return prisma.$transaction(async (tx) => {
     await assertClientApplicant(userId, tx);
+    const existing = await tx.workerProfile.findUnique({
+      where: { userId },
+      select: { status: true, submittedAt: true, profession: true, professions: true }
+    });
+    const { profileData, userData, selectedCategories } = await normalizeWorkerPatch(patch, tx, existing);
     if (Object.keys(userData).length) await tx.user.update({ where: { id: userId }, data: userData });
-    const existing = await tx.workerProfile.findUnique({ where: { userId }, select: { status: true, submittedAt: true } });
     if (existing?.status === WorkerProfileStatus.APPROVED || existing?.status === WorkerProfileStatus.SUSPENDED) {
       throw Object.assign(new Error("Worker profile already exists"), { status: 409, code: "WORKER_PROFILE_EXISTS" });
     }
@@ -299,6 +378,7 @@ export async function submitOwnWorkerApplication(userId: string, patch: WorkerAp
       create: { userId, status: WorkerProfileStatus.DRAFT, ...profileData },
       include: { user: { select: { name: true, cityId: true } } }
     });
+    await replaceWorkerCategories(tx, candidate.id, selectedCategories);
     assertProfileCompleteForReview(candidate);
     const submitted = await tx.workerProfile.update({
       where: { id: candidate.id },
@@ -310,6 +390,7 @@ export async function submitOwnWorkerApplication(userId: string, patch: WorkerAp
 }
 
 type CatalogWorkerOptions = {
+  categoryId?: string;
   originAddressId?: string;
   requester?: Pick<AuthUser, "id" | "role">;
   sort?: "nearest";
@@ -375,6 +456,8 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
     });
   }
   const origin = await getCatalogOrigin(options);
+  if (options.categoryId) await getActiveCategoriesByIds([options.categoryId]);
+  const legacyCategory = !options.categoryId && profession ? await resolveCategoryByLegacyValue(profession) : null;
   const workers = await prisma.workerProfile.findMany({
     select: publicWorkerSelect,
     where: {
@@ -385,7 +468,10 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
           activeOrderId: null
         }
       },
-      OR: profession
+      categories: options.categoryId || legacyCategory
+        ? { some: { categoryId: options.categoryId || legacyCategory!.id, category: { isActive: true } } }
+        : undefined,
+      OR: !options.categoryId && profession && !legacyCategory
         ? [
             { profession: { equals: profession, mode: "insensitive" } },
             { professions: { has: profession } }
@@ -462,7 +548,8 @@ export async function getOwnWorkerProfile(userId: string) {
     },
     include: {
       user: true,
-      availability: true
+      availability: true,
+      categories: { orderBy: { sortOrder: "asc" }, include: { category: true } }
     }
   });
 }
@@ -590,9 +677,12 @@ export async function getOwnWorkerTransactions(userId: string) {
 }
 
 export async function updateOwnWorkerProfile(userId: string, patch: WorkerProfilePatch) {
-  const { profileData, userData } = normalizeWorkerPatch(patch);
-
   return prisma.$transaction(async (tx) => {
+    const current = await tx.workerProfile.findUnique({
+      where: { userId },
+      select: { profession: true, professions: true }
+    });
+    const { profileData, userData, selectedCategories } = await normalizeWorkerPatch(patch, tx, current);
     if (Object.keys(userData).length) {
       await tx.user.update({
         where: { id: userId },
@@ -614,13 +704,22 @@ export async function updateOwnWorkerProfile(userId: string, patch: WorkerProfil
       },
       include: {
         user: true,
-        availability: true
+        availability: true,
+        categories: { orderBy: { sortOrder: "asc" }, include: { category: true } }
       }
     });
-
-    assertProfileCompleteForReview(worker);
-
-    return worker;
+    await replaceWorkerCategories(tx, worker.id, selectedCategories);
+    const updated = await tx.workerProfile.findUniqueOrThrow({
+      where: { id: worker.id },
+      omit: { serviceLat: false, serviceLng: false, serviceLocationUpdatedAt: false },
+      include: {
+        user: true,
+        availability: true,
+        categories: { orderBy: { sortOrder: "asc" }, include: { category: true } }
+      }
+    });
+    assertProfileCompleteForReview(updated);
+    return updated;
   });
 }
 
@@ -648,12 +747,12 @@ export async function updateOwnWorkerServiceLocation(
 }
 
 export async function approveWorkerProfile(workerId: string, patch: WorkerProfilePatch) {
-  const { profileData } = normalizeWorkerPatch(patch);
   const approvedWorker = await prisma.$transaction(async (tx) => {
     const current = await tx.workerProfile.findUnique({
       where: { id: workerId },
       include: { user: true }
     });
+    const { profileData, selectedCategories } = await normalizeWorkerPatch(patch, tx, current);
     const validSubmittedApplication =
       current?.user.role === UserRole.CLIENT &&
       current.status === WorkerProfileStatus.DRAFT &&
@@ -688,6 +787,7 @@ export async function approveWorkerProfile(workerId: string, patch: WorkerProfil
         code: "WORKER_APPROVAL_INVALID_STATE"
       });
     }
+    await replaceWorkerCategories(tx, workerId, selectedCategories);
 
     const worker = await tx.workerProfile.findUniqueOrThrow({
       where: { id: workerId },
@@ -697,7 +797,8 @@ export async function approveWorkerProfile(workerId: string, patch: WorkerProfil
         serviceLocationUpdatedAt: false
       },
       include: {
-        user: true
+        user: true,
+        categories: { orderBy: { sortOrder: "asc" }, include: { category: true } }
       }
     });
 

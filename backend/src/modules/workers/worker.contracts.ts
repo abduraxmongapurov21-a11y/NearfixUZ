@@ -1,5 +1,6 @@
 import { WorkerAvailabilityStatus } from "@prisma/client";
 import { z } from "zod";
+import { categoryIdsSchema } from "../categories/category.contracts.js";
 
 export const serviceLocationContractShape = {
   serviceLat: z.number().min(-90).max(90).optional(),
@@ -27,6 +28,7 @@ export const updateWorkerProfileSchema = z.object({
   cityId: z.string().min(2).max(80).optional(),
   profession: z.string().min(2).max(80).optional(),
   professions: z.array(z.string().min(2).max(80)).min(1).max(5).optional(),
+  categoryIds: categoryIdsSchema.optional(),
   experienceYears: z.number().int().min(0).max(60).optional(),
   profileImageUrl: z.string().url().optional(),
   bio: z.string().max(1000).optional(),
@@ -39,6 +41,7 @@ export const workerApplicationDraftSchema = z.object({
   cityId: z.string().min(2).max(80).optional(),
   profession: z.string().min(2).max(80).optional(),
   professions: z.array(z.string().min(2).max(80)).min(1).max(5).optional(),
+  categoryIds: categoryIdsSchema.optional(),
   experienceYears: z.number().int().min(0).max(60).optional(),
   profileImageUrl: z.string().url().optional(),
   bio: z.string().max(1000).optional(),
@@ -56,6 +59,7 @@ export const catalogWorkersQuerySchema = z.object({
   cityId: z.string().min(1).max(80).optional(),
   profession: z.string().min(1).max(80).optional(),
   category: z.string().min(1).max(80).optional(),
+  categoryId: z.string().min(1).max(191).optional(),
   originAddressId: z.string().min(1).max(191).optional(),
   sort: z.enum(["nearest"]).optional()
 });

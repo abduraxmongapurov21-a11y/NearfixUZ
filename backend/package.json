@@ -38,7 +38,9 @@
     "test:order-lifecycle": "tsx scripts/order-lifecycle-tests.ts",
     "test:notification-rating-v1": "tsx scripts/notification-rating-v1-tests.ts",
     "test:order-location": "tsx scripts/order-location-snapshot-tests.ts",
-    "test:local-database-guard": "tsx scripts/local-database-guard-tests.ts"
+    "test:local-database-guard": "tsx scripts/local-database-guard-tests.ts",
+    "test:categories": "tsx scripts/category-stage1-tests.ts",
+    "test:categories:integration": "tsx scripts/category-integration-tests.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1071.0",

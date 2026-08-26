@@ -19,12 +19,12 @@ export function toggleProfessionSelection(current, profession, max = MAX_WORKER_
 }
 
 export function workerApplicationPayload(form, partial = false) {
+  const categoryIds = Array.from(new Set((form.categoryIds || []).filter(Boolean)));
   const professions = Array.from(new Set((form.professions || []).map((item) => item.trim()).filter(Boolean)));
   const payload = {
     name: form.name.trim(),
     cityId: form.cityId.trim(),
-    profession: professions[0] || "",
-    professions,
+    ...(categoryIds.length ? { categoryIds } : { profession: professions[0] || "", professions }),
     experienceYears: form.experienceYears === "" ? undefined : Number(normalizeDigits(form.experienceYears)),
     profileImageUrl: form.profileImageUrl.trim(),
     bio: form.bio.trim(),
@@ -43,7 +43,7 @@ export function missingWorkerApplicationFields(form) {
   const missing = [];
   if (form.name.trim().length < 2) missing.push("Ism");
   if (form.cityId.trim().length < 2) missing.push("Shahar");
-  if (!form.professions?.length) missing.push("Xizmat sohasi");
+  if (!form.categoryIds?.length && !form.professions?.length) missing.push("Xizmat sohasi");
   if (form.experienceYears === "") missing.push("Tajriba");
   if (!form.profileImageUrl.trim()) missing.push("Profil rasmi");
   if (!form.bio.trim()) missing.push("O'zingiz haqingizda");

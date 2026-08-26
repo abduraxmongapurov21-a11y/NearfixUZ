@@ -39,6 +39,8 @@ export function mapApiWorkerProfile(worker) {
     name: worker.user?.name || worker.profession || "NearFIX usta",
     specialty: worker.profession || professions[0] || "Usta",
     professions,
+    categoryIds: Array.isArray(worker.categoryIds) ? worker.categoryIds : [],
+    categories: Array.isArray(worker.categories) ? worker.categories : [],
     experienceYears: worker.experienceYears || 0,
     profileImageUrl: worker.profileImageUrl,
     about: worker.bio,

@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 export const orderInclude = Prisma.validator<Prisma.OrderInclude>()({
+  category: { select: { id: true, slug: true, nameUz: true, nameRu: true, nameEn: true, iconKey: true, sortOrder: true, isActive: true } },
   worker: {
     select: {
       id: true,
@@ -8,6 +9,7 @@ export const orderInclude = Prisma.validator<Prisma.OrderInclude>()({
       status: true,
       profession: true,
       professions: true,
+      categories: { orderBy: { sortOrder: "asc" }, select: { categoryId: true, category: { select: { id: true, slug: true, nameUz: true, nameRu: true, nameEn: true, iconKey: true, sortOrder: true, isActive: true } } } },
       experienceYears: true,
       profileImageUrl: true,
       bio: true,
@@ -105,6 +107,8 @@ export function toOrderDto(order: OrderRecord) {
     addressId: order.addressId,
     cityId: order.cityId,
     serviceType: order.serviceType,
+    categoryId: order.categoryId,
+    category: order.category,
     problemTitle: order.problemTitle,
     problemDescription: order.problemDescription,
     urgency: order.urgency,
@@ -125,6 +129,8 @@ export function toOrderDto(order: OrderRecord) {
       id: order.worker.id,
       profession: order.worker.profession,
       professions: order.worker.professions,
+      categoryIds: order.worker.categories.map((item) => item.categoryId),
+      categories: order.worker.categories.map((item) => item.category),
       experienceYears: order.worker.experienceYears,
       profileImageUrl: order.worker.profileImageUrl,
       bio: order.worker.bio,

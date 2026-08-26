@@ -1,44 +1,38 @@
 import React, { useEffect, useState } from "react";
 import { ImageBackground, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import {
-  Brush,
-  Ellipsis,
-  Flame,
-  Hammer,
-  PaintRoller,
-  Search,
-  SlidersHorizontal,
-  Snowflake,
-  Wrench,
-  Zap
-} from "lucide-react-native";
+import { Ellipsis, Search, SlidersHorizontal, Wrench } from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../constants/routes";
 import { CitySelector } from "../../components/catalog/CitySelector";
 import { getInitials } from "../../services/images/imageService";
 import { useAuthStore } from "../../store/authStore";
 import { useClientStore } from "../../store/clientStore";
 import { Text } from "../../i18n/native";
-
-const categoryItems = [
-  { id: "plumbing", title: "Santexnik", icon: Wrench, color: "#0F80B7" },
-  { id: "electric", title: "Elektrik", icon: Zap, color: "#2CD8A5" },
-  { id: "welding", title: "Payvandchi", icon: Flame, color: "#F97316" },
-  { id: "repair", title: "Usta", icon: Hammer, color: "#2D3748" },
-  { id: "ac", title: "Konditsioner", icon: Snowflake, color: "#60A5FA" },
-  { id: "renovation", title: "Ta'mirlash", icon: PaintRoller, color: "#A855F7" },
-  { id: "cleaning", title: "Tozalash", icon: Brush, color: "#20BFA5" }
-];
+import { categoryName, findCategoryByLegacyValue } from "../../services/content/categoryService";
+import { resolveCategoryIcon, resolveCategoryIconColor } from "../../constants/categoryIcons";
+import { CategoryAvailabilityState } from "../../components/category/CategoryAvailabilityState";
 
 const moreCategoryItem = { id: "more", title: "Ko'proq", icon: Ellipsis, color: "#9CA3AF", muted: true };
 
 export function HomeScreen({ navigation }) {
+  const { i18n } = useTranslation();
   const session = useAuthStore((state) => state.session);
   const banners = useClientStore((state) => state.banners);
+  const categories = useClientStore((state) => state.categories);
+  const categoryStatus = useClientStore((state) => state.categoryStatus);
+  const categoryError = useClientStore((state) => state.categoryError);
   const selectedCityId = useClientStore((state) => state.selectedCityId);
   const setSelectedCity = useClientStore((state) => state.setSelectedCity);
   const syncBannersFromApi = useClientStore((state) => state.syncBannersFromApi);
+  const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
   const syncCatalogFromApi = useClientStore((state) => state.syncCatalogFromApi);
   const syncOrdersFromApi = useClientStore((state) => state.syncOrdersFromApi);
+  const categoryItems = categories.map((category) => ({
+    ...category,
+    title: categoryName(category, i18n.language),
+    icon: resolveCategoryIcon(category.iconKey),
+    color: resolveCategoryIconColor(category.iconKey)
+  }));
   const hasCategoryOverflow = categoryItems.length > 8;
   const visibleCategoryItems = hasCategoryOverflow ? [...categoryItems.slice(0, 7), moreCategoryItem] : categoryItems;
   const greetingName = session?.name?.trim();
@@ -46,34 +40,33 @@ export function HomeScreen({ navigation }) {
 
   useEffect(() => {
     syncCatalogFromApi();
+    syncCategoriesFromApi();
     syncOrdersFromApi();
     syncBannersFromApi();
-  }, [selectedCityId, syncBannersFromApi, syncCatalogFromApi, syncOrdersFromApi]);
+  }, [selectedCityId, syncBannersFromApi, syncCatalogFromApi, syncCategoriesFromApi, syncOrdersFromApi]);
 
   async function handleRefresh() {
     setRefreshing(true);
-    await Promise.all([syncCatalogFromApi(), syncOrdersFromApi(), syncBannersFromApi()]);
+    await Promise.all([syncCatalogFromApi(), syncOrdersFromApi(), syncBannersFromApi(), syncCategoriesFromApi()]);
     setRefreshing(false);
   }
 
-  function openCategory(title) {
-    if (title === "Ko'proq" && !hasCategoryOverflow) return;
-    navigation.navigate(ROUTES.CATEGORY, title === "Ko'proq" ? undefined : { profession: title });
+  function openCategory(category) {
+    if (category.id === "more") return;
+    navigation.navigate(ROUTES.CATEGORY, { categoryId: category.id });
   }
 
   function resolveCategoryTarget(value) {
     const cleanValue = String(value || "")
       .trim()
       .toLowerCase();
-    const category = categoryItems.find(
-      (item) => item.id.toLowerCase() === cleanValue || item.title.toLowerCase() === cleanValue
-    );
-    return category?.title || value;
+    return findCategoryByLegacyValue(categories, cleanValue);
   }
 
   async function handleBannerPress(banner) {
     if (banner.targetType === "CATEGORY" && banner.targetValue) {
-      navigation.navigate(ROUTES.CATEGORY, { profession: resolveCategoryTarget(banner.targetValue) });
+      const category = resolveCategoryTarget(banner.targetValue);
+      if (category) navigation.navigate(ROUTES.CATEGORY, { categoryId: category.id });
       return;
     }
 
@@ -149,16 +142,18 @@ export function HomeScreen({ navigation }) {
           </Pressable>
         </View>
 
-        <View style={styles.categoryGrid}>
+        <CategoryAvailabilityState status={categoryStatus} error={categoryError} hasData={categories.length > 0} onRetry={syncCategoriesFromApi} />
+
+        {categories.length ? <View style={styles.categoryGrid}>
           {visibleCategoryItems.map((item) => (
-            <Pressable key={item.id} onPress={() => openCategory(item.title)} style={styles.categoryItem}>
+            <Pressable key={item.id} onPress={() => openCategory(item)} style={styles.categoryItem}>
               <View style={[styles.categoryIconBox, item.muted && styles.categoryIconMuted]}>
                 <item.icon size={27} color={item.color} strokeWidth={3.5} />
               </View>
-              <Text style={[styles.categoryLabel, item.muted && styles.categoryLabelMuted]}>{item.title}</Text>
+              <Text translate={Boolean(item.muted)} style={[styles.categoryLabel, item.muted && styles.categoryLabelMuted]}>{item.title}</Text>
             </Pressable>
           ))}
-        </View>
+        </View> : null}
       </ScrollView>
     </View>
   );

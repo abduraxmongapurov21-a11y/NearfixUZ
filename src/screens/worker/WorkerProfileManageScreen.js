@@ -21,6 +21,7 @@ import { uploadMediaApi } from "../../services/media/mediaService";
 import { fetchUnreadNotificationCountApi } from "../../services/notifications/notificationService";
 import { useAuthStore } from "../../store/authStore";
 import { useWorkerStore } from "../../store/workerStore";
+import { useClientStore } from "../../store/clientStore";
 import { colors, radius, shadow } from "../../theme";
 import { openPrivacyPolicy, openTerms } from "../../utils/legalLinks";
 import { Alert, Text, TextInput } from "../../i18n/native";
@@ -32,8 +33,8 @@ import {
   normalizeServiceLocation,
   submitServiceLocationOnce
 } from "../../services/workers/serviceLocation.mjs";
-
-const serviceOptions = ["Santexnik", "Elektrik", "Payvandchi", "Usta", "Konditsioner", "Ta'mirlash", "Tozalash"];
+import { categoryName, findCategoryByLegacyValue } from "../../services/content/categoryService";
+import { CategoryAvailabilityState } from "../../components/category/CategoryAvailabilityState";
 
 function getInitials(value) {
   return String(value || "NF")
@@ -106,13 +107,17 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   const submitWorkerProfile = useWorkerStore((state) => state.submitWorkerProfile);
   const saveServiceLocation = useWorkerStore((state) => state.saveServiceLocation);
   const clearUserData = useWorkerStore((state) => state.clearUserData);
+  const categories = useClientStore((state) => state.categories);
+  const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
+  const categoryStatus = useClientStore((state) => state.categoryStatus);
+  const categoryError = useClientStore((state) => state.categoryError);
   const [name, setName] = useState(worker?.name || "");
   const [experienceYears, setExperienceYears] = useState(String(worker?.experienceYears || ""));
   const [basePrice, setBasePrice] = useState(worker?.basePriceValue ? String(worker.basePriceValue) : "");
   const [bio, setBio] = useState(worker?.about || "");
   const [profileImageUrl, setProfileImageUrl] = useState(worker?.profileImageUrl || "");
   const [cityId, setCityId] = useState(worker?.cityId || "");
-  const [selectedServices, setSelectedServices] = useState(worker?.professions || [worker?.specialty].filter(Boolean));
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState(worker?.categoryIds || []);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -125,7 +130,12 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   const locationSubmissionGuard = useRef(createSubmissionGuard());
   const isApproved = worker?.status === "approved";
   const statusMeta = useMemo(() => getStatusMeta(worker?.status), [worker?.status]);
-  const servicesText = selectedServices.length ? selectedServices.join(", ") : "Soha tanlanmagan";
+  const selectedCategories = selectedCategoryIds
+    .map((id) => categories.find((item) => item.id === id) || worker?.categories?.find((item) => item.id === id))
+    .filter(Boolean);
+  const servicesText = selectedCategories.length
+    ? selectedCategories.map((item) => categoryName(item, i18n.language)).join(", ")
+    : "Soha tanlanmagan";
   const priceText = basePrice ? `${Number(basePrice || 0).toLocaleString("uz-UZ")} so'm` : "Narx kiritilmagan";
   const phone = worker?.phone || sessionPhone || "Telefon kiritilmagan";
   const savedServiceLocation = useMemo(
@@ -139,7 +149,8 @@ export function WorkerProfileManageScreen({ navigation, route }) {
 
   useEffect(() => {
     syncWorkerFromApi();
-  }, [syncWorkerFromApi]);
+    syncCategoriesFromApi();
+  }, [syncCategoriesFromApi, syncWorkerFromApi]);
 
   const loadUnreadNotifications = useCallback(async () => {
     if (!token) {
@@ -164,7 +175,10 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     setBio(worker?.about || "");
     setProfileImageUrl(worker?.profileImageUrl || "");
     setCityId(worker?.cityId || "");
-    setSelectedServices(worker?.professions || [worker?.specialty].filter(Boolean));
+    const legacyValues = worker?.professions || [worker?.specialty].filter(Boolean);
+    setSelectedCategoryIds(worker?.categoryIds?.length
+      ? worker.categoryIds
+      : legacyValues.map((value) => findCategoryByLegacyValue(categories, value)?.id).filter(Boolean));
   }, [
     worker?.about,
     worker?.basePriceValue,
@@ -173,7 +187,9 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     worker?.name,
     worker?.profileImageUrl,
     worker?.professions,
-    worker?.specialty
+    worker?.specialty,
+    worker?.categoryIds,
+    categories
   ]);
 
   useEffect(() => {
@@ -186,11 +202,11 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     navigation.setParams({ selectedServiceLocation: undefined });
   }, [navigation, route?.params?.selectedServiceLocation]);
 
-  function toggleService(service) {
+  function toggleService(categoryId) {
     if (isApproved) return;
 
-    setSelectedServices((current) =>
-      current.includes(service) ? current.filter((item) => item !== service) : [...current, service]
+    setSelectedCategoryIds((current) =>
+      current.includes(categoryId) ? current.filter((item) => item !== categoryId) : [...current, categoryId].slice(0, 5)
     );
   }
 
@@ -254,7 +270,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
       return;
     }
 
-    if (!selectedServices.length) {
+    if (!selectedCategoryIds.length) {
       Alert.alert("Soha tanlang", "Kamida bitta xizmat sohasini tanlang.");
       return;
     }
@@ -288,7 +304,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     const result = await submitWorkerProfile({
       name: name.trim(),
       cityId,
-      professions: selectedServices,
+      categoryIds: selectedCategoryIds,
       experienceYears: Number(experienceYears || 0),
       profileImageUrl: profileImageUrl.trim() || undefined,
       bio: bio.trim() || undefined,
@@ -521,19 +537,20 @@ export function WorkerProfileManageScreen({ navigation, route }) {
           )}
 
           <Text style={styles.inputLabel}>Xizmat sohalari</Text>
+          {!isApproved ? <CategoryAvailabilityState status={categoryStatus} error={categoryError} hasData={categories.length > 0} onRetry={syncCategoriesFromApi} /> : null}
           {isApproved ? (
-            <ReadOnlyValue value={servicesText} />
+            <ReadOnlyValue translate={false} value={servicesText} />
           ) : (
             <View style={styles.chips}>
-              {serviceOptions.map((service) => {
-                const active = selectedServices.includes(service);
+              {categories.map((category) => {
+                const active = selectedCategoryIds.includes(category.id);
                 return (
                   <Pressable
-                    key={service}
-                    onPress={() => toggleService(service)}
+                    key={category.id}
+                    onPress={() => toggleService(category.id)}
                     style={[styles.chip, active && styles.chipActive]}
                   >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{service}</Text>
+                    <Text translate={false} style={[styles.chipText, active && styles.chipTextActive]}>{categoryName(category, i18n.language)}</Text>
                   </Pressable>
                 );
               })}
@@ -688,10 +705,10 @@ function SectionCard({ title, children }) {
   );
 }
 
-function ReadOnlyValue({ value }) {
+function ReadOnlyValue({ value, translate = true }) {
   return (
     <View style={styles.readOnlyValueBox}>
-      <Text style={styles.readOnlyValueText} numberOfLines={2}>
+      <Text translate={translate} style={styles.readOnlyValueText} numberOfLines={2}>
         {value}
       </Text>
     </View>

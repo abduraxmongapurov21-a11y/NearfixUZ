@@ -1,22 +1,14 @@
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Grid2X2, Hammer, Sparkles, Wrench, Zap } from "lucide-react-native";
 import { colors, iconSizes, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
-
-const icons = {
-  wrench: Wrench,
-  zap: Zap,
-  hammer: Hammer,
-  sparkles: Sparkles,
-  grid: Grid2X2
-};
+import { resolveCategoryIcon } from "../../constants/categoryIcons";
 
 export function ServiceSelector({ categories, selectedId, onSelect }) {
   return (
     <View style={styles.grid}>
       {categories.map((service) => {
-        const Icon = icons[service.icon] || Grid2X2;
+        const Icon = resolveCategoryIcon(service.iconKey || service.icon);
         const selected = selectedId === service.id;
 
         return (
@@ -28,7 +20,7 @@ export function ServiceSelector({ categories, selectedId, onSelect }) {
             <View style={[styles.iconWrap, selected && styles.iconSelected]}>
               <Icon size={iconSizes.lg} color={selected ? colors.white : colors.primary} strokeWidth={2.6} />
             </View>
-            <Text style={[styles.title, selected && styles.titleSelected]}>{service.title}</Text>
+            <Text translate={false} style={[styles.title, selected && styles.titleSelected]}>{service.displayName || service.nameUz || service.title}</Text>
             <Text style={styles.caption}>{service.id === "more" ? "Boshqa xizmatlar" : "Tez tanlash"}</Text>
           </Pressable>
         );

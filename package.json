@@ -24,6 +24,7 @@
     "test:authenticated-races": "npm --prefix backend exec -- tsx scripts/test-authenticated-client-races.mjs",
     "test:provider-client-mode": "npm --prefix backend exec -- tsx scripts/test-provider-client-mode.mjs",
     "test:worker-application-form": "node scripts/test-worker-application-form.mjs",
+    "test:categories": "node scripts/test-dynamic-categories.mjs",
     "test:store-races": "npm --prefix backend run test:store-races",
     "export:android": "expo export --platform android --output-dir dist-test",
     "export:ios": "expo export --platform ios --output-dir dist-test-ios",

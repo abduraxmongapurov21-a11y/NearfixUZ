@@ -6,6 +6,8 @@ import { workerStatusCopy, WORKER_STATUS } from "../../constants/workerStatus";
 import { WorkerAvatar } from "../ui/WorkerAvatar";
 import { colors, iconSizes, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
+import { useTranslation } from "react-i18next";
+import { workerCategoryLabel } from "../../services/content/categoryService";
 
 const toneColors = {
   success: colors.secondary,
@@ -14,6 +16,8 @@ const toneColors = {
 };
 
 export function WorkerCard({ worker, onPress, favorite = false, onToggleFavorite }) {
+  const { i18n } = useTranslation();
+  const specialty = workerCategoryLabel(worker, i18n.language);
   const statusCopy = workerStatusCopy[worker.availability] || workerStatusCopy[WORKER_STATUS.OFFLINE];
   const toneColor = toneColors[statusCopy.tone];
   const offline = worker.availability === WORKER_STATUS.OFFLINE;
@@ -36,7 +40,7 @@ export function WorkerCard({ worker, onPress, favorite = false, onToggleFavorite
               <Text style={styles.title}>{worker.name}</Text>
               <BadgeCheck size={iconSizes.sm} color={colors.success} strokeWidth={2.5} />
             </View>
-            <Text style={styles.specialty}>{worker.specialty}</Text>
+            <Text translate={!specialty.dynamic} style={styles.specialty}>{specialty.label}</Text>
           </View>
           <FavoriteButton active={favorite} onPress={onToggleFavorite} />
         </View>

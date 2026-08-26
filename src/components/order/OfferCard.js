@@ -4,8 +4,12 @@ import { BadgeCheck, Clock3, Star } from "lucide-react-native";
 import { WorkerAvatar } from "../ui/WorkerAvatar";
 import { colors, iconSizes, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
+import { useTranslation } from "react-i18next";
+import { workerCategoryLabel } from "../../services/content/categoryService";
 
 export function OfferCard({ worker, eta, price, selected, onPress }) {
+  const { i18n } = useTranslation();
+  const specialty = workerCategoryLabel(worker, i18n.language);
   return (
     <Pressable
       onPress={onPress}
@@ -20,7 +24,7 @@ export function OfferCard({ worker, eta, price, selected, onPress }) {
             <Text style={styles.verifiedText}>Verified</Text>
           </View>
         </View>
-        <Text style={styles.specialty}>{worker.specialty}</Text>
+        <Text translate={!specialty.dynamic} style={styles.specialty}>{specialty.label}</Text>
         <View style={styles.metaRow}>
           <View style={styles.metaItem}>
             <Star size={iconSizes.sm} color={colors.warning} fill={colors.warning} />

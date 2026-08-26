@@ -4,8 +4,12 @@ import { BadgeCheck, Clock3, Star } from "lucide-react-native";
 import { WorkerAvatar } from "../ui/WorkerAvatar";
 import { colors, iconSizes, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
+import { useTranslation } from "react-i18next";
+import { workerCategoryLabel } from "../../services/content/categoryService";
 
 export function WorkerHeader({ worker }) {
+  const { i18n } = useTranslation();
+  const specialty = workerCategoryLabel(worker, i18n.language);
   return (
     <View style={styles.card}>
       <WorkerAvatar worker={worker} size={112} radius={radius.xl} style={styles.image} />
@@ -15,7 +19,7 @@ export function WorkerHeader({ worker }) {
           <Text style={styles.badgeText}>{worker.verification}</Text>
         </View>
         <Text style={styles.name}>{worker.name}</Text>
-        <Text style={styles.specialty}>{worker.specialty}</Text>
+        <Text translate={!specialty.dynamic} style={styles.specialty}>{specialty.label}</Text>
         <View style={styles.metaRow}>
           <View style={styles.metaItem}>
             <Star size={iconSizes.sm} color={colors.warning} fill={colors.warning} />

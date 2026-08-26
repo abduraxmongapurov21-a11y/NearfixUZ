@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -365,6 +365,41 @@ model WorkerProfile {
   orders       Order[]             @relation("WorkerOrders")
   reviews      Review[]            @relation("WorkerReviews")
   favorites    Favorite[]          @relation("WorkerFavorites")
+  categories   WorkerCategory[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  nameUz    String
+  nameRu    String
+  nameEn    String
+  iconKey   String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workers WorkerCategory[]
+  orders  Order[]
+
+  @@index([isActive, sortOrder])
+  @@index([sortOrder])
+}
+
+model WorkerCategory {
+  workerId   String
+  categoryId String
+  sortOrder  Int      @default(0)
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  worker   WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  category Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([workerId, categoryId])
+  @@index([categoryId])
+  @@index([workerId, sortOrder])
 }
 
 model WorkerAvailability {
@@ -402,31 +437,33 @@ model Address {
 }
 
 model Order {
-  id                 String       @id @default(cuid())
-  publicCode         String       @unique
-  clientId           String
-  workerId           String
-  addressId          String?
-  locationLabel      String?
+  id                  String       @id @default(cuid())
+  publicCode          String       @unique
+  clientId            String
+  workerId            String
+  addressId           String?
+  locationLabel       String?
   locationAddressText String?
-  locationDistrict   String?
-  locationLat        Decimal?     @db.Decimal(10, 7)
-  locationLng        Decimal?     @db.Decimal(10, 7)
-  cityId             String
-  serviceType        String
-  problemTitle       String
-  problemDescription String?
-  urgency            OrderUrgency @default(FAST)
-  status             OrderStatus  @default(CREATED)
-  priceEstimate      Int?
-  finalAmount        Int?
-  responseDeadlineAt DateTime?
-  cancelReason       String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  locationDistrict    String?
+  locationLat         Decimal?     @db.Decimal(10, 7)
+  locationLng         Decimal?     @db.Decimal(10, 7)
+  cityId              String
+  serviceType         String
+  categoryId          String?
+  problemTitle        String
+  problemDescription  String?
+  urgency             OrderUrgency @default(FAST)
+  status              OrderStatus  @default(CREATED)
+  priceEstimate       Int?
+  finalAmount         Int?
+  responseDeadlineAt  DateTime?
+  cancelReason        String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   client             User                @relation("ClientOrders", fields: [clientId], references: [id])
   worker             WorkerProfile       @relation("WorkerOrders", fields: [workerId], references: [id])
+  category           Category?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   address            Address?            @relation(fields: [addressId], references: [id])
   events             OrderEvent[]
   reviews            Review[]
@@ -443,6 +480,7 @@ model Order {
   @@index([status])
   @@index([responseDeadlineAt])
   @@index([cityId])
+  @@index([categoryId])
 }
 
 model OrderEvent {
@@ -631,16 +669,16 @@ model Notification {
 }
 
 model PushToken {
-  id        String   @id @default(cuid())
-  userId    String
-  deviceId  String?  @unique
-  token     String   @unique
-  platform  String?
-  revokedAt DateTime?
-  lastSeenAt DateTime @default(now())
-  failureCount Int    @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String    @id @default(cuid())
+  userId       String
+  deviceId     String?   @unique
+  token        String    @unique
+  platform     String?
+  revokedAt    DateTime?
+  lastSeenAt   DateTime  @default(now())
+  failureCount Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

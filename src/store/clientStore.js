@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { categories, topCategoryIds } from "../constants/categories";
 import { DEFAULT_CATALOG_FILTERS } from "../constants/catalog";
 import { ORDER_STATES } from "../constants/orderStates";
 import { TRACKING_STATUSES } from "../constants/orderTracking";
@@ -8,6 +7,9 @@ import { resolveCatalogOriginAddressId, shouldApplyCatalogResponse } from "../se
 import { cancelOrderApi, createOrderApi, fetchOrdersApi } from "../services/orders/orderService";
 import { createAddressApi, deleteAddressApi, getAddressesApi, updateAddressApi } from "../services/addresses/addressService";
 import { fetchBannersApi } from "../services/content/bannerService";
+import { fetchCategoriesApi } from "../services/content/categoryService";
+import { loadCategoryCache, saveCategoryCache } from "../services/content/categoryCache";
+import { categoryAvailabilityFailure, categoryAvailabilityLoading, categoryAvailabilitySuccess, categoryCachePayload } from "../services/content/categoryAvailability.mjs";
 import { addFavoriteApi, fetchFavoritesApi, removeFavoriteApi } from "../services/favorites/favoriteService";
 import { useAuthStore } from "./authStore";
 import { registerSessionResetHandler } from "./sessionReset";
@@ -49,7 +51,10 @@ const defaultClientStoreDependencies = {
   deleteAddressApi,
   fetchOrdersApi,
   createOrderApi,
-  cancelOrderApi
+  cancelOrderApi,
+  fetchCategoriesApi,
+  loadCategoryCache,
+  saveCategoryCache
 };
 const clientStoreDependencies = { ...defaultClientStoreDependencies };
 
@@ -62,10 +67,17 @@ function currentAccountId() {
   return clientStoreDependencies.getSession()?.userId || null;
 }
 
+let categorySyncPromise = null;
+
 export const useClientStore = create((set, get) => ({
   user: initialUser,
-  categories,
-  topCategoryIds,
+  categories: [],
+  topCategoryIds: [],
+  categoryStatus: "idle",
+  categoryError: null,
+  categoryRefreshing: false,
+  categoriesLastLoadedAt: null,
+  categoryCacheHydrated: false,
   workers: [],
   banners: [],
   orders: [],
@@ -128,7 +140,69 @@ export const useClientStore = create((set, get) => ({
     set((state) => ({
       catalogSort: sort === "nearest" && state.catalogOriginAddressId ? "nearest" : "recommended"
     })),
-  syncCatalogFromApi: async (profession) => {
+  syncCategoriesFromApi: async () => {
+    if (categorySyncPromise) return categorySyncPromise;
+    categorySyncPromise = (async () => {
+      if (!get().categoryCacheHydrated) {
+        const cached = await clientStoreDependencies.loadCategoryCache();
+        set({
+          ...(cached
+            ? {
+                categories: cached.categories,
+                topCategoryIds: cached.categories.map((category) => category.id),
+                categoryStatus: cached.status,
+                categoryError: null,
+                categoryRefreshing: false,
+                categoriesLastLoadedAt: cached.lastLoadedAt
+              }
+            : {}),
+          categoryCacheHydrated: true
+        });
+      }
+
+      const loading = categoryAvailabilityLoading({
+        categories: get().categories,
+        status: get().categoryStatus,
+        error: get().categoryError,
+        lastLoadedAt: get().categoriesLastLoadedAt,
+        refreshing: get().categoryRefreshing
+      });
+      set({ categoryStatus: loading.status, categoryError: loading.error, categoryRefreshing: loading.refreshing });
+
+      const result = await clientStoreDependencies.fetchCategoriesApi();
+      if (result.ok) {
+        const next = categoryAvailabilitySuccess(result.categories);
+        set({
+          categories: next.categories,
+          topCategoryIds: next.categories.map((category) => category.id),
+          categoryStatus: next.status,
+          categoryError: next.error,
+          categoryRefreshing: next.refreshing,
+          categoriesLastLoadedAt: next.lastLoadedAt
+        });
+        await clientStoreDependencies.saveCategoryCache(categoryCachePayload(next));
+      } else {
+        const next = categoryAvailabilityFailure({
+          categories: get().categories,
+          status: get().categoryStatus,
+          error: get().categoryError,
+          lastLoadedAt: get().categoriesLastLoadedAt,
+          refreshing: get().categoryRefreshing
+        }, result.message || "Kategoriyalar yuklanmadi");
+        set({
+          categories: next.categories,
+          topCategoryIds: next.categories.map((category) => category.id),
+          categoryStatus: next.status,
+          categoryError: next.error,
+          categoryRefreshing: next.refreshing,
+          categoriesLastLoadedAt: next.lastLoadedAt
+        });
+      }
+      return result;
+    })().finally(() => { categorySyncPromise = null; });
+    return categorySyncPromise;
+  },
+  syncCatalogFromApi: async (categoryId) => {
     const stateAtRequest = get();
     const originAddressId = resolveCatalogOriginAddressId(
       stateAtRequest.catalogOriginAddressId,
@@ -145,7 +219,7 @@ export const useClientStore = create((set, get) => ({
       catalogRequestVersion: requestVersion
     });
 
-    const result = await fetchCatalogWorkers(stateAtRequest.selectedCityId, profession, {
+    const result = await fetchCatalogWorkers(stateAtRequest.selectedCityId, categoryId, {
       originAddressId,
       sort,
       token

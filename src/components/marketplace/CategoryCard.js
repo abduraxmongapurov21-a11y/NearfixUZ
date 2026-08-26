@@ -1,29 +1,18 @@
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Flame, Grid2X2, Hammer, PaintRoller, Snowflake, Sparkles, Wrench, Zap } from "lucide-react-native";
 import { colors, iconSizes, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
-
-const icons = {
-  wrench: Wrench,
-  zap: Zap,
-  flame: Flame,
-  hammer: Hammer,
-  snowflake: Snowflake,
-  paint: PaintRoller,
-  sparkles: Sparkles,
-  grid: Grid2X2
-};
+import { resolveCategoryIcon } from "../../constants/categoryIcons";
 
 export function CategoryCard({ category, onPress }) {
-  const Icon = icons[category.icon] || Grid2X2;
+  const Icon = resolveCategoryIcon(category.iconKey || category.icon);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
       <View style={styles.iconWrap}>
         <Icon size={iconSizes.md} color={colors.primary} strokeWidth={2.5} />
       </View>
-      <Text style={styles.title}>{category.title}</Text>
+      <Text translate={false} style={styles.title}>{category.displayName || category.nameUz || category.title}</Text>
     </Pressable>
   );
 }

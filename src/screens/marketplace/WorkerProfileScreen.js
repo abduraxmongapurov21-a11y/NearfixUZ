@@ -32,6 +32,8 @@ import { fetchPublicWorker } from "../../services/catalog/catalogService";
 import { requireAuthentication } from "../../navigation/protectedActions";
 import { formatDistanceMeters } from "../../services/catalog/catalogDistance.mjs";
 import { Alert, Text } from "../../i18n/native";
+import { useTranslation } from "react-i18next";
+import { workerCategoryLabel } from "../../services/content/categoryService";
 
 const font = {
   medium: "Inter_500Medium",
@@ -41,6 +43,7 @@ const font = {
 };
 
 export function WorkerProfileScreen({ navigation, route }) {
+  const { i18n } = useTranslation();
   const worker = useSelectedWorker();
   const session = useAuthStore((state) => state.session);
   const favoriteWorkerIds = useClientStore((state) => state.favoriteWorkerIds);
@@ -129,10 +132,10 @@ export function WorkerProfileScreen({ navigation, route }) {
     }
 
     if (!session?.token) {
-      requireAuthentication(navigation, { kind: "BOOKING", workerId: worker.id });
+      requireAuthentication(navigation, { kind: "BOOKING", workerId: worker.id, categoryId: route.params?.categoryId });
       return;
     }
-    navigation.navigate(ROUTES.BOOKING, { workerId: worker.id });
+    navigation.navigate(ROUTES.BOOKING, { workerId: worker.id, categoryId: route.params?.categoryId });
   }
 
   async function handleToggleFavorite() {
@@ -156,7 +159,7 @@ export function WorkerProfileScreen({ navigation, route }) {
   }
 
   async function handleShare() {
-    const title = `${worker.name} - ${worker.specialty}`;
+    const title = `${worker.name} - ${workerCategoryLabel(worker, i18n.language).label}`;
 
     await Share.share({
       title,
@@ -234,7 +237,7 @@ export function WorkerProfileScreen({ navigation, route }) {
             </View>
             <Text style={styles.name}>{worker.name}</Text>
             <Text style={styles.profession}>
-              {worker.specialty} • {worker.experience || "Tajriba ko'rsatilmagan"}
+              <Text translate={false}>{workerCategoryLabel(worker, i18n.language).label}</Text> • {worker.experience || "Tajriba ko'rsatilmagan"}
             </Text>
           </View>
         </View>

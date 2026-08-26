@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { ArrowLeft, Camera, CheckCircle2 } from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 import { PrimaryButton, SecondaryButton } from "../../components/ui/Button";
-import { categories } from "../../constants/categories";
 import { ROUTES } from "../../constants/routes";
 import { uploadMediaApi } from "../../services/media/mediaService";
 import {
@@ -22,13 +22,16 @@ import {
   workerApplicationPayload
 } from "../../services/workers/workerApplicationForm.mjs";
 import { useAuthStore } from "../../store/authStore";
+import { useClientStore } from "../../store/clientStore";
+import { categoryName, findCategoryByLegacyValue } from "../../services/content/categoryService";
+import { CategoryAvailabilityState } from "../../components/category/CategoryAvailabilityState";
 import { colors, radius } from "../../theme";
 import { Alert, Text, TextInput } from "../../i18n/native";
 
 const emptyForm = {
   name: "",
   cityId: "tashkent",
-  professions: [],
+  categoryIds: [],
   experienceYears: "",
   profileImageUrl: "",
   bio: "",
@@ -36,7 +39,12 @@ const emptyForm = {
 };
 
 export function BecomeWorkerScreen({ navigation }) {
+  const { i18n } = useTranslation();
   const session = useAuthStore((state) => state.session);
+  const categories = useClientStore((state) => state.categories);
+  const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
+  const categoryStatus = useClientStore((state) => state.categoryStatus);
+  const categoryError = useClientStore((state) => state.categoryError);
   const [form, setForm] = useState(emptyForm);
   const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -54,15 +62,20 @@ export function BecomeWorkerScreen({ navigation }) {
       return undefined;
     }
     const identity = useAuthStore.getState().captureAuthRequest(session.token);
-    fetchWorkerApplicationApi(session.token).then((result) => {
+    Promise.all([syncCategoriesFromApi(), fetchWorkerApplicationApi(session.token)]).then(([, result]) => {
       if (generation !== requestGeneration.current || !useAuthStore.getState().isAuthRequestCurrent(identity)) return;
       if (result.ok && result.application) {
         const item = result.application;
         setApplication(item);
+        const availableCategories = useClientStore.getState().categories;
+        const legacyValues = item.professions?.length ? item.professions : [item.profession].filter(Boolean);
+        const categoryIds = item.categoryIds?.length
+          ? item.categoryIds
+          : legacyValues.map((value) => findCategoryByLegacyValue(availableCategories, value)?.id).filter(Boolean);
         setForm({
           name: item.name || session.name || "",
           cityId: item.cityId || "tashkent",
-          professions: item.professions?.length ? item.professions : [item.profession].filter(Boolean),
+          categoryIds,
           experienceYears: item.experienceYears === null ? "" : String(item.experienceYears),
           profileImageUrl: item.profileImageUrl || "",
           bio: item.bio || "",
@@ -74,19 +87,19 @@ export function BecomeWorkerScreen({ navigation }) {
       setLoading(false);
     });
     return () => { requestGeneration.current += 1; };
-  }, [navigation, session?.name, session?.role, session?.token, session?.userId]);
+  }, [navigation, session?.name, session?.role, session?.token, session?.userId, syncCategoriesFromApi]);
 
   function update(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function toggleProfession(profession) {
-    const next = toggleProfessionSelection(form.professions, profession);
+  function toggleProfession(categoryId) {
+    const next = toggleProfessionSelection(form.categoryIds, categoryId);
     if (next.limitReached) {
       Alert.alert("Tanlov chegarasi", `Ko'pi bilan ${MAX_WORKER_PROFESSIONS} ta xizmat sohasini tanlash mumkin.`);
       return;
     }
-    update("professions", next.professions);
+    update("categoryIds", next.professions);
   }
 
   function revealBioAboveKeyboard() {
@@ -170,9 +183,10 @@ export function BecomeWorkerScreen({ navigation }) {
         <Field label="Shahar" value={form.cityId} onChangeText={(value) => update("cityId", value)} editable={!locked} />
         <Text style={styles.label}>Xizmat sohasi</Text>
         <Text style={styles.hint}>{`Bir yoki bir nechta sohani tanlang — ko'pi bilan ${MAX_WORKER_PROFESSIONS} ta.`}</Text>
+        <CategoryAvailabilityState status={categoryStatus} error={categoryError} hasData={categories.length > 0} onRetry={syncCategoriesFromApi} />
         <View style={styles.chips}>{categories.map((item) => {
-          const active = form.professions.includes(item.title);
-          return <Pressable key={item.id} disabled={locked} onPress={() => toggleProfession(item.title)} style={[styles.chip, active && styles.chipActive]}><Text style={[styles.chipText, active && styles.chipTextActive]}>{item.title}</Text></Pressable>;
+          const active = form.categoryIds.includes(item.id);
+          return <Pressable key={item.id} disabled={locked} onPress={() => toggleProfession(item.id)} style={[styles.chip, active && styles.chipActive]}><Text translate={false} style={[styles.chipText, active && styles.chipTextActive]}>{categoryName(item, i18n.language)}</Text></Pressable>;
         })}</View>
         <Field label="Tajriba (yil)" value={form.experienceYears} onChangeText={(value) => update("experienceYears", value.replace(/\D/g, ""))} keyboardType="number-pad" editable={!locked} />
         <Field label="Boshlang'ich narx" value={formatGroupedDigits(form.basePrice)} onChangeText={(value) => update("basePrice", normalizeDigits(value))} keyboardType="number-pad" editable={!locked} />

@@ -21,6 +21,8 @@ import {
   sortBookingAddresses
 } from "../../services/orders/bookingLocation.mjs";
 import { Alert, Text, TextInput } from "../../i18n/native";
+import { CategoryAvailabilityState } from "../../components/category/CategoryAvailabilityState";
+import { resolveCategoryRoute } from "../../services/content/categoryAvailability.mjs";
 
 const font = {
   medium: "Inter_500Medium",
@@ -67,17 +69,10 @@ const defaultProblems = [
   "Boshqa"
 ];
 
-function getWorkerText(worker) {
-  return `${worker?.specialty || ""} ${worker?.profession || ""} ${worker?.professions?.join(" ") || ""}`.toLowerCase();
-}
-
-function getProblemOptions(worker) {
-  const text = getWorkerText(worker);
-  if (text.includes("elektr")) return problemPresets.electric;
-  if (text.includes("santex") || text.includes("kran") || text.includes("truba")) return problemPresets.plumbing;
-  if (text.includes("konditsioner") || text.includes(" конди") || text.includes("ac")) return problemPresets.ac;
-  if (text.includes("kir yuv") || text.includes("stiral")) return problemPresets.washer;
-  if (text.includes("tv") || text.includes("televizor")) return problemPresets.tv;
+function getProblemOptions(category) {
+  if (category?.slug === "electric") return problemPresets.electric;
+  if (category?.slug === "plumbing") return problemPresets.plumbing;
+  if (category?.slug === "ac") return problemPresets.ac;
   return defaultProblems;
 }
 
@@ -96,6 +91,18 @@ export function BookingScreen({ navigation, route }) {
   const syncClientProfileFromApi = useClientStore((state) => state.syncClientProfileFromApi);
   const getSelectedWorker = useClientStore((state) => state.getSelectedWorker);
   const worker = getSelectedWorker();
+  const categories = useClientStore((state) => state.categories);
+  const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
+  const categoryStatus = useClientStore((state) => state.categoryStatus);
+  const categoryError = useClientStore((state) => state.categoryError);
+  const categoriesLastLoadedAt = useClientStore((state) => state.categoriesLastLoadedAt);
+  const categoryId = route.params?.categoryId || worker?.categoryIds?.[0];
+  const category = categories.find((item) => item.id === categoryId);
+  const categoryResolution = resolveCategoryRoute(
+    { categories, status: categoryStatus, lastLoadedAt: categoriesLastLoadedAt },
+    categoryId,
+    false
+  );
 
   const [selectedProblem, setSelectedProblem] = useState("");
   const [otherProblem, setOtherProblem] = useState("");
@@ -115,7 +122,8 @@ export function BookingScreen({ navigation, route }) {
 
   useEffect(() => {
     syncClientProfileFromApi();
-  }, [syncClientProfileFromApi]);
+    syncCategoriesFromApi();
+  }, [syncCategoriesFromApi, syncClientProfileFromApi]);
 
   useEffect(() => {
     if (!oneTimeLocation && !selectedAddressId && savedAddresses.length) {
@@ -138,7 +146,7 @@ export function BookingScreen({ navigation, route }) {
     setAddressModalOpen(false);
   }, [navigation, route.params?.selectedBookingLocation]);
 
-  const problemOptions = useMemo(() => getProblemOptions(worker), [worker]);
+  const problemOptions = useMemo(() => getProblemOptions(category), [category]);
   const orderedAddresses = useMemo(() => sortBookingAddresses(savedAddresses), [savedAddresses]);
   const selectedSavedAddress = useMemo(
     () => orderedAddresses.find((address) => address.id === selectedAddressId) || (!oneTimeLocation ? orderedAddresses[0] : null),
@@ -156,6 +164,10 @@ export function BookingScreen({ navigation, route }) {
   function validate() {
     if (!worker?.id) {
       Alert.alert("Usta tanlanmagan", "Buyurtma berish uchun usta tanlang.");
+      return false;
+    }
+    if (!categoryId || !category) {
+      Alert.alert("Category tanlanmagan", "Buyurtma uchun faol category tanlang.");
       return false;
     }
 
@@ -198,6 +210,7 @@ export function BookingScreen({ navigation, route }) {
 
       updateOrderDraft({
         selectedWorkerId: worker.id,
+        serviceId: categoryId,
         problemTitle,
         description: undefined,
         ...locationDraft
@@ -222,7 +235,7 @@ export function BookingScreen({ navigation, route }) {
 
       resetOrderDraft({
         selectedWorkerId: worker.id,
-        serviceId: worker.specialty,
+        serviceId: categoryId,
         addressId: null,
         address: "",
         location: null
@@ -286,6 +299,12 @@ export function BookingScreen({ navigation, route }) {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#0F80B7" colors={["#0F80B7"]} />
         }
       >
+        <CategoryAvailabilityState
+          status={categoryResolution.kind === "pending" ? "loading" : categoryResolution.reason === "empty" ? "empty" : categoryResolution.kind === "ready" ? categoryStatus : "error"}
+          error={categoryResolution.reason === "invalid" ? "Tanlangan kategoriya faol emas yoki mavjud emas." : categoryError}
+          hasData={categoryResolution.kind === "ready"}
+          onRetry={syncCategoriesFromApi}
+        />
         <View style={styles.formCard}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>{savedAddresses.length ? "Manzil tanlang" : "Qayerga usta chaqiramiz?"}</Text>

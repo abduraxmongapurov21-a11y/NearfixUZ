@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ClipboardList, Flag, History, Images, LayoutDashboard, LifeBuoy, Shield, Star, Users, Wrench } from "lucide-react";
+import { ClipboardList, Flag, History, Images, LayoutDashboard, LifeBuoy, Shapes, Shield, Star, Users, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, isSuperAdmin, type AdminPermission } from "@/shared/auth/permissions";
 import { useAdminSessionStore } from "@/stores/admin-session-store";
@@ -23,7 +23,8 @@ const navItems = [
 }[];
 
 const contentNavItems = [
-  { href: "/content/banners", label: "Banners", icon: Images, permission: "content.read" }
+  { href: "/content/banners", label: "Banners", icon: Images, permission: "content.read" },
+  { href: "/content/categories", label: "Categories", icon: Shapes, permission: "content.read" }
 ] satisfies {
   href: string;
   label: string;

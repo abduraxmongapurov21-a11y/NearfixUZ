@@ -38,7 +38,7 @@ export async function resumeAfterAuthentication(navigation, role) {
       return { ok: false, message: "Worker is no longer available" };
     }
     useClientStore.getState().upsertPublicWorker(result.worker);
-    rootNavigation.replace(ROUTES.BOOKING, { workerId: result.worker.id });
+    rootNavigation.replace(ROUTES.BOOKING, { workerId: result.worker.id, categoryId: intent.categoryId });
     return { ok: true, destination: ROUTES.BOOKING };
   }
 

@@ -13,9 +13,9 @@ import {
   Search,
   SlidersHorizontal,
   Star,
-  UserRound,
-  Wrench
+  UserRound
 } from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../constants/routes";
 import { WORKER_STATUS } from "../../constants/workerStatus";
 import { CitySelector } from "../../components/catalog/CitySelector";
@@ -30,6 +30,10 @@ import {
   hasAddressCoordinates,
   resolveCatalogOriginAddressId
 } from "../../services/catalog/catalogDistance.mjs";
+import { categoryName, workerCategoryLabel } from "../../services/content/categoryService";
+import { resolveCategoryIcon } from "../../constants/categoryIcons";
+import { CategoryAvailabilityState } from "../../components/category/CategoryAvailabilityState";
+import { resolveCategoryRoute } from "../../services/content/categoryAvailability.mjs";
 
 const font = {
   medium: "Inter_500Medium",
@@ -38,32 +42,32 @@ const font = {
   extra: "Inter_800ExtraBold"
 };
 
-const titleByProfession = {
-  Santexnik: "Santexnika",
-  Elektrik: "Elektrik",
-  Payvandchi: "Payvandchi",
-  Usta: "Usta",
-  Konditsioner: "Konditsioner",
-  "Ta'mirlash": "Ta'mirlash",
-  Tozalash: "Tozalash"
-};
-
 function statusRank(worker) {
   if (worker.availability === WORKER_STATUS.AVAILABLE) return 0;
   if (worker.availability === WORKER_STATUS.BUSY) return 2;
   return 3;
 }
 
-function hasProfession(worker, profession) {
-  const selected = String(profession || "").toLowerCase();
-  const workerProfessions = Array.isArray(worker.professions) ? worker.professions : [];
-
-  return [worker.specialty, ...workerProfessions].some((item) => String(item || "").toLowerCase() === selected);
+function hasCategory(worker, categoryId) {
+  return !categoryId || (worker.categoryIds || []).includes(categoryId);
 }
 
 export function CategoryScreen({ navigation, route }) {
+  const { i18n } = useTranslation();
   const session = useAuthStore((state) => state.session);
-  const profession = route.params?.profession || "Santexnik";
+  const categories = useClientStore((state) => state.categories);
+  const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
+  const categoryStatus = useClientStore((state) => state.categoryStatus);
+  const categoryError = useClientStore((state) => state.categoryError);
+  const categoriesLastLoadedAt = useClientStore((state) => state.categoriesLastLoadedAt);
+  const categoryResolution = resolveCategoryRoute(
+    { categories, status: categoryStatus, lastLoadedAt: categoriesLastLoadedAt },
+    route.params?.categoryId
+  );
+  const categoryId = categoryResolution.kind === "ready" ? categoryResolution.categoryId : undefined;
+  const category = categoryResolution.kind === "ready" ? categoryResolution.category : undefined;
+  const displayName = categoryName(category, i18n.language) || "Category";
+  const CategoryIcon = resolveCategoryIcon(category?.iconKey);
   const workers = useClientStore((state) => state.workers);
   const selectedCityId = useClientStore((state) => state.selectedCityId);
   const setSelectedCity = useClientStore((state) => state.setSelectedCity);
@@ -89,6 +93,10 @@ export function CategoryScreen({ navigation, route }) {
   const originAddress = savedAddresses.find((address) => address.id === originAddressId) || null;
 
   useEffect(() => {
+    syncCategoriesFromApi();
+  }, [syncCategoriesFromApi]);
+
+  useEffect(() => {
     loadAddresses();
   }, [loadAddresses]);
 
@@ -98,19 +106,19 @@ export function CategoryScreen({ navigation, route }) {
 
   useEffect(() => {
     setCatalogQuery("");
-    syncCatalogFromApi(profession);
-  }, [catalogSort, originAddressId, profession, selectedCityId, setCatalogQuery, syncCatalogFromApi]);
+    if (categoryResolution.kind === "ready" && categoryId) syncCatalogFromApi(categoryId);
+  }, [catalogSort, categoryResolution.kind, categoryId, originAddressId, selectedCityId, setCatalogQuery, syncCatalogFromApi]);
 
   const visibleWorkers = useMemo(() => {
     const cleanQuery = catalogQuery.trim().toLowerCase();
 
     return workers
       .filter((worker) => worker.cityId === selectedCityId)
-      .filter((worker) => hasProfession(worker, profession))
+      .filter((worker) => hasCategory(worker, categoryId))
       .filter((worker) => worker.availability === WORKER_STATUS.AVAILABLE)
       .filter((worker) => {
         if (!cleanQuery) return true;
-        return `${worker.name} ${worker.specialty}`.toLowerCase().includes(cleanQuery);
+        return `${worker.name} ${workerCategoryLabel(worker, i18n.language).label}`.toLowerCase().includes(cleanQuery);
       })
       .sort((a, b) => {
         if (catalogSort === "nearest") return 0;
@@ -118,16 +126,16 @@ export function CategoryScreen({ navigation, route }) {
         if (statusDiff) return statusDiff;
         return Number(b.rating) - Number(a.rating);
       });
-  }, [catalogQuery, catalogSort, profession, selectedCityId, workers]);
+  }, [catalogQuery, catalogSort, categoryId, i18n.language, selectedCityId, workers]);
 
   function openWorker(workerId) {
     selectWorker(workerId);
-    navigation.navigate(ROUTES.WORKER_PROFILE, { workerId });
+    navigation.navigate(ROUTES.WORKER_PROFILE, { workerId, categoryId });
   }
 
   async function handleRefresh() {
     setRefreshing(true);
-    await syncCatalogFromApi(profession);
+    if (categoryId) await syncCatalogFromApi(categoryId);
     setRefreshing(false);
   }
 
@@ -138,6 +146,24 @@ export function CategoryScreen({ navigation, route }) {
       return;
     }
     setCatalogSort("nearest");
+  }
+
+  if (categoryResolution.kind !== "ready") {
+    const pending = categoryResolution.kind === "pending";
+    const empty = categoryResolution.reason === "empty";
+    return (
+      <View style={styles.screen}>
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} style={styles.backButton}><ArrowLeft size={24} color="#273248" strokeWidth={2.7} /></Pressable>
+          <Text style={styles.title}>Kategoriya</Text><View style={styles.headerSpacer} />
+        </View>
+        <CategoryAvailabilityState
+          status={pending ? "loading" : empty ? "empty" : "error"}
+          error={categoryResolution.reason === "invalid" ? "Bu kategoriya faol emas yoki mavjud emas." : categoryError}
+          onRetry={syncCategoriesFromApi}
+        />
+      </View>
+    );
   }
 
   return (
@@ -155,12 +181,13 @@ export function CategoryScreen({ navigation, route }) {
           </Pressable>
           <View style={styles.titleGroup}>
             <View style={styles.titleIcon}>
-              <Wrench size={15} color="#FFFFFF" strokeWidth={3} />
+              <CategoryIcon size={15} color="#FFFFFF" strokeWidth={3} />
             </View>
-            <Text style={styles.title}>{titleByProfession[profession] || profession}</Text>
+            <Text translate={false} style={styles.title}>{displayName}</Text>
           </View>
           <View style={styles.headerSpacer} />
         </View>
+        <CategoryAvailabilityState status={categoryStatus} error={categoryError} hasData onRetry={syncCategoriesFromApi} />
 
         <View style={styles.citySelectorWrap}>
           <CitySelector selectedCityId={selectedCityId} onSelectCity={setSelectedCity} />
@@ -212,7 +239,7 @@ export function CategoryScreen({ navigation, route }) {
 
         <View style={styles.searchBox}>
           <Search size={23} color="#0F80B7" strokeWidth={2.8} />
-          <Text style={styles.searchText}>{profession} qidirish...</Text>
+          <Text translate={false} style={styles.searchText}>{displayName} qidirish...</Text>
           <View style={styles.micButton}>
             <Mic size={19} color="#0F80B7" strokeWidth={2.8} />
           </View>

@@ -19,6 +19,8 @@ export function mapApiWorker(worker) {
     name,
     specialty: worker.profession || professions[0] || "Usta",
     professions,
+    categoryIds: Array.isArray(worker.categoryIds) ? worker.categoryIds : [],
+    categories: Array.isArray(worker.categories) ? worker.categories : [],
     profileImageUrl: worker.profileImageUrl,
     rating: String(worker.ratingAvg || "0"),
     reviews: worker.completedOrdersCount || 0,
@@ -42,12 +44,12 @@ export function mapApiWorker(worker) {
   };
 }
 
-export async function fetchCatalogWorkers(cityId, profession, options = {}) {
+export async function fetchCatalogWorkers(cityId, categoryId, options = {}) {
   return apiRequest(
     async () => {
       const params = new URLSearchParams();
       if (cityId) params.set("cityId", cityId);
-      if (profession) params.set("profession", profession);
+      if (categoryId) params.set("categoryId", categoryId);
       if (options.originAddressId) params.set("originAddressId", options.originAddressId);
       if (options.sort === "nearest") params.set("sort", "nearest");
       const query = params.toString() ? `?${params.toString()}` : "";

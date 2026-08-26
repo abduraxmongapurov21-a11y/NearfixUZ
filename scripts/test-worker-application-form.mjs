@@ -41,6 +41,17 @@ assert.deepEqual(workerApplicationPayload(complete), {
   basePrice: 200000
 });
 assert.deepEqual(missingWorkerApplicationFields(complete), []);
+const categoryComplete = { ...complete, professions: undefined, categoryIds: ["cat_electric", "cat_plumbing"] };
+assert.deepEqual(workerApplicationPayload(categoryComplete), {
+  name: "Test Usta",
+  cityId: "tashkent",
+  categoryIds: ["cat_electric", "cat_plumbing"],
+  experienceYears: 5,
+  profileImageUrl: "https://example.com/photo.jpg",
+  bio: "Tajribali mutaxassis",
+  basePrice: 200000
+});
+assert.deepEqual(missingWorkerApplicationFields(categoryComplete), []);
 assert.ok(missingWorkerApplicationFields({ ...complete, professions: [], bio: "" }).includes("Xizmat sohasi"));
 assert.match(workerApplicationErrorMessage({ status: 404 }), /API serverda topilmadi/);
 assert.match(workerApplicationErrorMessage({ code: "NETWORK_REQUEST_FAILED" }), /Backend bilan aloqa/);

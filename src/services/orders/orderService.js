@@ -69,8 +69,9 @@ export async function createOrderApi(token, draft, service, worker) {
               }
             : {}),
         cityId: worker.cityId || "tashkent",
-        serviceType: service?.title || worker.specialty || "Xizmat",
-        problemTitle: draft.problemTitle || `${service?.title || "Xizmat"} buyurtmasi`,
+        categoryId: service?.id,
+        serviceType: service?.nameUz || worker.specialty || "Xizmat",
+        problemTitle: draft.problemTitle || `${service?.nameUz || worker.specialty || "Xizmat"} buyurtmasi`,
         problemDescription: draft.description || undefined,
         urgency: urgencyToApi[draft.urgency] || "FAST",
         priceEstimate: worker.basePriceValue || undefined

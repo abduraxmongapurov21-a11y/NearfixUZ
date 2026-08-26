@@ -12,6 +12,7 @@ import {
 import { prisma } from "../../db/prisma.js";
 import type { AuthUser } from "../auth/auth-context.js";
 import { createNotificationSafely } from "../notifications/notification.service.js";
+import { getActiveCategoriesByIds, matchCategoriesByLegacyValues } from "../categories/category.service.js";
 import { ensureWorkerAvailableForOrder } from "../workers/worker.service.js";
 import {
   assertApprovedProviderOwnership,
@@ -161,7 +162,7 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
   const createdOrder = await prisma.$transaction(async (tx) => {
     const worker = await tx.workerProfile.findUnique({
       where: { id: input.workerId },
-      include: { availability: true, user: true }
+      include: { availability: true, user: true, categories: true }
     });
 
     if (!worker || worker.status !== WorkerProfileStatus.APPROVED) {
@@ -177,6 +178,17 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
         code: "SELF_BOOKING_NOT_ALLOWED"
       });
     }
+
+    const category = input.categoryId
+      ? (await getActiveCategoriesByIds([input.categoryId], tx))[0]
+      : (await matchCategoriesByLegacyValues([input.serviceType || ""], tx))[0] || null;
+    if (input.categoryId && category && !worker.categories.some((item) => item.categoryId === category.id)) {
+      throw Object.assign(new Error("Worker does not offer the selected category"), {
+        status: 400,
+        code: "WORKER_CATEGORY_NOT_OFFERED"
+      });
+    }
+    const serviceType = input.categoryId ? category!.nameUz : input.serviceType!;
 
     let savedAddress: {
       id: string;
@@ -242,7 +254,8 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
         locationLat: savedCoordinatesAreValid ? savedAddress?.lat : input.location?.latitude,
         locationLng: savedCoordinatesAreValid ? savedAddress?.lng : input.location?.longitude,
         cityId: savedAddress?.cityId || input.cityId,
-        serviceType: input.serviceType,
+        serviceType,
+        categoryId: category?.id,
         problemTitle: input.problemTitle,
         problemDescription: input.problemDescription,
         urgency: input.urgency,
@@ -278,10 +291,10 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
     await tx.chatRoom.create({
       data: {
         type: ChatRoomType.ORDER,
-        title: `${input.serviceType} buyurtmasi`,
+        title: `${serviceType} buyurtmasi`,
         orderId: order.id,
         cityId: input.cityId,
-        serviceType: input.serviceType,
+        serviceType,
         createdById: user.id,
         participants: {
           create: [

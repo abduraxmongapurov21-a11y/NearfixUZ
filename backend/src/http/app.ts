@@ -10,6 +10,7 @@ import { adminManagementRouter } from "../modules/admin-management/admin-managem
 import { adminRouter } from "../modules/admin/admin.routes.js";
 import { authRouter } from "../modules/auth/auth.routes.js";
 import { adminBannerRouter, contentBannerRouter } from "../modules/banners/banner.routes.js";
+import { adminCategoryRouter, contentCategoryRouter } from "../modules/categories/category.routes.js";
 import { chatRouter } from "../modules/chats/chat.routes.js";
 import { favoriteRouter } from "../modules/favorites/favorite.routes.js";
 import { healthRouter } from "../modules/health/health.routes.js";
@@ -84,8 +85,10 @@ export function createApp() {
   app.use("/admin", authenticateEnvAdmin);
   app.use("/admin/admins", adminManagementRouter);
   app.use("/admin/banners", adminBannerRouter);
+  app.use("/admin/categories", adminCategoryRouter);
   app.use("/admin", adminRouter);
   app.use("/content", contentBannerRouter);
+  app.use("/content", contentCategoryRouter);
   app.use("/addresses", addressRouter);
   app.use("/favorites", favoriteRouter);
   app.use("/workers", workerRouter);

@@ -14,7 +14,8 @@ export const createOrderSchema = z.object({
   addressId: z.string().min(1).optional(),
   location: orderLocationSchema.optional(),
   cityId: z.string().min(1),
-  serviceType: z.string().min(2).max(80),
+  categoryId: z.string().min(1).max(191).optional(),
+  serviceType: z.string().min(2).max(80).optional(),
   problemTitle: z.string().min(3).max(160),
   problemDescription: z.string().max(1200).optional(),
   urgency: z.nativeEnum(OrderUrgency).default(OrderUrgency.FAST),
@@ -26,6 +27,13 @@ export const createOrderSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "Exactly one of addressId or location is required",
       path: ["location"]
+    });
+  }
+  if (!input.categoryId && !input.serviceType) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Either categoryId or serviceType is required",
+      path: ["categoryId"]
     });
   }
 });

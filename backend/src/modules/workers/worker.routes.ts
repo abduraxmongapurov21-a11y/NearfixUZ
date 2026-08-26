@@ -65,6 +65,7 @@ workerRouter.get("/catalog", (request, response, next) => {
     const query = catalogWorkersQuerySchema.parse(request.query);
     const profession = query.profession || query.category;
     const workers = await getCatalogWorkers(query.cityId, profession, {
+      categoryId: query.categoryId,
       originAddressId: query.originAddressId,
       requester: request.user,
       sort: query.sort
