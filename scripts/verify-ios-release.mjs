@@ -1,8 +1,12 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
+const projectRoot = process.cwd();
 const exportDirectory = path.resolve("dist-test-ios");
-const expectedApiUrl = "https://nearfix-production-c0db.up.railway.app";
+const easConfig = JSON.parse(await readFile(path.join(projectRoot, "eas.json"), "utf8"));
+const expectedApiUrl =
+  easConfig.build?.production?.env?.EXPO_PUBLIC_API_BASE_URL ||
+  "https://nearfix-production-backend-wvd6v.ondigitalocean.app";
 const forbiddenApiPatterns = [
   /https?:\/\/(?:localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+):4000/gi
 ];

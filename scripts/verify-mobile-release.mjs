@@ -3,7 +3,10 @@ import path from "node:path";
 
 const projectRoot = process.cwd();
 const exportDirectory = path.resolve("dist-test-store");
-const expectedApiUrl = "https://nearfix-production-c0db.up.railway.app";
+const easConfig = JSON.parse(await readFile(path.join(projectRoot, "eas.json"), "utf8"));
+const expectedApiUrl =
+  easConfig.build?.production?.env?.EXPO_PUBLIC_API_BASE_URL ||
+  "https://nearfix-production-backend-wvd6v.ondigitalocean.app";
 const expectedLegalUrls = [
   `${expectedApiUrl}/legal/privacy`,
   `${expectedApiUrl}/legal/terms`
