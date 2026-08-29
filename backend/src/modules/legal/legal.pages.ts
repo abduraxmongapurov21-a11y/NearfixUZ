@@ -55,7 +55,7 @@ export const privacyPolicyHtml = page(
     <ul>
       <li><strong>Eskiz</strong> — tasdiqlash SMS xabarlarini yuborish uchun;</li>
       <li><strong>Cloudflare R2</strong> — yuklangan media fayllarini saqlash uchun;</li>
-      <li><strong>Railway</strong> — backend va ma’lumotlar bazasi infratuzilmasi uchun.</li>
+      <li><strong>DigitalOcean</strong> — backend va boshqariladigan PostgreSQL infratuzilmasi uchun.</li>
     </ul>
     <h2>4. To‘lov ma’lumotlari</h2>
     <div class="notice">NearFIX ilovasida hozircha ichki to‘lov mavjud emas. Ilova to‘lovga oid ma’lumotlarni yig‘maydi va saqlamaydi.</div>
