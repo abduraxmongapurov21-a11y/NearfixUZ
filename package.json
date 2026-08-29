@@ -18,6 +18,7 @@
     "test:booking-location": "node scripts/test-booking-location.mjs",
     "test:reverse-geocoding": "node scripts/test-reverse-geocoding.mjs",
     "test:yandex-map-adapter": "node scripts/test-yandex-map-adapter.mjs",
+    "test:ios-yandex-locale": "node scripts/test-ios-yandex-locale.mjs",
     "test:auth-intent": "node scripts/test-auth-intent.mjs",
     "test:notification-navigation": "node scripts/test-notification-navigation.mjs",
     "test:unified-auth": "node scripts/test-unified-auth-flow.mjs",

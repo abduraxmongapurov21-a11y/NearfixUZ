@@ -201,7 +201,14 @@ export async function resolveReverseGeocode(request, providers = {}) {
       const result = await providers.localizedReverseGeocode(normalizedCoordinate, requestedLocale);
       const location = normalizeYandexReverseGeocodeResult(result);
       if (location) return successResult(normalizedCoordinate, location, requestedLocale, "yandex-mapkit");
-    } catch {
+    } catch (error) {
+      if (error?.preventFallback === true) {
+        return {
+          ok: false,
+          code: error.code || "geocoder.locale-mismatch",
+          coordinate: normalizedCoordinate
+        };
+      }
       // The native device provider below is the controlled fallback.
     }
   }

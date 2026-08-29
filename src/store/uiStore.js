@@ -4,15 +4,7 @@ import { Platform } from "react-native";
 import { createJSONStorage, persist } from "zustand/middleware";
 import i18n, { DEFAULT_LOCALE, normalizeLocale } from "../i18n";
 import { restartAndroidProcess } from "../services/app/androidProcessRestart";
-
-const UI_SETTINGS_STORAGE_KEY = "nearfix-ui-settings";
-
-async function persistLocale(locale) {
-  await AsyncStorage.setItem(
-    UI_SETTINGS_STORAGE_KEY,
-    JSON.stringify({ state: { locale }, version: 0 })
-  );
-}
+import { persistLocale, UI_SETTINGS_STORAGE_KEY } from "../services/app/localeStorage";
 
 export const useUiStore = create(
   persist(
@@ -31,6 +23,7 @@ export const useUiStore = create(
 
         void i18n.changeLanguage(nextLocale);
         set({ locale: nextLocale });
+        if (Platform.OS === "ios") await persistLocale(nextLocale);
         return true;
       },
       sendMessage: (message) =>

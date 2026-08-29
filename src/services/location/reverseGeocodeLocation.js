@@ -1,9 +1,13 @@
 import * as Location from "expo-location";
+import { Platform } from "react-native";
 import { loadYandexGeocoder } from "../maps/yandexMapKit";
 import {
+  createIosYandexLocaleRelaunchError,
+  getYandexLocaleTransition
+} from "../maps/yandexLocaleLifecycle.mjs";
+import {
   mapKitLocaleMatchesAppLocale,
-  resolveReverseGeocode,
-  toYandexMapKitLocale
+  resolveReverseGeocode
 } from "./reverseGeocodeModel.mjs";
 
 const NATIVE_GEOCODER_TIMEOUT_MS = 8000;
@@ -36,11 +40,19 @@ async function reverseGeocodeWithYandex(coordinate, locale) {
     const integration = loadYandexGeocoder(locale);
     if (!integration.ready) throw new Error();
 
-    await integration.initialization;
-    const mapKitLocale = toYandexMapKitLocale(locale);
+    const initialization = await integration.initialization;
+    const transition = getYandexLocaleTransition({
+      platform: Platform.OS,
+      initializedLocale: initialization.mapKitLocale,
+      requestedLocale: locale
+    });
+    if (transition.action === "cold-relaunch-required") {
+      throw createIosYandexLocaleRelaunchError();
+    }
+
     let effectiveLocale = await integration.YamapInstance.getLocale();
     if (!mapKitLocaleMatchesAppLocale(effectiveLocale, locale)) {
-      await integration.YamapInstance.setLocale(mapKitLocale);
+      await integration.YamapInstance.setLocale(transition.mapKitLocale);
       effectiveLocale = await integration.YamapInstance.getLocale();
     }
     if (!mapKitLocaleMatchesAppLocale(effectiveLocale, locale)) throw new Error();

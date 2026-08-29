@@ -16,6 +16,7 @@ import {
   toYandexPoint
 } from "../../services/maps/yandexMapAdapter.mjs";
 import { loadYandexMapKit } from "../../services/maps/yandexMapKit";
+import { IOS_YANDEX_LOCALE_RELAUNCH_REQUIRED } from "../../services/maps/yandexLocaleLifecycle.mjs";
 import { useUiStore } from "../../store/uiStore";
 
 const TASHKENT_REGION = {
@@ -83,7 +84,8 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
   const [addressState, setAddressState] = useState(() => ({
     status: resolvedLocationRef.current ? ADDRESS_STATUS.SUCCESS : ADDRESS_STATUS.IDLE,
     coordinate: selectedCoordinate,
-    location: resolvedLocationRef.current?.location || null
+    location: resolvedLocationRef.current?.location || null,
+    code: null
   }));
 
   if (!geocoderRef.current) {
@@ -152,7 +154,7 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
     const preservedLocation = coordinatesMatch(resolvedLocationRef.current?.coordinate, selected)
       ? resolvedLocationRef.current.location
       : null;
-    setAddressState({ status: ADDRESS_STATUS.LOADING, coordinate: selected, location: preservedLocation });
+    setAddressState({ status: ADDRESS_STATUS.LOADING, coordinate: selected, location: preservedLocation, code: null });
 
     const result = await geocoderRef.current.resolve({ ...selected, locale });
     if (!mountedRef.current || result.stale || !coordinatesMatch(selectedCoordinateRef.current, result.coordinate)) {
@@ -161,9 +163,19 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
 
     if (result.ok) {
       resolvedLocationRef.current = { coordinate: result.coordinate, location: result.location };
-      setAddressState({ status: ADDRESS_STATUS.SUCCESS, coordinate: result.coordinate, location: result.location });
+      setAddressState({
+        status: ADDRESS_STATUS.SUCCESS,
+        coordinate: result.coordinate,
+        location: result.location,
+        code: null
+      });
     } else {
-      setAddressState({ status: ADDRESS_STATUS.FAILURE, coordinate: result.coordinate, location: preservedLocation });
+      setAddressState({
+        status: ADDRESS_STATUS.FAILURE,
+        coordinate: result.coordinate,
+        location: preservedLocation,
+        code: result.code || null
+      });
     }
 
     return result;
@@ -239,6 +251,15 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
 
     if (!mountedRef.current || result.stale || !coordinatesMatch(selected, selectedCoordinateRef.current)) {
       if (mountedRef.current) setConfirming(false);
+      return;
+    }
+
+    if (result.code === IOS_YANDEX_LOCALE_RELAUNCH_REQUIRED) {
+      Alert.alert(
+        "Til xarita uchun saqlandi",
+        "Yandex xarita va manzil tilini yangilash uchun NearFIX ilovasini yoping va qayta oching."
+      );
+      setConfirming(false);
       return;
     }
 
@@ -364,7 +385,9 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
                 (addressState.status === ADDRESS_STATUS.LOADING
                   ? "Manzil aniqlanmoqda..."
                   : addressState.status === ADDRESS_STATUS.FAILURE
-                    ? "Manzil aniqlanmadi. Koordinata saqlanadi."
+                    ? addressState.code === IOS_YANDEX_LOCALE_RELAUNCH_REQUIRED
+                      ? "Xarita tilini yangilash uchun ilovani yoping va qayta oching."
+                      : "Manzil aniqlanmadi. Koordinata saqlanadi."
                     : route?.params?.selectionDescription || "Manzil aniqlanmoqda...")}
             </Text>
           </View>

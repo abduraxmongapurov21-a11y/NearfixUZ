@@ -53,3 +53,8 @@ export function resolveCategoryRoute(state, requestedCategoryId, fallbackToFirst
   const category = state.categories.find((item) => item.id === categoryId);
   return category ? { kind: "ready", categoryId, category } : { kind: "unavailable", reason: "invalid" };
 }
+
+export function visibleHomeCategoryItems(categoryItems, moreItem, expanded = false) {
+  if (expanded || categoryItems.length <= 8) return categoryItems;
+  return [...categoryItems.slice(0, 7), moreItem];
+}

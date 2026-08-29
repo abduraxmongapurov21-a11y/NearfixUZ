@@ -9,8 +9,6 @@ import {
   Home,
   MapPin,
   MessageCircle,
-  Mic,
-  Search,
   SlidersHorizontal,
   Star,
   UserRound
@@ -238,11 +236,7 @@ export function CategoryScreen({ navigation, route }) {
         </View>
 
         <View style={styles.searchBox}>
-          <Search size={23} color="#0F80B7" strokeWidth={2.8} />
           <Text translate={false} style={styles.searchText}>{displayName} qidirish...</Text>
-          <View style={styles.micButton}>
-            <Mic size={19} color="#0F80B7" strokeWidth={2.8} />
-          </View>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
@@ -501,18 +495,9 @@ const styles = StyleSheet.create({
   },
   searchText: {
     flex: 1,
-    marginLeft: 14,
     color: "#A3ABB8",
     fontSize: 18,
     fontFamily: font.bold
-  },
-  micButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#EEF7FD",
-    alignItems: "center",
-    justifyContent: "center"
   },
   filterRow: {
     marginTop: 30,

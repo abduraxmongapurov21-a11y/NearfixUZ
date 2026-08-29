@@ -1017,5 +1017,8 @@
   "Tanlangan kategoriya faol emas yoki mavjud emas.": "Выбранная категория недоступна или неактивна.",
   "Yangi xizmatlar qo'shilganda shu yerda ko'rinadi.": "Новые услуги появятся здесь после добавления.",
   "Buyurtma ma'lumotlari to'liq emas.": "Данные заказа заполнены не полностью.",
-  "Usta hozir boshqa buyurtma bilan band. Katalog yangilandi, boshqa mavjud ustani tanlang.": "Мастер сейчас занят другим заказом. Каталог обновлён — выберите другого доступного мастера."
+  "Usta hozir boshqa buyurtma bilan band. Katalog yangilandi, boshqa mavjud ustani tanlang.": "Мастер сейчас занят другим заказом. Каталог обновлён — выберите другого доступного мастера.",
+  "Til xarita uchun saqlandi": "Язык карты сохранён",
+  "Yandex xarita va manzil tilini yangilash uchun NearFIX ilovasini yoping va qayta oching.": "Чтобы обновить язык карты и адресов Yandex, закройте и снова откройте NearFIX.",
+  "Xarita tilini yangilash uchun ilovani yoping va qayta oching.": "Чтобы обновить язык карты, закройте и снова откройте приложение."
 }

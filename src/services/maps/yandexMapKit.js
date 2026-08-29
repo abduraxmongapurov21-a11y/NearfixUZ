@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
-import { toYandexMapKitLocale } from "../location/reverseGeocodeModel.mjs";
+import { readPersistedLocale } from "../app/localeStorage";
+import { initializeYandexMapKitLocale } from "./yandexLocaleLifecycle.mjs";
 
 let cachedIntegration;
 let cachedGeocoder;
@@ -19,10 +20,12 @@ export function loadYandexMapKit(locale) {
     // crashing Expo Go or an older development binary before this fallback runs.
     const { Yamap } = require("react-native-yamap-plus/src/components/Yamap/Yamap");
     const { YamapInstance } = require("react-native-yamap-plus/src/modules/YamapInstance");
-    const mapKitLocale = toYandexMapKitLocale(locale);
-    const initialization = Promise.resolve(mapKitLocale ? YamapInstance.setLocale(mapKitLocale) : undefined).then(() =>
-      YamapInstance.init(apiKey)
-    );
+    const initialization = initializeYandexMapKitLocale({
+      currentLocale: locale,
+      readLocale: readPersistedLocale,
+      setNativeLocale: (mapKitLocale) => YamapInstance.setLocale(mapKitLocale),
+      initializeNative: () => YamapInstance.init(apiKey)
+    });
     void initialization.catch(() => undefined);
     cachedIntegration = { ready: true, MapComponent: Yamap, YamapInstance, initialization };
   } catch {

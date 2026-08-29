@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ImageBackground, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { Ellipsis, Search, SlidersHorizontal, Wrench } from "lucide-react-native";
+import { Ellipsis, Wrench } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../constants/routes";
 import { CitySelector } from "../../components/catalog/CitySelector";
@@ -11,6 +11,7 @@ import { Text } from "../../i18n/native";
 import { categoryName, findCategoryByLegacyValue } from "../../services/content/categoryService";
 import { resolveCategoryIcon, resolveCategoryIconColor } from "../../constants/categoryIcons";
 import { CategoryAvailabilityState } from "../../components/category/CategoryAvailabilityState";
+import { visibleHomeCategoryItems } from "../../services/content/categoryAvailability.mjs";
 
 const moreCategoryItem = { id: "more", title: "Ko'proq", icon: Ellipsis, color: "#9CA3AF", muted: true };
 
@@ -33,8 +34,8 @@ export function HomeScreen({ navigation }) {
     icon: resolveCategoryIcon(category.iconKey),
     color: resolveCategoryIconColor(category.iconKey)
   }));
-  const hasCategoryOverflow = categoryItems.length > 8;
-  const visibleCategoryItems = hasCategoryOverflow ? [...categoryItems.slice(0, 7), moreCategoryItem] : categoryItems;
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const visibleCategoryItems = visibleHomeCategoryItems(categoryItems, moreCategoryItem, showAllCategories);
   const greetingName = session?.name?.trim();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -52,7 +53,10 @@ export function HomeScreen({ navigation }) {
   }
 
   function openCategory(category) {
-    if (category.id === "more") return;
+    if (category.id === "more") {
+      setShowAllCategories(true);
+      return;
+    }
     navigation.navigate(ROUTES.CATEGORY, { categoryId: category.id });
   }
 
@@ -127,13 +131,6 @@ export function HomeScreen({ navigation }) {
             ))}
           </ScrollView>
         ) : null}
-
-        <Pressable onPress={() => navigation.navigate(ROUTES.CATEGORY)} style={styles.searchBox}>
-          <Search size={24} color="#75B6D0" strokeWidth={2.7} />
-          <Text style={styles.searchText}>Qanday xizmat kerak?</Text>
-          <View style={styles.searchDivider} />
-          <SlidersHorizontal size={24} color="#2CD8A5" strokeWidth={2.8} />
-        </Pressable>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Kategoriyalar</Text>
@@ -389,36 +386,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: "rgba(255,255,255,0.10)",
     transform: [{ rotate: "45deg" }]
-  },
-  searchBox: {
-    marginHorizontal: 24,
-    marginTop: 28,
-    height: 56,
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "rgba(44,216,165,0.18)",
-    paddingHorizontal: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#0F719D",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 18 },
-    shadowRadius: 28,
-    elevation: 8
-  },
-  searchText: {
-    flex: 1,
-    marginLeft: 14,
-    color: "#A3ABB8",
-    fontSize: 18,
-    fontFamily: font.bold
-  },
-  searchDivider: {
-    width: 1.5,
-    height: 30,
-    marginRight: 16,
-    backgroundColor: "#E5E7EB"
   },
   sectionHeader: {
     marginTop: 32,

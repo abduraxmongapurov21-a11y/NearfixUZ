@@ -7,7 +7,8 @@ import {
   categoryAvailabilityLoading,
   categoryAvailabilitySuccess,
   initialCategoryAvailability,
-  resolveCategoryRoute
+  resolveCategoryRoute,
+  visibleHomeCategoryItems
 } from "../src/services/content/categoryAvailability.mjs";
 
 const category = mapApiCategory({ id: "cat_plumbing", slug: "plumbing", nameUz: "Santexnik", nameRu: "Сантехник", nameEn: "Plumber", iconKey: "wrench", sortOrder: 0, isActive: true });
@@ -42,4 +43,12 @@ assert.deepEqual(resolveCategoryRoute(coldSuccess, "missing"), { kind: "unavaila
 assert.deepEqual(resolveCategoryRoute(coldSuccess, undefined, false), { kind: "unavailable", reason: "invalid" });
 assert.deepEqual(resolveCategoryRoute(empty, "cat_plumbing"), { kind: "unavailable", reason: "empty" });
 assert.equal(resolveCategoryRoute(coldSuccess, "cat_plumbing").kind, "ready");
+
+const manyCategories = Array.from({ length: 10 }, (_, index) => ({ id: `cat-${index}` }));
+const moreItem = { id: "more" };
+assert.deepEqual(visibleHomeCategoryItems(manyCategories, moreItem).map((item) => item.id), [
+  "cat-0", "cat-1", "cat-2", "cat-3", "cat-4", "cat-5", "cat-6", "more"
+]);
+assert.deepEqual(visibleHomeCategoryItems(manyCategories, moreItem, true), manyCategories);
+assert.deepEqual(visibleHomeCategoryItems(manyCategories.slice(0, 8), moreItem), manyCategories.slice(0, 8));
 console.log("Dynamic category mapping tests passed.");
