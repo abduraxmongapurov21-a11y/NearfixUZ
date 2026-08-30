@@ -3,14 +3,14 @@
 ## Release identity
 
 - App name: `NearFIX`
-- Marketing version: `1.0.1`
+- Marketing version: `1.0.3`
 - iOS bundle identifier: `uz.nearfix.app`
 - Android application ID: `uz.nearfix.app`
 - App Store Connect app ID: `6782775201`
-- Production API: `https://nearfix-production-c0db.up.railway.app`
-- Privacy policy: `https://nearfix-production-c0db.up.railway.app/legal/privacy`
-- Terms: `https://nearfix-production-c0db.up.railway.app/legal/terms`
-- Account deletion: `https://nearfix-production-c0db.up.railway.app/legal/account-deletion`
+- Production API: `https://nearfix-production-backend-wvd6v.ondigitalocean.app`
+- Privacy policy: `https://nearfix-production-backend-wvd6v.ondigitalocean.app/legal/privacy`
+- Terms: `https://nearfix-production-backend-wvd6v.ondigitalocean.app/legal/terms`
+- Account deletion: `https://nearfix-production-backend-wvd6v.ondigitalocean.app/legal/account-deletion`
 
 ## One-time account setup
 

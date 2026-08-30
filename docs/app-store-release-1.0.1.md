@@ -6,7 +6,7 @@
 - Bundle identifier: `uz.nearfix.app`
 - Marketing version: `1.0.1`
 - Initial build number: `2026072601`
-- Production API: `https://nearfix-production-c0db.up.railway.app`
+- Production API: `https://nearfix-production-backend-wvd6v.ondigitalocean.app`
 
 ## Verified locally
 
