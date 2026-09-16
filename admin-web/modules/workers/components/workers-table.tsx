@@ -2,17 +2,32 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, X, ZoomIn } from "lucide-react";
+import { CheckCircle2, Trash2, X, ZoomIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/shared/components/data-table";
 import { FilterBar } from "@/shared/components/filter-bar";
 import { useWorkers } from "../hooks/use-workers";
-import { approveWorker, rejectWorker, suspendWorker, unsuspendWorker } from "../services/workers-service";
+import { ApiClientError } from "@/services/api-client";
+import { adminLabel } from "@/lib/admin-labels";
+import { approveWorker, deleteWorker, rejectWorker, suspendWorker, unsuspendWorker } from "../services/workers-service";
 import { workersColumns } from "../tables/workers-columns";
 import type { AdminWorker } from "../types/worker";
 
-type WorkerModerationAction = "approve" | "reject" | "suspend" | "unsuspend";
+type WorkerModerationAction = "approve" | "reject" | "suspend" | "unsuspend" | "delete";
+
+function workerActionError(error: unknown) {
+  if (error instanceof ApiClientError) {
+    if (error.code === "WORKER_DELETE_HAS_HISTORY") {
+      return "Bu ustaga buyurtmalar bog'langan. Tarixni saqlash uchun ustani o'chirib bo'lmaydi; uni to'xtatib qo'ying.";
+    }
+    if (error.code === "WORKER_PROFILE_NOT_FOUND") return "Usta profili topilmadi.";
+    if (error.code === "PERMISSION_REQUIRED" || error.code === "ADMIN_ACCESS_DENIED") {
+      return "Bu amal uchun ruxsat yetarli emas.";
+    }
+  }
+  return error instanceof Error ? error.message : "Usta bo'yicha amal bajarilmadi.";
+}
 
 export function WorkersTable() {
   const { data = [] } = useWorkers();
@@ -25,11 +40,12 @@ export function WorkersTable() {
   const approvedWorkers = data.filter((worker) => worker.status === "approved");
   const suspendedWorkers = data.filter((worker) => worker.status === "suspended");
   const moderationMutation = useMutation({
-    mutationFn: ({ worker, action }: { worker: AdminWorker; action: WorkerModerationAction }) => {
-      if (action === "approve") return approveWorker(worker);
-      if (action === "reject") return rejectWorker(worker);
-      if (action === "suspend") return suspendWorker(worker);
-      return unsuspendWorker(worker);
+    mutationFn: async ({ worker, action }: { worker: AdminWorker; action: WorkerModerationAction }) => {
+      if (action === "approve") await approveWorker(worker);
+      else if (action === "reject") await rejectWorker(worker);
+      else if (action === "suspend") await suspendWorker(worker);
+      else if (action === "delete") await deleteWorker(worker.id);
+      else await unsuspendWorker(worker);
     },
     onMutate: ({ worker, action }) => {
       setPendingAction({ workerId: worker.id, action });
@@ -37,10 +53,10 @@ export function WorkersTable() {
       setErrorMessage(null);
     },
     onError: (error) => {
-      setErrorMessage(error instanceof Error ? error.message : "Worker moderation bajarilmadi");
+      setErrorMessage(workerActionError(error));
     },
-    onSuccess: async () => {
-      setSuccessMessage("Worker holati yangilandi.");
+    onSuccess: async (_result, variables) => {
+      setSuccessMessage(variables.action === "delete" ? "Usta profili o'chirildi." : "Usta holati yangilandi.");
       await queryClient.invalidateQueries({ queryKey: ["workers"] });
     },
     onSettled: () => {
@@ -54,7 +70,22 @@ export function WorkersTable() {
 
   function runAction(worker: AdminWorker, action: WorkerModerationAction) {
     if (moderationMutation.isPending) return;
+    if (action === "delete" && !window.confirm(`“${worker.name}” usta profili o'chirilsinmi?`)) return;
     moderationMutation.mutate({ worker, action });
+  }
+
+  function DeleteWorkerButton({ worker }: { worker: AdminWorker }) {
+    return (
+      <Button
+        disabled={moderationMutation.isPending}
+        onClick={() => runAction(worker, "delete")}
+        size="sm"
+        variant="outline"
+      >
+        <Trash2 className="mr-2 h-4 w-4" />
+        {isPending(worker.id, "delete") ? "O'chirilmoqda..." : "O'chirish"}
+      </Button>
+    );
   }
 
   return (
@@ -72,13 +103,13 @@ export function WorkersTable() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
-            NEW
+            YANGI
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
               {pendingWorkers.length}
             </span>
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Provider role olgan, lekin hali admin tasdig'idan o'tmagan ustalar.
+            Usta huquqini olgan, lekin hali admin tasdig'idan o'tmagan ustalar.
           </p>
         </CardHeader>
         <CardContent>
@@ -132,7 +163,7 @@ export function WorkersTable() {
                     <Info label="Sohalar" value={worker.professions.join(", ") || worker.profession} />
                     <Info label="Tajriba" value={`${worker.experienceYears || 0} yil`} />
                     <Info label="Narx" value={worker.basePrice ? `${worker.basePrice.toLocaleString("uz-UZ")} so'mdan` : "Kiritilmagan"} />
-                    <Info label="Shahar" value={worker.city} />
+                    <Info label="Shahar" value={adminLabel(worker.city)} />
                   </div>
                   {worker.bio ? <p className="mt-3 text-sm text-muted-foreground">{worker.bio}</p> : null}
                   {missingFields.length ? (
@@ -140,7 +171,7 @@ export function WorkersTable() {
                       To'ldirilmagan: {missingFields.join(", ")}
                     </div>
                   ) : null}
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex justify-end gap-2">
                     <Button
                       disabled={moderationMutation.isPending}
                       onClick={() => runAction(worker, "reject")}
@@ -149,6 +180,7 @@ export function WorkersTable() {
                     >
                       {isPending(worker.id, "reject") ? "Rad etilmoqda..." : "Rad etish"}
                     </Button>
+                    <DeleteWorkerButton worker={worker} />
                   </div>
                       </>
                     );
@@ -163,10 +195,10 @@ export function WorkersTable() {
           )}
         </CardContent>
       </Card>
-      <FilterBar filters={["Status", "City", "Profession"]} searchPlaceholder="Worker yoki kasb qidirish" />
+      <FilterBar filters={["Holat", "Shahar", "Kasb"]} searchPlaceholder="Usta yoki kasbni qidirish" />
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Approved</CardTitle>
+          <CardTitle>Tasdiqlangan ustalar</CardTitle>
         </CardHeader>
         <CardContent>
           <DataTable
@@ -174,16 +206,19 @@ export function WorkersTable() {
               ...workersColumns,
               {
                 id: "actions",
-                header: "Actions",
+                header: "Amallar",
                 cell: ({ row }) => (
-                  <Button
-                    disabled={moderationMutation.isPending}
-                    onClick={() => runAction(row.original, "suspend")}
-                    size="sm"
-                    variant="outline"
-                  >
-                    {isPending(row.original.id, "suspend") ? "Suspending..." : "Suspend"}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={moderationMutation.isPending}
+                      onClick={() => runAction(row.original, "suspend")}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {isPending(row.original.id, "suspend") ? "To'xtatilmoqda..." : "To'xtatish"}
+                    </Button>
+                    <DeleteWorkerButton worker={row.original} />
+                  </div>
                 )
               }
             ]}
@@ -193,7 +228,7 @@ export function WorkersTable() {
       </Card>
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Suspended</CardTitle>
+          <CardTitle>To'xtatilgan ustalar</CardTitle>
         </CardHeader>
         <CardContent>
           <DataTable
@@ -201,15 +236,18 @@ export function WorkersTable() {
               ...workersColumns,
               {
                 id: "actions",
-                header: "Actions",
+                header: "Amallar",
                 cell: ({ row }) => (
-                  <Button
-                    disabled={moderationMutation.isPending}
-                    onClick={() => runAction(row.original, "unsuspend")}
-                    size="sm"
-                  >
-                    {isPending(row.original.id, "unsuspend") ? "Unsuspending..." : "Unsuspend"}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={moderationMutation.isPending}
+                      onClick={() => runAction(row.original, "unsuspend")}
+                      size="sm"
+                    >
+                      {isPending(row.original.id, "unsuspend") ? "Faollashtirilmoqda..." : "Faollashtirish"}
+                    </Button>
+                    <DeleteWorkerButton worker={row.original} />
+                  </div>
                 )
               }
             ]}

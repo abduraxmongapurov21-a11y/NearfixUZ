@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { ArrowRight, CheckCircle2, Clock3, MapPin, SlidersHorizontal, Star } from "lucide-react-native";
+import { ArrowRight, CheckCircle2, Clock3, MapPin, Plus, SlidersHorizontal, Star } from "lucide-react-native";
 import { ActiveJobCard } from "../../components/executor/ActiveJobCard";
 import { OrderResponseTimer } from "../../components/executor/OrderResponseTimer";
 import { ROUTES } from "../../constants/routes";
@@ -34,9 +34,11 @@ export function WorkerJobsScreen({ navigation, route }) {
   const acceptIncomingRequest = useWorkerStore((state) => state.acceptIncomingRequest);
   const updateActiveJobStatus = useWorkerStore((state) => state.updateActiveJobStatus);
   const completeActiveJob = useWorkerStore((state) => state.completeActiveJob);
+  const cancelActiveJob = useWorkerStore((state) => state.cancelActiveJob);
   const syncWorkerFromApi = useWorkerStore((state) => state.syncWorkerFromApi);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTab, setSelectedTab] = useState("new");
+  const [cancellingActiveJob, setCancellingActiveJob] = useState(false);
   const canAccept = status === WORKER_STATUS.AVAILABLE && !activeJob;
 
   useEffect(() => {
@@ -99,6 +101,21 @@ export function WorkerJobsScreen({ navigation, route }) {
     }
   }
 
+  async function handleCancelActiveJob(reason) {
+    if (cancellingActiveJob) return false;
+    setCancellingActiveJob(true);
+    const result = await cancelActiveJob(reason);
+    setCancellingActiveJob(false);
+
+    if (result?.ok) {
+      Alert.alert("Buyurtma bekor qilindi", "Sabab mijozga yuborildi.");
+      return true;
+    }
+
+    Alert.alert("Buyurtma bekor qilinmadi", result?.message || "Qayta urinib ko'ring.");
+    return false;
+  }
+
   async function handleOpenJobChat() {
     if (!activeJob?.id || !session?.token) {
       navigation.navigate(ROUTES.WORKER_CHATS_TAB);
@@ -124,8 +141,24 @@ export function WorkerJobsScreen({ navigation, route }) {
       }
     >
       <View style={styles.header}>
-        <Text style={styles.title}>Ishlar</Text>
-        <Text style={styles.subtitle}>Ish buyurtmalarini boshqaring</Text>
+        <View style={styles.headerCopy}>
+          <Text style={styles.title}>Ishlar</Text>
+          <Text style={styles.subtitle}>Ish buyurtmalarini boshqaring</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            if (activeJob) {
+              Alert.alert("Sizda faol buyurtma bor.", "Avval faol buyurtmani yakunlang yoki bekor qiling.");
+              return;
+            }
+            navigation.navigate(ROUTES.WORKER_CREATE_ORDER);
+          }}
+          style={({ pressed }) => [styles.createButton, pressed && styles.pressed]}
+        >
+          <Plus size={15} color="#FFFFFF" strokeWidth={2.8} />
+          <Text style={styles.createButtonText}>Buyurtma yaratish</Text>
+        </Pressable>
       </View>
 
       <View style={styles.segment}>
@@ -173,6 +206,8 @@ export function WorkerJobsScreen({ navigation, route }) {
                 key={job.id}
                 job={job}
                 onChat={handleOpenJobChat}
+                onCancel={handleCancelActiveJob}
+                cancelling={cancellingActiveJob}
                 onUpdateStatus={handleUpdateStatus}
                 onComplete={handleComplete}
               />
@@ -352,7 +387,29 @@ const styles = StyleSheet.create({
     paddingBottom: 112
   },
   header: {
-    marginBottom: 15
+    marginBottom: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  headerCopy: {
+    flex: 1
+  },
+  createButton: {
+    minHeight: 38,
+    borderRadius: radius.pill,
+    backgroundColor: "#1F1E42",
+    paddingHorizontal: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6
+  },
+  createButtonText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontFamily: font.bold
   },
   title: {
     color: "#07122B",

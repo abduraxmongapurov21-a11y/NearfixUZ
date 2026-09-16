@@ -8,6 +8,7 @@ process.env.APP_REVIEW_DEMO_CLIENT_PHONE = "+998991119913";
 process.env.APP_REVIEW_DEMO_CLIENT_PASSWORD = "DemoClient-123";
 process.env.APP_REVIEW_DEMO_WORKER_PHONE = "+998991119914";
 process.env.APP_REVIEW_DEMO_WORKER_PASSWORD = "DemoWorker-123";
+process.env.APP_REVIEW_DEMO_EXTRA_ACCOUNTS_JSON = "";
 
 const { OtpPurpose, UserRole, UserStatus } = await import("@prisma/client");
 const { prisma } = await import("../src/db/prisma.js");
@@ -39,9 +40,48 @@ const otpCode = "5454";
 async function cleanup() {
   const users = await prisma.user.findMany({ where: { phone: { in: allPhones } }, select: { id: true } });
   const userIds = users.map((user) => user.id);
+  const workers = userIds.length
+    ? await prisma.workerProfile.findMany({ where: { userId: { in: userIds } }, select: { id: true } })
+    : [];
+  const workerIds = workers.map((worker) => worker.id);
+  const media = userIds.length
+    ? await prisma.media.findMany({ where: { ownerId: { in: userIds } }, select: { id: true } })
+    : [];
+  const mediaIds = media.map((item) => item.id);
   await prisma.session.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.otpChallenge.deleteMany({ where: { phone: { in: allPhones } } });
   await prisma.otpSession.deleteMany({ where: { phone: { in: allPhones } } });
+  await prisma.workerAvailability.updateMany({
+    where: { workerId: { in: workerIds } },
+    data: { activeOrderId: null, lockedUntil: null }
+  });
+  await prisma.order.deleteMany({
+    where: {
+      OR: [
+        { clientId: { in: userIds } },
+        { workerId: { in: workerIds } }
+      ]
+    }
+  });
+  await prisma.chatMessage.deleteMany({
+    where: {
+      OR: [
+        { senderId: { in: userIds } },
+        { mediaId: { in: mediaIds } }
+      ]
+    }
+  });
+  await prisma.media.deleteMany({ where: { id: { in: mediaIds } } });
+  await prisma.chatRoom.updateMany({ where: { createdById: { in: userIds } }, data: { createdById: null } });
+  await prisma.orderEvent.updateMany({ where: { actorId: { in: userIds } }, data: { actorId: null } });
+  await prisma.supportTicket.updateMany({
+    where: { resolvedByAdminId: { in: userIds } },
+    data: { resolvedByAdminId: null }
+  });
+  await prisma.report.updateMany({
+    where: { resolvedByAdminId: { in: userIds } },
+    data: { resolvedByAdminId: null }
+  });
   await prisma.workerProfile.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.user.deleteMany({ where: { phone: { in: allPhones } } });
 }

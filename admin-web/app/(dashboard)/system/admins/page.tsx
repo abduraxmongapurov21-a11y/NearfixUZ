@@ -5,8 +5,8 @@ export default function AdminsPage() {
   return (
     <>
       <PageHeader
-        description="Super admin workspace for admin accounts, status and permissions."
-        title="Admins"
+        description="Admin hisoblari, ularning holati va ruxsatlarini boshqarish."
+        title="Adminlar"
       />
       <AdminsManager />
     </>

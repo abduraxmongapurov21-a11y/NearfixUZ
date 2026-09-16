@@ -5,8 +5,8 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        description="Active orders, worker capacity and daily service health in one lightweight operations view."
-        title="Dashboard"
+        description="Faol buyurtmalar, ustalar bandligi va kunlik xizmat holati bir sahifada."
+        title="Bosh sahifa"
       />
       <DashboardOverview />
     </>

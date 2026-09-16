@@ -67,9 +67,9 @@ export default function DashboardLayout({
           ) : (
             <div className="rounded-lg border bg-card p-8">
               <div className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">403</div>
-              <h1 className="mt-2 text-2xl font-semibold">Access denied</h1>
+              <h1 className="mt-2 text-2xl font-semibold">Kirish taqiqlangan</h1>
               <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                This admin account does not have permission to open this page.
+                Bu admin hisobida ushbu sahifani ochish uchun yetarli ruxsat yo'q.
               </p>
             </div>
           )}

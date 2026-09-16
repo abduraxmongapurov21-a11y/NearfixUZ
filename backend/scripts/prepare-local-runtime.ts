@@ -21,7 +21,8 @@ async function assertFixtureTarget(phone: string, expectedRole: UserRole, expect
   });
 
   if (!existing) return;
-  if (existing.role !== expectedRole || (existing.name && existing.name !== expectedName)) {
+  const acceptedFixtureNames = new Set([expectedName, expectedRole === UserRole.CLIENT ? "App Review Client" : "App Review Worker"]);
+  if (existing.role !== expectedRole || (existing.name && !acceptedFixtureNames.has(existing.name))) {
     throw new Error(`Refusing to modify a non-fixture user for ${maskPhone(phone)}`);
   }
 }
@@ -144,6 +145,28 @@ async function main() {
       submittedAt: new Date(),
       verifiedAt: new Date()
     }
+  });
+
+  const localCategory = await prisma.category.findFirst({
+    where: {
+      isActive: true,
+      OR: [
+        { nameUz: { contains: "santex", mode: "insensitive" } },
+        { nameRu: { contains: "сантех", mode: "insensitive" } },
+        { nameEn: { contains: "plumb", mode: "insensitive" } }
+      ]
+    },
+    orderBy: { sortOrder: "asc" }
+  }) || await prisma.category.findFirst({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
+
+  if (!localCategory) {
+    throw new Error("Local runtime fixture requires at least one active category");
+  }
+
+  await prisma.workerCategory.upsert({
+    where: { workerId_categoryId: { workerId: worker.id, categoryId: localCategory.id } },
+    update: { isPrimary: true },
+    create: { workerId: worker.id, categoryId: localCategory.id, isPrimary: true }
   });
 
   await prisma.workerAvailability.upsert({

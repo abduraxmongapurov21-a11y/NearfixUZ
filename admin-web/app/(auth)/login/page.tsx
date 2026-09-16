@@ -31,16 +31,16 @@ export default function LoginPage() {
     const result = await login(username, password);
     setIsSubmitting(false);
     if (result.ok) router.replace("/dashboard");
-    else setError(result.message || "Login failed");
+    else setError(result.message || "Kirish amalga oshmadi");
   }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>NearFIX Admin</CardTitle>
+          <CardTitle>NearFIX boshqaruv paneli</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Admin username va password bilan operatsion panelga kiring.
+            Admin foydalanuvchi nomi va paroli bilan boshqaruv paneliga kiring.
           </p>
         </CardHeader>
         <CardContent>
@@ -48,13 +48,13 @@ export default function LoginPage() {
             <Input
               autoComplete="username"
               onChange={(event) => setUsername(event.target.value)}
-              placeholder="Username"
+              placeholder="Foydalanuvchi nomi"
               value={username}
             />
             <Input
               autoComplete="current-password"
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Password"
+              placeholder="Parol"
               type="password"
               value={password}
             />

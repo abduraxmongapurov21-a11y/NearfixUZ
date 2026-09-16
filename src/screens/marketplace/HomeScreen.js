@@ -3,7 +3,6 @@ import { ImageBackground, Linking, Pressable, RefreshControl, ScrollView, StyleS
 import { Ellipsis, Wrench } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../constants/routes";
-import { CitySelector } from "../../components/catalog/CitySelector";
 import { getInitials } from "../../services/images/imageService";
 import { useAuthStore } from "../../store/authStore";
 import { useClientStore } from "../../store/clientStore";
@@ -16,17 +15,14 @@ import { visibleHomeCategoryItems } from "../../services/content/categoryAvailab
 const moreCategoryItem = { id: "more", title: "Ko'proq", icon: Ellipsis, color: "#9CA3AF", muted: true };
 
 export function HomeScreen({ navigation }) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const session = useAuthStore((state) => state.session);
   const banners = useClientStore((state) => state.banners);
   const categories = useClientStore((state) => state.categories);
   const categoryStatus = useClientStore((state) => state.categoryStatus);
   const categoryError = useClientStore((state) => state.categoryError);
-  const selectedCityId = useClientStore((state) => state.selectedCityId);
-  const setSelectedCity = useClientStore((state) => state.setSelectedCity);
   const syncBannersFromApi = useClientStore((state) => state.syncBannersFromApi);
   const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
-  const syncCatalogFromApi = useClientStore((state) => state.syncCatalogFromApi);
   const syncOrdersFromApi = useClientStore((state) => state.syncOrdersFromApi);
   const categoryItems = categories.map((category) => ({
     ...category,
@@ -40,15 +36,14 @@ export function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    syncCatalogFromApi();
     syncCategoriesFromApi();
     syncOrdersFromApi();
     syncBannersFromApi();
-  }, [selectedCityId, syncBannersFromApi, syncCatalogFromApi, syncCategoriesFromApi, syncOrdersFromApi]);
+  }, [syncBannersFromApi, syncCategoriesFromApi, syncOrdersFromApi]);
 
   async function handleRefresh() {
     setRefreshing(true);
-    await Promise.all([syncCatalogFromApi(), syncOrdersFromApi(), syncBannersFromApi(), syncCategoriesFromApi()]);
+    await Promise.all([syncOrdersFromApi(), syncBannersFromApi(), syncCategoriesFromApi()]);
     setRefreshing(false);
   }
 
@@ -111,12 +106,10 @@ export function HomeScreen({ navigation }) {
         </View>
 
         <View style={styles.heroCopy}>
-          <Text style={styles.greeting}>{greetingName ? `Xayrli kun, ${greetingName}!` : "Xayrli kun!"}</Text>
+          <Text translate={false} style={styles.greeting}>
+            {greetingName ? t("Xayrli kun, {{value0}}!", { value0: greetingName }) : t("Xayrli kun!")}
+          </Text>
           <Text style={styles.locationText}>Qanday xizmat kerak?</Text>
-        </View>
-
-        <View style={styles.citySelectorWrap}>
-          <CitySelector selectedCityId={selectedCityId} onSelectCity={setSelectedCity} />
         </View>
 
         {banners.length ? (
@@ -134,7 +127,7 @@ export function HomeScreen({ navigation }) {
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Kategoriyalar</Text>
-          <Pressable onPress={() => navigation.navigate(ROUTES.CATEGORY)}>
+          <Pressable onPress={() => navigation.navigate(ROUTES.CATEGORY, { categoryId: null })}>
             <Text style={styles.sectionAction}>Barchasi</Text>
           </Pressable>
         </View>
@@ -256,10 +249,6 @@ const styles = StyleSheet.create({
   heroCopy: {
     paddingHorizontal: 24,
     marginTop: 30
-  },
-  citySelectorWrap: {
-    marginTop: 18,
-    paddingHorizontal: 24
   },
   greeting: {
     color: "#273248",

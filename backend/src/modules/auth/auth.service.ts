@@ -408,10 +408,18 @@ export async function verifyAuthOtp(input: { phone: string; code: string; purpos
     };
   }
 
+  const authenticatedUser = user.isProvisional
+    ? await prisma.user.update({
+        where: { id: user.id },
+        data: { isProvisional: false },
+        include: { adminPermissions: true }
+      })
+    : user;
+
   return {
     ok: true,
     status: "AUTHENTICATED" as const,
-    ...(await createSessionForUser(user))
+    ...(await createSessionForUser(authenticatedUser))
   };
 }
 

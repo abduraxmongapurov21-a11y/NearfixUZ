@@ -1,9 +1,11 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
+import { useTranslation } from "react-i18next";
 import { colors, radius } from "../../theme";
 import { Text } from "../../i18n/native";
 
 export function WorkerDashboardHeader({ workerName }) {
+  const { t } = useTranslation();
   const initials = workerName
     .split(" ")
     .filter(Boolean)
@@ -15,7 +17,9 @@ export function WorkerDashboardHeader({ workerName }) {
   return (
     <View style={styles.header}>
       <View style={styles.nameBlock}>
-        <Text style={styles.caption}>Xayrli tong,</Text>
+        <Text translate={false} style={styles.caption}>
+          {t("Xayrli tong,")}
+        </Text>
         <Text style={styles.name}>{workerName}</Text>
       </View>
       <View style={styles.avatar}>

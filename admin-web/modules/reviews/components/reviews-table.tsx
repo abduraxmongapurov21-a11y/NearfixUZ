@@ -18,7 +18,7 @@ export function ReviewsTable() {
   const mutation = useMutation({
     mutationFn: ({ reviewId, status }: { reviewId: string; status: "published" | "hidden" }) =>
       setReviewModerationStatus(reviewId, status),
-    onError: (value) => setActionError(value instanceof Error ? value.message : "Review action failed"),
+    onError: (value) => setActionError(value instanceof Error ? value.message : "Sharh bo'yicha amal bajarilmadi"),
     onSuccess: async () => {
       setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["reviews"] });
@@ -26,15 +26,15 @@ export function ReviewsTable() {
   });
   const columns = useMemo<ColumnDef<AdminReview>[]>(
     () => [
-      { accessorKey: "worker", header: "Worker" },
-      { accessorKey: "client", header: "Client" },
-      { accessorKey: "rating", header: "Rating" },
-      { accessorKey: "text", header: "Review", cell: ({ row }) => <span className="line-clamp-2 max-w-md">{row.original.text}</span> },
-      { accessorKey: "date", header: "Date" },
-      { accessorKey: "status", header: "Status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
+      { accessorKey: "worker", header: "Usta" },
+      { accessorKey: "client", header: "Mijoz" },
+      { accessorKey: "rating", header: "Reyting" },
+      { accessorKey: "text", header: "Sharh", cell: ({ row }) => <span className="line-clamp-2 max-w-md">{row.original.text}</span> },
+      { accessorKey: "date", header: "Sana" },
+      { accessorKey: "status", header: "Holat", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
       {
         id: "actions",
-        header: "Moderation",
+        header: "Moderatsiya",
         cell: ({ row }) => (
           <Button
             size="sm"
@@ -47,7 +47,7 @@ export function ReviewsTable() {
               })
             }
           >
-            {row.original.status === "hidden" ? "Restore" : "Hide"}
+            {row.original.status === "hidden" ? "Qayta ko'rsatish" : "Yashirish"}
           </Button>
         )
       }
@@ -57,7 +57,7 @@ export function ReviewsTable() {
 
   return (
     <div>
-      <FilterBar filters={["Rating", "Status", "Date"]} searchPlaceholder="Worker yoki client qidirish" />
+      <FilterBar filters={["Reyting", "Holat", "Sana"]} searchPlaceholder="Usta yoki mijozni qidirish" />
       {error ? <div className="mb-4 rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{error.message}</div> : null}
       {actionError ? <div className="mb-4 rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{actionError}</div> : null}
       <DataTable columns={columns} data={data} />

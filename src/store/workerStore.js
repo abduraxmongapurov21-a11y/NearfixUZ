@@ -3,6 +3,8 @@ import { TRACKING_STATUSES } from "../constants/orderTracking";
 import { WORKER_STATUS } from "../constants/workerStatus";
 import {
   acceptOrderApi,
+  cancelWorkerOrderApi,
+  createWorkerOrderApi,
   fetchIncomingOrdersApi,
   fetchWorkerEarningsApi,
   fetchWorkerMeApi,
@@ -28,6 +30,8 @@ const defaultWorkerStoreDependencies = {
   fetchWorkerOrdersApi,
   fetchWorkerEarningsApi,
   fetchWorkerTransactionsApi,
+  cancelWorkerOrderApi,
+  createWorkerOrderApi,
   updateWorkerServiceLocationApi
 };
 const workerStoreDependencies = { ...defaultWorkerStoreDependencies };
@@ -68,6 +72,14 @@ function workerOrderErrorMessage(result, fallback) {
       return "Bu buyurtma sizga biriktirilmagan.";
     case "WORKER_NOT_AVAILABLE":
       return "Siz hozir yangi buyurtma qabul qila olmaysiz. Statusingizni tekshiring.";
+    case "WORKER_BUSY":
+      return "Sizda faol buyurtma bor.";
+    case "WORKER_NOT_APPROVED":
+      return "Buyurtma yaratish uchun tasdiqlangan usta profilingiz bo'lishi kerak.";
+    case "WORKER_CATEGORY_NOT_OFFERED":
+      return "Bu xizmat profilingizga biriktirilmagan.";
+    case "INVALID_PHONE_NUMBER":
+      return "Ushbu raqamni tekshiring va qayta urinib ko'ring.";
     case "PROVIDER_OR_ADMIN_REQUIRED":
     case "PROVIDER_REQUIRED":
     case "FORBIDDEN":
@@ -283,6 +295,42 @@ export const useWorkerStore = create((set, get) => ({
     }));
     return result;
   },
+  createPhoneOrder: async (input) => {
+    const session = workerStoreDependencies.getSession();
+    if (!session?.token) {
+      return { ok: false, code: "UNAUTHORIZED", message: "Buyurtma yaratish uchun tizimga kiring." };
+    }
+    if (get().activeJob) {
+      return { ok: false, code: "WORKER_BUSY", message: "Sizda faol buyurtma bor." };
+    }
+
+    const requestTicket = workerRequestGuard.begin("worker-create-order", session.userId);
+    const result = await workerStoreDependencies.createWorkerOrderApi(session.token, input);
+    if (!workerRequestGuard.isCurrent(requestTicket, currentAccountId())) {
+      return { ...result, ok: false, stale: true };
+    }
+
+    if (result.ok) {
+      set((state) => ({
+        activeJob: result.order,
+        operationalStatus: WORKER_STATUS.BUSY,
+        workerProfile: {
+          ...state.workerProfile,
+          availability: WORKER_STATUS.BUSY
+        },
+        apiStatus: {
+          source: "api",
+          lastError: null
+        }
+      }));
+      return result;
+    }
+
+    return {
+      ...result,
+      message: workerOrderErrorMessage(result, "Buyurtma yaratilmadi. Qayta urinib ko'ring.")
+    };
+  },
   acceptIncomingRequest: async (requestId) => {
     const token = useAuthStore.getState().session?.token;
 
@@ -345,6 +393,46 @@ export const useWorkerStore = create((set, get) => ({
       set((state) => ({
         incomingRequests: state.incomingRequests.filter((item) => item.id !== requestId)
       }));
+    }
+
+    return {
+      ...result,
+      message: workerOrderErrorMessage(result, "Buyurtmani bekor qilib bo'lmadi. Qayta urinib ko'ring.")
+    };
+  },
+  cancelActiveJob: async (reason) => {
+    const cleanReason = String(reason || "").trim();
+    if (cleanReason.length < 3) {
+      return { ok: false, code: "CANCEL_REASON_REQUIRED", message: "Bekor qilish sababini kiriting." };
+    }
+
+    const session = workerStoreDependencies.getSession();
+    const activeJob = get().activeJob;
+    if (!session?.token || !activeJob?.id) {
+      return { ok: false, message: "Faol ish topilmadi." };
+    }
+
+    const requestTicket = workerRequestGuard.begin(`worker-cancel:${activeJob.id}`, session.userId);
+    const result = await workerStoreDependencies.cancelWorkerOrderApi(session.token, activeJob.id, cleanReason);
+
+    if (!workerRequestGuard.isCurrent(requestTicket, currentAccountId())) {
+      return { ok: false, stale: true };
+    }
+
+    if (result.ok) {
+      set((state) => ({
+        activeJob: null,
+        operationalStatus: WORKER_STATUS.AVAILABLE,
+        workerProfile: {
+          ...state.workerProfile,
+          availability: WORKER_STATUS.AVAILABLE
+        },
+        apiStatus: {
+          source: "api",
+          lastError: null
+        }
+      }));
+      return result;
     }
 
     return {

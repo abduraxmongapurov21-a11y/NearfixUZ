@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createCategorySchema, reorderCategoriesSchema, updateCategorySchema } from "../src/modules/categories/category.contracts.js";
+import { CATEGORY_ICON_KEYS, createCategorySchema, reorderCategoriesSchema, updateCategorySchema } from "../src/modules/categories/category.contracts.js";
 import { immutableLegacyNameForCategory, releasedCategorySlugForLegacyValue } from "../src/modules/categories/category.legacy.js";
 import { createOrderSchema } from "../src/modules/orders/order.contracts.js";
 import { workerApplicationDraftSchema } from "../src/modules/workers/worker.contracts.js";
 
 const category = { slug: "appliance-repair", nameUz: "Maishiy texnika", nameRu: "Бытовая техника", nameEn: "Appliance repair", iconKey: "wrench" };
+const legacyIconKeys = ["wrench", "zap", "flame", "hammer", "snowflake", "paint", "sparkles", "brush", "grid"];
+assert.equal(CATEGORY_ICON_KEYS.length, 30);
+assert.equal(new Set(CATEGORY_ICON_KEYS).size, CATEGORY_ICON_KEYS.length);
+assert.equal(legacyIconKeys.every((iconKey) => CATEGORY_ICON_KEYS.includes(iconKey as typeof CATEGORY_ICON_KEYS[number])), true);
+for (const iconKey of CATEGORY_ICON_KEYS) {
+  assert.equal(createCategorySchema.safeParse({ ...category, iconKey }).success, true, `${iconKey} must be accepted`);
+}
 assert.equal(createCategorySchema.safeParse(category).success, true);
 assert.equal(createCategorySchema.safeParse({ ...category, iconKey: "arbitrary-icon" }).success, false);
 assert.equal(createCategorySchema.safeParse({ ...category, sortOrder: 99 }).success, false, "create must not accept sortOrder");

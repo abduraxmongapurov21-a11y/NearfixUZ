@@ -5,7 +5,13 @@ import { prisma } from "../src/db/prisma.js";
 import { createApp } from "../src/http/app.js";
 import { otpVerifySchema, updateCurrentUserSchema } from "../src/modules/auth/auth.contracts.js";
 import { completeOtpRegistration, updateCurrentUserProfile, verifyAuthOtp } from "../src/modules/auth/auth.service.js";
-import { approveWorkerProfile, rejectWorkerProfile, saveOwnWorkerApplication, submitOwnWorkerApplication } from "../src/modules/workers/worker.service.js";
+import {
+  approveWorkerProfile,
+  rejectWorkerProfile,
+  saveOwnWorkerApplication,
+  submitOwnWorkerApplication,
+  updateOwnWorkerProfile
+} from "../src/modules/workers/worker.service.js";
 import { promoteUserToProvider } from "../src/modules/users/user-role.service.js";
 import { workerApplicationDraftSchema, workerApplicationSubmitSchema } from "../src/modules/workers/worker.contracts.js";
 import { hashPassword } from "../src/modules/auth/password.js";
@@ -106,7 +112,7 @@ async function main() {
     (error: any) => error?.code === "WORKER_PROFILE_INCOMPLETE"
   );
   const complete = {
-    name: "Applicant Name", cityId: "tashkent", profession: "Electrician", professions: ["Electrician", "Plumber"],
+    name: "Applicant Name", profession: "Electrician", professions: ["Electrician", "Plumber"],
     experienceYears: 4, profileImageUrl: "https://example.com/applicant.jpg", bio: "Experienced professional",
     basePrice: 120000
   };
@@ -146,6 +152,21 @@ async function main() {
   assert.equal(provider.role, UserRole.PROVIDER, "approval is the role grant operation");
   assert.equal(provider.sessionVersion, versionBeforeApproval + 1);
   assert.equal(await prisma.session.count({ where: { userId: clientId, revoked: false } }), 0, "approval must revoke sessions");
+  const approvedBeforeImageUpdate = await prisma.workerProfile.findUniqueOrThrow({ where: { userId: clientId } });
+  const replacementImageUrl = "https://example.com/approved-worker-replacement.jpg";
+  const imageUpdatedProfile = await updateOwnWorkerProfile(clientId, { profileImageUrl: replacementImageUrl });
+  assert.equal(imageUpdatedProfile.profileImageUrl, replacementImageUrl, "approved provider must be able to replace the profile image");
+  assert.equal(imageUpdatedProfile.status, WorkerProfileStatus.APPROVED, "profile image update must preserve approval");
+  assert.equal(
+    imageUpdatedProfile.submittedAt?.getTime(),
+    approvedBeforeImageUpdate.submittedAt?.getTime(),
+    "profile image update must not create a new moderation submission"
+  );
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: clientId } })).sessionVersion,
+    provider.sessionVersion,
+    "profile image update must not revoke or rotate the provider session"
+  );
   const providerAuth = {
     id: clientId,
     sessionId: "post-approval-session",
@@ -284,7 +305,6 @@ async function main() {
       httpApplicantToken,
       {
         name: "HTTP Applicant",
-        cityId: "tashkent",
         profession: "Electrician",
         professions: ["Electrician", "Plumber"],
         experienceYears: 3,

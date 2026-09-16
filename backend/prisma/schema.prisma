@@ -64,6 +64,11 @@ enum OrderUrgency {
   URGENT
 }
 
+enum OrderSource {
+  CLIENT_APP
+  WORKER_PHONE
+}
+
 enum OrderEventActorType {
   SYSTEM
   CLIENT
@@ -196,6 +201,7 @@ model User {
   passwordHash      String?
   passwordSetAt     DateTime?
   passwordChangedAt DateTime?
+  isProvisional     Boolean    @default(false)
   sessionVersion    Int        @default(1)
   deletedAt         DateTime?
   createdAt         DateTime   @default(now())
@@ -454,6 +460,7 @@ model Order {
   problemDescription  String?
   urgency             OrderUrgency @default(FAST)
   status              OrderStatus  @default(CREATED)
+  source              OrderSource  @default(CLIENT_APP)
   priceEstimate       Int?
   finalAmount         Int?
   responseDeadlineAt  DateTime?

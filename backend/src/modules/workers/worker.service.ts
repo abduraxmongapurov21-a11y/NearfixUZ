@@ -10,7 +10,7 @@ import type { AuthUser } from "../auth/auth-context.js";
 import { createNotificationSafely } from "../notifications/notification.service.js";
 import { immutableLegacyNameForCategory } from "../categories/category.legacy.js";
 import { getActiveCategoriesByIds, matchCategoriesByLegacyValues, resolveCategoryByLegacyValue } from "../categories/category.service.js";
-import { haversineDistanceMeters, type Coordinates } from "./distance.js";
+import { haversineDistanceMeters, isWithinCatalogRadius, type Coordinates } from "./distance.js";
 
 type WorkerProfilePatch = {
   name?: string;
@@ -54,8 +54,7 @@ const publicWorkerSelect = {
   completedOrdersCount: true,
   user: {
     select: {
-      name: true,
-      cityId: true
+      name: true
     }
   },
   availability: {
@@ -72,15 +71,26 @@ const publicWorkerSelect = {
 
 type PublicWorkerRecord = Prisma.WorkerProfileGetPayload<{ select: typeof publicWorkerSelect }>;
 
-export function toPublicWorkerDto(worker: PublicWorkerRecord, distanceMeters: number | null = null) {
+const publicWorkerDetailSelect = {
+  ...publicWorkerSelect,
+  user: {
+    select: {
+      ...publicWorkerSelect.user.select,
+      phone: true
+    }
+  }
+} satisfies Prisma.WorkerProfileSelect;
+
+type PublicWorkerDetailRecord = Prisma.WorkerProfileGetPayload<{ select: typeof publicWorkerDetailSelect }>;
+
+export function toPublicWorkerDto(worker: PublicWorkerRecord | PublicWorkerDetailRecord, distanceMeters: number | null = null) {
   const publicAvailabilityStatus = worker.availability?.activeOrderId
     ? WorkerAvailabilityStatus.BUSY
     : worker.availability?.status;
 
-  return {
+  const dto = {
     id: worker.id,
     name: worker.user.name,
-    cityId: worker.user.cityId,
     profession: worker.profession,
     professions: worker.professions,
     categoryIds: worker.categories.map((item) => item.categoryId),
@@ -94,6 +104,8 @@ export function toPublicWorkerDto(worker: PublicWorkerRecord, distanceMeters: nu
     availability: publicAvailabilityStatus ? { status: publicAvailabilityStatus } : null,
     distanceMeters
   };
+
+  return "phone" in worker.user ? { ...dto, phone: worker.user.phone } : dto;
 }
 
 function startOfDay(date: Date) {
@@ -237,7 +249,6 @@ function missingRequiredProfileFields(worker: {
   const missing: string[] = [];
 
   if (!worker.user.name?.trim()) missing.push("name");
-  if (!worker.user.cityId?.trim()) missing.push("cityId");
   if (!worker.profession?.trim() && !worker.professions.length) missing.push("professions");
   if (typeof worker.experienceYears !== "number") missing.push("experienceYears");
   if (!worker.profileImageUrl?.trim()) missing.push("profileImageUrl");
@@ -396,6 +407,7 @@ export async function submitOwnWorkerApplication(userId: string, patch: WorkerAp
 
 type CatalogWorkerOptions = {
   categoryId?: string;
+  legacyCityId?: string;
   originAddressId?: string;
   requester?: Pick<AuthUser, "id" | "role">;
   sort?: "nearest";
@@ -453,7 +465,7 @@ async function getCatalogOrigin(options: CatalogWorkerOptions): Promise<Coordina
   return origin;
 }
 
-export async function getCatalogWorkers(cityId?: string, profession?: string, options: CatalogWorkerOptions = {}) {
+export async function getCatalogWorkers(profession?: string, options: CatalogWorkerOptions = {}) {
   if (options.sort === "nearest" && !options.originAddressId) {
     throw Object.assign(new Error("An origin address is required for nearest sorting"), {
       status: 400,
@@ -463,14 +475,23 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
   const origin = await getCatalogOrigin(options);
   if (options.categoryId) await getActiveCategoriesByIds([options.categoryId]);
   const legacyCategory = !options.categoryId && profession ? await resolveCategoryByLegacyValue(profession) : null;
+  const legacyCityId = !origin ? options.legacyCityId : undefined;
+  const blockerId = options.requester?.role === UserRole.CLIENT.toLowerCase() ? options.requester.id : undefined;
+  const userFilter = legacyCityId || blockerId
+    ? {
+        ...(legacyCityId ? { cityId: legacyCityId } : {}),
+        ...(blockerId ? { blocksReceived: { none: { blockerId } } } : {})
+      }
+    : undefined;
   const workers = await prisma.workerProfile.findMany({
     select: publicWorkerSelect,
     where: {
       status: WorkerProfileStatus.APPROVED,
       availability: {
         is: {
-          status: WorkerAvailabilityStatus.AVAILABLE,
-          activeOrderId: null
+          status: {
+            in: [WorkerAvailabilityStatus.AVAILABLE, WorkerAvailabilityStatus.BUSY]
+          }
         }
       },
       categories: options.categoryId || legacyCategory
@@ -482,7 +503,7 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
             { professions: { has: profession } }
           ]
         : undefined,
-      user: cityId ? { cityId } : undefined
+      user: userFilter
     },
     orderBy: [
       { availability: { status: "asc" } },
@@ -504,11 +525,13 @@ export async function getCatalogWorkers(cityId?: string, profession?: string, op
     });
   }
 
-  const publicWorkers = workers.map((worker) => {
-    const coordinates = coordinatesByWorkerId.get(worker.id);
-    const distanceMeters = origin && coordinates ? haversineDistanceMeters(origin, coordinates) : null;
-    return toPublicWorkerDto(worker, distanceMeters);
-  });
+  const publicWorkers = workers
+    .map((worker) => {
+      const coordinates = coordinatesByWorkerId.get(worker.id);
+      const distanceMeters = origin && coordinates ? haversineDistanceMeters(origin, coordinates) : null;
+      return toPublicWorkerDto(worker, distanceMeters);
+    })
+    .filter((worker) => !origin || isWithinCatalogRadius(worker.distanceMeters));
 
   if (options.sort !== "nearest") return publicWorkers;
 
@@ -530,7 +553,7 @@ export async function getPublicWorker(workerId: string) {
       id: workerId,
       status: WorkerProfileStatus.APPROVED
     },
-    select: publicWorkerSelect
+    select: publicWorkerDetailSelect
   });
 
   if (!worker) {
@@ -683,6 +706,7 @@ export async function getOwnWorkerTransactions(userId: string) {
 
 export async function updateOwnWorkerProfile(userId: string, patch: WorkerProfilePatch) {
   return prisma.$transaction(async (tx) => {
+    const isProfileImageOnlyUpdate = patch.profileImageUrl !== undefined && Object.keys(patch).length === 1;
     const current = await tx.workerProfile.findUnique({
       where: { userId },
       select: { profession: true, professions: true }
@@ -704,8 +728,12 @@ export async function updateOwnWorkerProfile(userId: string, patch: WorkerProfil
       },
       data: {
         ...profileData,
-        submittedAt: new Date(),
-        moderationReason: null
+        ...(isProfileImageOnlyUpdate
+          ? {}
+          : {
+              submittedAt: new Date(),
+              moderationReason: null
+            })
       },
       include: {
         user: true,
@@ -723,7 +751,7 @@ export async function updateOwnWorkerProfile(userId: string, patch: WorkerProfil
         categories: { orderBy: { sortOrder: "asc" }, include: { category: true } }
       }
     });
-    assertProfileCompleteForReview(updated);
+    if (!isProfileImageOnlyUpdate) assertProfileCompleteForReview(updated);
     return updated;
   });
 }

@@ -8,6 +8,7 @@ import { useAuthStore } from "../../store/authStore";
 import { colors, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
 import { navigateToNotificationTarget } from "../../services/notifications/notificationNavigation.mjs";
+import { normalizeExperienceMode } from "../../navigation/experienceMode.mjs";
 
 function readPayloadText(notification, key, fallback = "") {
   const payload = notification?.payload;
@@ -67,6 +68,10 @@ export function NotificationsScreen({ navigation }) {
 
   async function handlePress(notification) {
     if (!token || readingId) return;
+    const experienceMode = normalizeExperienceMode(session?.role, session?.experienceMode);
+    const navigationResult = navigateToNotificationTarget(navigation, notification.payload, experienceMode);
+    if (!navigationResult.ok) return;
+
     if (!notification.readAt) {
       setReadingId(notification.id);
       const result = await markNotificationReadApi(token, notification.id);
@@ -77,7 +82,6 @@ export function NotificationsScreen({ navigation }) {
         );
       }
     }
-    navigateToNotificationTarget(navigation, notification.payload, session?.role);
   }
 
   return (

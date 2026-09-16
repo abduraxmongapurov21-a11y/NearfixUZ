@@ -5,8 +5,8 @@ export default function ReviewsPage() {
   return (
     <>
       <PageHeader
-        description="Completed-order review visibility for trust monitoring and future moderation workflows."
-        title="Reviews"
+        description="Bajarilgan buyurtmalar sharhlarini ko'rish va moderatsiya qilish."
+        title="Sharhlar"
       />
       <ReviewsTable />
     </>

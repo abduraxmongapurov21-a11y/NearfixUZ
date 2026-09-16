@@ -51,6 +51,8 @@ const NON_COPY = new Set([
   "NETWORK_REQUEST_FAILED",
   "AUTHENTICATED",
   "WORKER_PROFILE_INCOMPLETE",
+  "NAVIGATOR_NOT_READY",
+  "NAVIGATION_FAILED",
   "/auth/register/complete",
   "/orders?mode=client",
   "/orders?mode=worker"

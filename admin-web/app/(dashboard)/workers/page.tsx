@@ -5,8 +5,8 @@ export default function WorkersPage() {
   return (
     <>
       <PageHeader
-        description="Admin-only worker quality view with availability, response speed, ignored requests and earnings."
-        title="Workers"
+        description="Ustalar sifati, bandligi, javob tezligi, bajarilgan ishlar va daromad ko'rsatkichlari."
+        title="Ustalar"
       />
       <WorkersTable />
     </>

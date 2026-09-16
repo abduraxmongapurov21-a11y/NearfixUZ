@@ -1,6 +1,6 @@
 {
   "name": "nearfix-mobile",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "private": true,
   "main": "expo/AppEntry.js",
   "scripts": {
@@ -50,6 +50,7 @@
     "expo-constants": "~18.0.14",
     "expo-dev-client": "~6.0.21",
     "expo-font": "~14.0.12",
+    "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.11",
     "expo-location": "~19.0.8",
     "expo-notifications": "~0.32.17",

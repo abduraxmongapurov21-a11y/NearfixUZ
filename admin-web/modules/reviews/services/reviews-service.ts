@@ -7,13 +7,13 @@ function mapStatus(status: string): ReviewStatus {
 
 export async function getReviews(): Promise<AdminReview[]> {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin authentication required");
+  if (!token) throw new Error("Admin sifatida kirish talab qilinadi");
 
   const payload = await apiClient<{ ok: boolean; reviews: any[] }>("/admin/reviews", { token });
   return payload.reviews.map((review) => ({
     id: review.id,
-    worker: review.worker?.user?.name || "Worker",
-    client: review.client?.name || "Client",
+    worker: review.worker?.user?.name || "Usta",
+    client: review.client?.name || "Mijoz",
     rating: review.rating,
     text: review.text || "",
     date: new Date(review.createdAt).toLocaleDateString("uz-UZ"),
@@ -23,7 +23,7 @@ export async function getReviews(): Promise<AdminReview[]> {
 
 export async function setReviewModerationStatus(reviewId: string, status: ReviewStatus) {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin authentication required");
+  if (!token) throw new Error("Admin sifatida kirish talab qilinadi");
   const action = status === "hidden" ? "hide" : "restore";
   await apiClient(`/admin/reviews/${reviewId}/${action}`, {
     method: "PATCH",

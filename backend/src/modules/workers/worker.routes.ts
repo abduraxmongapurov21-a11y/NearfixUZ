@@ -1,6 +1,9 @@
 import { Router, type Response } from "express";
 import { authenticate } from "../auth/middleware/auth.middleware.js";
 import { requireRole } from "../auth/middleware/role.guard.js";
+import { createWorkerOrderSchema } from "../orders/order.contracts.js";
+import { toOrderDto } from "../orders/order.dto.js";
+import { createWorkerOrder } from "../orders/order.service.js";
 import { getWorkerRating, listWorkerReviews } from "../reviews/review.service.js";
 import {
   catalogWorkersQuerySchema,
@@ -62,9 +65,21 @@ workerRouter.post("/application/submit", authenticate, requireRole("CLIENT"), as
   }
 });
 
+workerRouter.post("/orders", authenticate, requireRole("PROVIDER"), async (request, response, next) => {
+  try {
+    const input = createWorkerOrderSchema.parse(request.body);
+    const order = await createWorkerOrder(request.user!, input);
+    response.status(201).json({ ok: true, order: toOrderDto(order) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 workerRouter.get("/catalog", (request, response, next) => {
   disableRealtimeCaching(response);
-  if (request.query.originAddressId === undefined) {
+  const hasAuthorization = typeof request.headers.authorization === "string";
+  const requiresAuthentication = request.query.originAddressId !== undefined;
+  if (!hasAuthorization && !requiresAuthentication) {
     next();
     return;
   }
@@ -73,8 +88,9 @@ workerRouter.get("/catalog", (request, response, next) => {
   try {
     const query = catalogWorkersQuerySchema.parse(request.query);
     const profession = query.profession || query.category;
-    const workers = await getCatalogWorkers(query.cityId, profession, {
+    const workers = await getCatalogWorkers(profession, {
       categoryId: query.categoryId,
+      legacyCityId: query.cityId,
       originAddressId: query.originAddressId,
       requester: request.user,
       sort: query.sort

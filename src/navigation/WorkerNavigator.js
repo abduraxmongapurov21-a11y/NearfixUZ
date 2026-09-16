@@ -8,6 +8,7 @@ import { ChatThreadScreen } from "../screens/chats/ChatThreadScreen";
 import { MapPickerScreen } from "../screens/maps/MapPickerScreen";
 import { NotificationsScreen } from "../screens/notifications/NotificationsScreen";
 import { WorkerDashboardScreen } from "../screens/worker/WorkerDashboardScreen";
+import { WorkerCreateOrderScreen } from "../screens/worker/WorkerCreateOrderScreen";
 import { WorkerEarningsScreen } from "../screens/worker/WorkerEarningsScreen";
 import { WorkerJobsScreen } from "../screens/worker/WorkerJobsScreen";
 import { WorkerProfileManageScreen } from "../screens/worker/WorkerProfileManageScreen";
@@ -37,6 +38,7 @@ export function WorkerNavigator() {
       <Stack.Screen name={ROUTES.MAP_PICKER} component={MapPickerScreen} />
       <Stack.Screen name={ROUTES.CHAT_THREAD} component={ChatThreadScreen} />
       <Stack.Screen name={ROUTES.NOTIFICATIONS} component={NotificationsScreen} />
+      <Stack.Screen name={ROUTES.WORKER_CREATE_ORDER} component={WorkerCreateOrderScreen} />
     </Stack.Navigator>
   );
 }

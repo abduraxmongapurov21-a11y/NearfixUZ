@@ -10,7 +10,7 @@ export function UsersTable() {
 
   return (
     <div>
-      <FilterBar filters={["Role", "City", "Registered"]} searchPlaceholder="User yoki telefon qidirish" />
+      <FilterBar filters={["Rol", "Shahar", "Ro'yxatdan o'tgan sana"]} searchPlaceholder="Foydalanuvchi yoki telefonni qidirish" />
       <DataTable columns={usersColumns} data={data} />
     </div>
   );

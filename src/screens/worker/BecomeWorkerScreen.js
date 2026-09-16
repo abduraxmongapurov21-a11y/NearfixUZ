@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { ArrowLeft, Camera, CheckCircle2 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
@@ -30,13 +31,41 @@ import { Alert, Text, TextInput } from "../../i18n/native";
 
 const emptyForm = {
   name: "",
-  cityId: "tashkent",
   categoryIds: [],
   experienceYears: "",
   profileImageUrl: "",
   bio: "",
   basePrice: ""
 };
+
+const workerProfileImageMaxBytes = 20 * 1024 * 1024;
+const workerProfileImageFallbackMaxDimension = 2048;
+
+async function prepareWorkerProfileImage(asset) {
+  if (asset.fileSize && asset.fileSize <= workerProfileImageMaxBytes) {
+    return {
+      uri: asset.uri,
+      name: asset.fileName,
+      mimeType: asset.mimeType || "image/jpeg"
+    };
+  }
+
+  const context = ImageManipulator.manipulate(asset.uri);
+  if (asset.width > workerProfileImageFallbackMaxDimension || asset.height > workerProfileImageFallbackMaxDimension) {
+    context.resize(
+      asset.width >= asset.height
+        ? { width: workerProfileImageFallbackMaxDimension }
+        : { height: workerProfileImageFallbackMaxDimension }
+    );
+  }
+  const image = await context.renderAsync();
+  const prepared = await image.saveAsync({ compress: 0.8, format: SaveFormat.JPEG });
+  return {
+    uri: prepared.uri,
+    name: `worker-application-${Date.now()}.jpg`,
+    mimeType: "image/jpeg"
+  };
+}
 
 export function BecomeWorkerScreen({ navigation }) {
   const { i18n } = useTranslation();
@@ -74,7 +103,6 @@ export function BecomeWorkerScreen({ navigation }) {
           : legacyValues.map((value) => findCategoryByLegacyValue(availableCategories, value)?.id).filter(Boolean);
         setForm({
           name: item.name || session.name || "",
-          cityId: item.cityId || "tashkent",
           categoryIds,
           experienceYears: item.experienceYears === null ? "" : String(item.experienceYears),
           profileImageUrl: item.profileImageUrl || "",
@@ -113,15 +141,23 @@ export function BecomeWorkerScreen({ navigation }) {
       Alert.alert("Ruxsat kerak", "Profil rasmini tanlash uchun galereyaga ruxsat bering.");
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: "images", allowsEditing: true, aspect: [1, 1], quality: 0.85 });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: "images", allowsEditing: true, aspect: [1, 1], quality: 1 });
     if (result.canceled || !result.assets?.[0]) return;
     const identity = useAuthStore.getState().captureAuthRequest(session.token);
     setUploading(true);
     const asset = result.assets[0];
+    let preparedAsset;
+    try {
+      preparedAsset = await prepareWorkerProfileImage(asset);
+    } catch {
+      setUploading(false);
+      Alert.alert("Rasm tayyorlanmadi", "Boshqa rasm tanlab qayta urinib ko'ring.");
+      return;
+    }
     const upload = await uploadMediaApi(session.token, {
-      uri: asset.uri,
-      name: asset.fileName || `worker-application-${Date.now()}.jpg`,
-      mimeType: asset.mimeType || "image/jpeg"
+      uri: preparedAsset.uri,
+      name: preparedAsset.name,
+      mimeType: preparedAsset.mimeType
     }, { scope: "WORKER_GALLERY" });
     setUploading(false);
     if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
@@ -180,7 +216,6 @@ export function BecomeWorkerScreen({ navigation }) {
           <Text style={styles.photoText}>{uploading ? "Rasm yuklanmoqda..." : "Profil rasmini tanlang"}</Text>
         </Pressable>
         <Field label="Ism" value={form.name} onChangeText={(value) => update("name", value)} editable={!locked} />
-        <Field label="Shahar" value={form.cityId} onChangeText={(value) => update("cityId", value)} editable={!locked} />
         <Text style={styles.label}>Xizmat sohasi</Text>
         <Text style={styles.hint}>{`Bir yoki bir nechta sohani tanlang — ko'pi bilan ${MAX_WORKER_PROFESSIONS} ta.`}</Text>
         <CategoryAvailabilityState status={categoryStatus} error={categoryError} hasData={categories.length > 0} onRetry={syncCategoriesFromApi} />

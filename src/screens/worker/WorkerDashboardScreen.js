@@ -39,11 +39,13 @@ export function WorkerDashboardScreen({ navigation }) {
   const rejectIncomingRequest = useWorkerStore((state) => state.rejectIncomingRequest);
   const updateActiveJobStatus = useWorkerStore((state) => state.updateActiveJobStatus);
   const completeActiveJob = useWorkerStore((state) => state.completeActiveJob);
+  const cancelActiveJob = useWorkerStore((state) => state.cancelActiveJob);
   const syncWorkerFromApi = useWorkerStore((state) => state.syncWorkerFromApi);
   const canAccept = status === WORKER_STATUS.AVAILABLE && !activeJob;
   const [refreshing, setRefreshing] = useState(false);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejecting, setRejecting] = useState(false);
+  const [cancellingActiveJob, setCancellingActiveJob] = useState(false);
 
   useEffect(() => {
     syncWorkerFromApi();
@@ -83,6 +85,21 @@ export function WorkerDashboardScreen({ navigation }) {
     }
 
     Alert.alert("Status o'zgarmadi", result?.message || "Qayta urinib ko'ring.");
+  }
+
+  async function handleCancelActiveJob(reason) {
+    if (cancellingActiveJob) return false;
+    setCancellingActiveJob(true);
+    const result = await cancelActiveJob(reason);
+    setCancellingActiveJob(false);
+
+    if (result?.ok) {
+      Alert.alert("Buyurtma bekor qilindi", "Sabab mijozga yuborildi.");
+      return true;
+    }
+
+    Alert.alert("Buyurtma bekor qilinmadi", result?.message || "Qayta urinib ko'ring.");
+    return false;
   }
 
   async function handleUpdateStatus(nextStatus) {
@@ -137,6 +154,8 @@ export function WorkerDashboardScreen({ navigation }) {
             <ActiveJobCard
               job={activeJob}
               onChat={handleOpenJobChat}
+              onCancel={handleCancelActiveJob}
+              cancelling={cancellingActiveJob}
               onUpdateStatus={handleUpdateStatus}
               onComplete={handleComplete}
             />

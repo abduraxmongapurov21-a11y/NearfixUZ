@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import { OrderStatus, ReportStatus, ReviewStatus, UserStatus, type Prisma } from "@prisma/client";
+import { OrderStatus, ReportStatus, ReviewStatus, UserRole, UserStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import { authenticate } from "../auth/middleware/auth.middleware.js";
 import { requirePermission } from "../auth/middleware/permission.guard.js";
@@ -40,6 +40,7 @@ function toAdminOrderListDto(order: any) {
     problemTitle: order.problemTitle,
     urgency: order.urgency,
     status: order.status,
+    source: order.source,
     priceEstimate: order.priceEstimate,
     finalAmount: order.finalAmount,
     responseDeadlineAt: order.responseDeadlineAt,
@@ -234,6 +235,56 @@ adminRouter.get("/workers", requirePermission("workers.read"), async (request, r
       orderBy: { createdAt: "desc" }
     });
     response.json({ ok: true, workers });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.delete("/workers/:workerId", requirePermission("workers.manage"), async (request, response, next) => {
+  try {
+    const workerId = String(request.params.workerId);
+    const worker = await prisma.workerProfile.findUnique({
+      where: { id: workerId },
+      select: {
+        id: true,
+        userId: true,
+        _count: { select: { orders: true, reviews: true } }
+      }
+    });
+
+    if (!worker) {
+      throw Object.assign(new Error("Worker profile not found"), {
+        status: 404,
+        code: "WORKER_PROFILE_NOT_FOUND"
+      });
+    }
+
+    if (worker._count.orders > 0 || worker._count.reviews > 0) {
+      throw Object.assign(new Error("Worker with order history cannot be deleted"), {
+        status: 409,
+        code: "WORKER_DELETE_HAS_HISTORY"
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.workerProfile.delete({ where: { id: workerId } });
+      await tx.user.update({
+        where: { id: worker.userId },
+        data: {
+          role: UserRole.CLIENT,
+          sessionVersion: { increment: 1 }
+        }
+      });
+    });
+
+    await auditAdminAction(request, {
+      action: "worker.deleted",
+      targetType: "WorkerProfile",
+      targetId: workerId,
+      metadata: { userId: worker.userId }
+    });
+
+    response.json({ ok: true, workerId, userId: worker.userId });
   } catch (error) {
     next(error);
   }

@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { adminLabel, auditActionLabel } from "@/lib/admin-labels";
 import { getAdminAuditLogs } from "../services/audit-log-service";
 import type { AdminAuditLogsQuery } from "../types/audit-log";
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString("uz-UZ");
 }
 
 function metadataSummary(value: unknown) {
@@ -58,7 +59,7 @@ export function AuditLogsTable() {
           <form className="grid gap-3 lg:grid-cols-[1fr_180px_180px_180px_180px_auto]" onSubmit={handleFilter}>
             <Input
               onChange={(event) => setDraft((current) => ({ ...current, action: event.target.value }))}
-              placeholder="Action"
+              placeholder="Amal"
               value={draft.action}
             />
             <select
@@ -66,13 +67,13 @@ export function AuditLogsTable() {
               onChange={(event) => setDraft((current) => ({ ...current, actorType: event.target.value }))}
               value={draft.actorType}
             >
-              <option value="">Actor type</option>
-              <option value="ENV_ADMIN">ENV_ADMIN</option>
-              <option value="ADMIN_ACCOUNT">ADMIN_ACCOUNT</option>
+              <option value="">Bajaruvchi turi</option>
+              <option value="ENV_ADMIN">Muhit admini</option>
+              <option value="ADMIN_ACCOUNT">Admin hisobi</option>
             </select>
             <Input
               onChange={(event) => setDraft((current) => ({ ...current, targetType: event.target.value }))}
-              placeholder="Target type"
+              placeholder="Obyekt turi"
               value={draft.targetType}
             />
             <Input
@@ -87,7 +88,7 @@ export function AuditLogsTable() {
             />
             <Button type="submit">
               <Search className="mr-2 h-4 w-4" />
-              Filter
+              Filtrlash
             </Button>
           </form>
         </CardContent>
@@ -97,12 +98,12 @@ export function AuditLogsTable() {
         <table className="w-full text-left text-sm">
           <thead className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-4 py-3">Created At</th>
-              <th className="px-4 py-3">Actor</th>
-              <th className="px-4 py-3">Actor Type</th>
-              <th className="px-4 py-3">Action</th>
-              <th className="px-4 py-3">Target</th>
-              <th className="px-4 py-3">Metadata</th>
+              <th className="px-4 py-3">Yaratilgan vaqti</th>
+              <th className="px-4 py-3">Bajaruvchi</th>
+              <th className="px-4 py-3">Bajaruvchi turi</th>
+              <th className="px-4 py-3">Amal</th>
+              <th className="px-4 py-3">Obyekt</th>
+              <th className="px-4 py-3">Qo'shimcha ma'lumot</th>
               <th className="px-4 py-3">IP</th>
             </tr>
           </thead>
@@ -110,25 +111,25 @@ export function AuditLogsTable() {
             {query.isLoading ? (
               <tr>
                 <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
-                  Loading audit logs...
+                  Amallar tarixi yuklanmoqda...
                 </td>
               </tr>
             ) : null}
             {result?.logs.map((log) => (
               <tr className="border-b last:border-0" key={log.id}>
                 <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDate(log.createdAt)}</td>
-                <td className="px-4 py-3">{log.actorUsername || log.actorAdminId || "env-admin"}</td>
+                <td className="px-4 py-3">{log.actorUsername || log.actorAdminId || "Muhit admini"}</td>
                 <td className="px-4 py-3">
-                  <Badge variant="secondary">{log.actorType}</Badge>
+                  <Badge variant="secondary">{adminLabel(log.actorType)}</Badge>
                 </td>
-                <td className="px-4 py-3 font-medium">{log.action}</td>
+                <td className="px-4 py-3 font-medium">{auditActionLabel(log.action)}</td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {log.targetType || "-"}
                   {log.targetId ? <div className="text-xs">{log.targetId}</div> : null}
                 </td>
                 <td className="max-w-sm px-4 py-3">
                   <details>
-                    <summary className="cursor-pointer text-muted-foreground">View</summary>
+                    <summary className="cursor-pointer text-muted-foreground">Ko'rish</summary>
                     <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-muted p-2 text-xs">
                       {metadataSummary(log.metadata)}
                     </pre>
@@ -140,7 +141,7 @@ export function AuditLogsTable() {
             {!query.isLoading && !result?.logs.length ? (
               <tr>
                 <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
-                  Audit logs topilmadi.
+                  Amallar tarixi topilmadi.
                 </td>
               </tr>
             ) : null}
@@ -151,7 +152,7 @@ export function AuditLogsTable() {
       {result ? (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <div>
-            Page {result.pagination.page} / {result.pagination.totalPages}, total {result.pagination.total}
+            {result.pagination.page} / {result.pagination.totalPages}-sahifa, jami {result.pagination.total} ta
           </div>
           <div className="flex gap-2">
             <Button
@@ -160,7 +161,7 @@ export function AuditLogsTable() {
               type="button"
               variant="outline"
             >
-              Previous
+              Oldingi
             </Button>
             <Button
               disabled={page >= result.pagination.totalPages || query.isFetching}
@@ -168,7 +169,7 @@ export function AuditLogsTable() {
               type="button"
               variant="outline"
             >
-              Next
+              Keyingi
             </Button>
           </div>
         </div>

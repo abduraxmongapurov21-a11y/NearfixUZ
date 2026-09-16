@@ -2,6 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { StatusBadge } from "@/shared/components/status-badge";
+import { adminLabel } from "@/lib/admin-labels";
 import type { AdminWorker } from "../types/worker";
 
 const formatAmount = (value: number) => `${value.toLocaleString("uz-UZ")} so'm`;
@@ -9,7 +10,7 @@ const formatAmount = (value: number) => `${value.toLocaleString("uz-UZ")} so'm`;
 export const workersColumns: ColumnDef<AdminWorker>[] = [
   {
     accessorKey: "name",
-    header: "Worker",
+    header: "Usta",
     cell: ({ row }) => (
       <div>
         <div className="font-medium">{row.original.name}</div>
@@ -19,22 +20,26 @@ export const workersColumns: ColumnDef<AdminWorker>[] = [
   },
   {
     accessorKey: "status",
-    header: "Review",
+    header: "Tasdiq holati",
     cell: ({ row }) => <StatusBadge status={row.original.status} />
   },
-  { accessorKey: "city", header: "City" },
+  {
+    accessorKey: "city",
+    header: "Shahar",
+    cell: ({ row }) => adminLabel(row.original.city)
+  },
   {
     accessorKey: "availability",
-    header: "Availability",
+    header: "Bandlik holati",
     cell: ({ row }) => <StatusBadge status={row.original.availability} />
   },
-  { accessorKey: "completedJobs", header: "Completed" },
-  { accessorKey: "ignoredRequests", header: "Ignored" },
-  { accessorKey: "rating", header: "Rating" },
-  { accessorKey: "responseSpeed", header: "Response" },
+  { accessorKey: "completedJobs", header: "Bajarilgan" },
+  { accessorKey: "ignoredRequests", header: "E'tiborsiz qolgan" },
+  { accessorKey: "rating", header: "Reyting" },
+  { accessorKey: "responseSpeed", header: "Javob tezligi" },
   {
     accessorKey: "totalEarnings",
-    header: "Earnings",
+    header: "Daromad",
     cell: ({ row }) => formatAmount(row.original.totalEarnings)
   }
 ];

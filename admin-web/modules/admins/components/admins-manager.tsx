@@ -6,6 +6,7 @@ import { KeyRound, LockKeyhole, Pencil, Plus, Save, ShieldCheck, ShieldX, X } fr
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { adminLabel } from "@/lib/admin-labels";
 import { hasPermission, isSuperAdmin, type AdminPermission } from "@/shared/auth/permissions";
 import { DataTable } from "@/shared/components/data-table";
 import { useAdminSessionStore } from "@/stores/admin-session-store";
@@ -23,26 +24,50 @@ import type { AdminAccountRole, AdminAccountStatus, ManagedAdmin } from "../type
 type ModalMode = "create" | "edit" | "permissions" | "reset-password";
 
 const permissionGroups: { title: string; permissions: AdminPermission[] }[] = [
-  { title: "Analytics", permissions: ["analytics.read"] },
-  { title: "Users", permissions: ["users.read", "users.manage"] },
-  { title: "Workers", permissions: ["workers.read", "workers.manage"] },
-  { title: "Orders", permissions: ["orders.read", "orders.manage"] },
-  { title: "Reviews", permissions: ["reviews.read", "reviews.manage"] },
-  { title: "Reports", permissions: ["reports.read", "reports.manage"] },
-  { title: "Support", permissions: ["support.read", "support.manage"] },
-  { title: "Content", permissions: ["content.read", "content.manage"] },
-  { title: "Notifications", permissions: ["notifications.read", "notifications.manage"] },
-  { title: "Audit", permissions: ["audit.read"] },
-  { title: "Admins", permissions: ["admins.read", "admins.manage", "super_admin.manage"] }
+  { title: "Tahlil", permissions: ["analytics.read"] },
+  { title: "Foydalanuvchilar", permissions: ["users.read", "users.manage"] },
+  { title: "Ustalar", permissions: ["workers.read", "workers.manage"] },
+  { title: "Buyurtmalar", permissions: ["orders.read", "orders.manage"] },
+  { title: "Sharhlar", permissions: ["reviews.read", "reviews.manage"] },
+  { title: "Shikoyatlar", permissions: ["reports.read", "reports.manage"] },
+  { title: "Yordam", permissions: ["support.read", "support.manage"] },
+  { title: "Kontent", permissions: ["content.read", "content.manage"] },
+  { title: "Bildirishnomalar", permissions: ["notifications.read", "notifications.manage"] },
+  { title: "Amallar tarixi", permissions: ["audit.read"] },
+  { title: "Adminlar", permissions: ["admins.read", "admins.manage", "super_admin.manage"] }
 ];
+
+const permissionLabels: Record<AdminPermission, string> = {
+  "analytics.read": "Tahlilni ko'rish",
+  "users.read": "Foydalanuvchilarni ko'rish",
+  "users.manage": "Foydalanuvchilarni boshqarish",
+  "workers.read": "Ustalarni ko'rish",
+  "workers.manage": "Ustalarni boshqarish",
+  "orders.read": "Buyurtmalarni ko'rish",
+  "orders.manage": "Buyurtmalarni boshqarish",
+  "reviews.read": "Sharhlarni ko'rish",
+  "reviews.manage": "Sharhlarni boshqarish",
+  "reports.read": "Shikoyatlarni ko'rish",
+  "reports.manage": "Shikoyatlarni boshqarish",
+  "support.read": "Murojaatlarni ko'rish",
+  "support.manage": "Murojaatlarni boshqarish",
+  "content.read": "Kontentni ko'rish",
+  "content.manage": "Kontentni boshqarish",
+  "notifications.read": "Bildirishnomalarni ko'rish",
+  "notifications.manage": "Bildirishnomalarni boshqarish",
+  "audit.read": "Amallar tarixini ko'rish",
+  "admins.read": "Adminlarni ko'rish",
+  "admins.manage": "Adminlarni boshqarish",
+  "super_admin.manage": "Bosh adminlarni boshqarish"
+};
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString("uz-UZ");
 }
 
 function permissionLabel(permission: AdminPermission) {
-  return permission.replace(".", " ");
+  return permissionLabels[permission];
 }
 
 function validateAdminInput(username: string, password: string, name?: string) {
@@ -51,12 +76,12 @@ function validateAdminInput(username: string, password: string, name?: string) {
   const normalizedPassword = password.toLowerCase();
   const trivialPasswords = new Set(["admin321", "password", "password123", "12345678", "1234567890", "qwerty123"]);
 
-  if (trimmedUsername.length < 3) return "Username kamida 3 ta belgi bo'lishi kerak.";
-  if (trimmedName && trimmedName.length < 2) return "Name bo'lsa kamida 2 ta belgi bo'lishi kerak.";
-  if (password.length < 10) return "Temporary password kamida 10 ta belgi bo'lishi kerak.";
-  if (trivialPasswords.has(normalizedPassword)) return "Temporary password juda oddiy.";
+  if (trimmedUsername.length < 3) return "Foydalanuvchi nomi kamida 3 ta belgidan iborat bo'lishi kerak.";
+  if (trimmedName && trimmedName.length < 2) return "Ism kamida 2 ta belgidan iborat bo'lishi kerak.";
+  if (password.length < 10) return "Vaqtinchalik parol kamida 10 ta belgidan iborat bo'lishi kerak.";
+  if (trivialPasswords.has(normalizedPassword)) return "Vaqtinchalik parol juda oddiy.";
   if (normalizedPassword.includes(trimmedUsername.toLowerCase())) {
-    return "Temporary password username bilan bir xil bo'lmasin yoki username'ni ichiga olmasin.";
+    return "Vaqtinchalik parol foydalanuvchi nomi bilan bir xil bo'lmasin va uni o'z ichiga olmasin.";
   }
 
   return null;
@@ -214,7 +239,7 @@ export function AdminsManager() {
     mutationFn: createAdmin,
     onError: (error) => setErrorMessage(getAdminErrorMessage(error, "Admin yaratilmadi.")),
     onSuccess: async () => {
-      setMessage("Admin can now log in with username and password.");
+      setMessage("Admin endi foydalanuvchi nomi va paroli bilan tizimga kira oladi.");
       clearModalState();
       await refreshAdmins();
     }
@@ -235,7 +260,7 @@ export function AdminsManager() {
     mutationFn: ({ adminId, enabled }: { adminId: string; enabled: boolean }) => setAdminEnabled(adminId, enabled),
     onError: (error) => setErrorMessage(getAdminErrorMessage(error, "Admin statusi saqlanmadi.")),
     onSuccess: async (admin) => {
-      setMessage(admin.status === "ACTIVE" ? "Admin enabled." : "Admin disabled.");
+      setMessage(admin.status === "ACTIVE" ? "Admin faollashtirildi." : "Admin o'chirildi.");
       await refreshAdmins();
     }
   });
@@ -243,9 +268,9 @@ export function AdminsManager() {
   const permissionsMutation = useMutation({
     mutationFn: ({ adminId, permissions }: { adminId: string; permissions: AdminPermission[] }) =>
       replaceAdminPermissions(adminId, { permissions }),
-    onError: (error) => setErrorMessage(getAdminErrorMessage(error, "Permissionlar saqlanmadi.")),
+    onError: (error) => setErrorMessage(getAdminErrorMessage(error, "Ruxsatlar saqlanmadi.")),
     onSuccess: async () => {
-      setMessage("Permissionlar saqlandi.");
+      setMessage("Ruxsatlar saqlandi.");
       clearModalState();
       await refreshAdmins();
     }
@@ -254,9 +279,9 @@ export function AdminsManager() {
   const passwordMutation = useMutation({
     mutationFn: ({ adminId, password }: { adminId: string; password: string }) =>
       resetAdminPassword(adminId, { password }),
-    onError: (error) => setErrorMessage(getAdminErrorMessage(error, "Password yangilanmadi.")),
+    onError: (error) => setErrorMessage(getAdminErrorMessage(error, "Parol yangilanmadi.")),
     onSuccess: async () => {
-      setMessage("Password reset qilindi. Admin yangi password bilan qayta login qilishi kerak.");
+      setMessage("Parol tiklandi. Admin yangi parol bilan qayta kirishi kerak.");
       clearModalState();
       await refreshAdmins();
     }
@@ -326,29 +351,29 @@ export function AdminsManager() {
   }
 
   function handleToggleStatus(admin: ManagedAdmin) {
-    if (admin.status === "ACTIVE" && !window.confirm(`Disable admin ${admin.username}?`)) return;
+    if (admin.status === "ACTIVE" && !window.confirm(`“${admin.username}” admini o'chirilsinmi?`)) return;
     statusMutation.mutate({ adminId: admin.id, enabled: admin.status !== "ACTIVE" });
   }
 
   const modalTitle =
     modalMode === "create"
-      ? "Add Admin"
+      ? "Admin qo'shish"
       : modalMode === "edit"
-        ? "Edit Admin"
+        ? "Adminni tahrirlash"
         : modalMode === "permissions"
-          ? "Edit Permissions"
-          : "Reset Password";
+          ? "Ruxsatlarni tahrirlash"
+          : "Parolni tiklash";
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
-          {data.length} admin account{data.length === 1 ? "" : "s"}
+          {data.length} ta admin hisobi
         </div>
         {canManageAdmins ? (
           <Button onClick={openCreateModal} type="button">
             <Plus className="mr-2 h-4 w-4" />
-            Add Admin
+            Admin qo'shish
           </Button>
         ) : null}
       </div>
@@ -363,74 +388,74 @@ export function AdminsManager() {
           {errorMessage}
         </div>
       ) : null}
-      {isLoading ? <div className="rounded-md border bg-card p-4 text-sm">Loading admins...</div> : null}
+      {isLoading ? <div className="rounded-md border bg-card p-4 text-sm">Adminlar yuklanmoqda...</div> : null}
 
       <DataTable
         columns={[
           {
             accessorKey: "name",
-            header: "Name",
+            header: "Ism",
             cell: ({ row }) => <div className="font-medium">{row.original.name || "-"}</div>
           },
           {
             accessorKey: "username",
-            header: "Username",
+            header: "Foydalanuvchi nomi",
             cell: ({ row }) => <div className="font-medium">{row.original.username}</div>
           },
           {
             accessorKey: "role",
-            header: "Role",
-            cell: ({ row }) => <Badge variant="secondary">{row.original.role}</Badge>
+            header: "Rol",
+            cell: ({ row }) => <Badge variant="secondary">{adminLabel(row.original.role)}</Badge>
           },
           {
             accessorKey: "status",
-            header: "Status",
+            header: "Holat",
             cell: ({ row }) => (
               <Badge variant={row.original.status === "ACTIVE" ? "success" : "danger"}>
-                {row.original.status === "ACTIVE" ? "Active" : "Disabled"}
+                {row.original.status === "ACTIVE" ? "Faol" : "O'chirilgan"}
               </Badge>
             )
           },
           {
             accessorKey: "permissions",
-            header: "Permissions",
+            header: "Ruxsatlar",
             cell: ({ row }) =>
               row.original.role === "SUPER_ADMIN" ? (
-                <Badge>All permissions</Badge>
+                <Badge>Barcha ruxsatlar</Badge>
               ) : (
                 <div className="max-w-56 text-sm text-muted-foreground">
-                  {row.original.permissions.length ? `${row.original.permissions.length} permissions` : "No permissions"}
+                  {row.original.permissions.length ? `${row.original.permissions.length} ta ruxsat` : "Ruxsatlar yo'q"}
                 </div>
               )
           },
           {
             accessorKey: "lastLoginAt",
-            header: "Last login",
+            header: "Oxirgi kirish",
             cell: ({ row }) => <span className="text-sm text-muted-foreground">{formatDate(row.original.lastLoginAt)}</span>
           },
           {
             accessorKey: "createdAt",
-            header: "Created",
+            header: "Yaratilgan",
             cell: ({ row }) => <span className="text-sm text-muted-foreground">{formatDate(row.original.createdAt)}</span>
           },
           {
             id: "actions",
-            header: "Actions",
+            header: "Amallar",
             cell: ({ row }) => (
               <div className="flex flex-wrap gap-2">
                 {canManageAdmins ? (
                   <>
                     <Button onClick={() => openEditModal(row.original)} size="sm" type="button" variant="outline">
                       <Pencil className="mr-2 h-4 w-4" />
-                      Edit
+                      Tahrirlash
                     </Button>
                     <Button onClick={() => openPermissionsModal(row.original)} size="sm" type="button" variant="outline">
                       <LockKeyhole className="mr-2 h-4 w-4" />
-                      Permissions
+                      Ruxsatlar
                     </Button>
                     <Button onClick={() => openResetPasswordModal(row.original)} size="sm" type="button" variant="outline">
                       <KeyRound className="mr-2 h-4 w-4" />
-                      Reset password
+                      Parolni tiklash
                     </Button>
                     <Button
                       disabled={statusMutation.isPending}
@@ -442,25 +467,25 @@ export function AdminsManager() {
                       {row.original.status === "ACTIVE" ? (
                         <>
                           <ShieldX className="mr-2 h-4 w-4" />
-                          Disable
+                          O'chirish
                         </>
                       ) : (
                         <>
                           <ShieldCheck className="mr-2 h-4 w-4" />
-                          Enable
+                          Faollashtirish
                         </>
                       )}
                     </Button>
                   </>
                 ) : (
-                  <span className="text-sm text-muted-foreground">View only</span>
+                  <span className="text-sm text-muted-foreground">Faqat ko'rish uchun</span>
                 )}
               </div>
             )
           }
         ]}
         data={data}
-        emptyDescription="Hali admin account yo'q."
+        emptyDescription="Hali admin hisobi yo'q."
         emptyTitle="Adminlar yo'q"
       />
 
@@ -470,15 +495,15 @@ export function AdminsManager() {
             <form className="space-y-4" onSubmit={handleCreate}>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-sm font-medium">Username</label>
+                  <label className="text-sm font-medium">Foydalanuvchi nomi</label>
                   <Input autoComplete="username" onChange={(event) => setCreateUsername(event.target.value)} required value={createUsername} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Name</label>
+                  <label className="text-sm font-medium">Ism</label>
                   <Input onChange={(event) => setCreateName(event.target.value)} value={createName} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Temporary password</label>
+                  <label className="text-sm font-medium">Vaqtinchalik parol</label>
                   <Input
                     autoComplete="new-password"
                     onChange={(event) => setCreatePassword(event.target.value)}
@@ -488,14 +513,14 @@ export function AdminsManager() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Role</label>
+                  <label className="text-sm font-medium">Rol</label>
                   <select
                     className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                     onChange={(event) => setCreateRole(event.target.value as AdminAccountRole)}
                     value={createRole}
                   >
-                    <option value="ADMIN">ADMIN</option>
-                    {canManageSuperAdmins ? <option value="SUPER_ADMIN">SUPER_ADMIN</option> : null}
+                    <option value="ADMIN">Admin</option>
+                    {canManageSuperAdmins ? <option value="SUPER_ADMIN">Bosh admin</option> : null}
                   </select>
                 </div>
               </div>
@@ -505,9 +530,9 @@ export function AdminsManager() {
                 showSuperAdminManage={canManageSuperAdmins}
               />
               <div className="flex justify-end gap-2 border-t pt-4">
-                <Button onClick={clearModalState} type="button" variant="outline">Cancel</Button>
+                <Button onClick={clearModalState} type="button" variant="outline">Bekor qilish</Button>
                 <Button disabled={createMutation.isPending || !createUsername || !createPassword} type="submit">
-                  {createMutation.isPending ? "Creating..." : "Create"}
+                  {createMutation.isPending ? "Yaratilmoqda..." : "Yaratish"}
                 </Button>
               </div>
             </form>
@@ -517,44 +542,44 @@ export function AdminsManager() {
             <form className="space-y-4" onSubmit={handleUpdate}>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-sm font-medium">Username</label>
+                  <label className="text-sm font-medium">Foydalanuvchi nomi</label>
                   <Input disabled value={activeAdmin.username} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Name</label>
+                  <label className="text-sm font-medium">Ism</label>
                   <Input onChange={(event) => setEditName(event.target.value)} value={editName} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Role</label>
+                  <label className="text-sm font-medium">Rol</label>
                   <select
                     className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                     disabled={!canManageSuperAdmins && activeAdmin.role === "SUPER_ADMIN"}
                     onChange={(event) => setEditRole(event.target.value as AdminAccountRole)}
                     value={editRole}
                   >
-                    <option value="ADMIN">ADMIN</option>
+                    <option value="ADMIN">Admin</option>
                     {canManageSuperAdmins || activeAdmin.role === "SUPER_ADMIN" ? (
-                      <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                      <option value="SUPER_ADMIN">Bosh admin</option>
                     ) : null}
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Status</label>
+                  <label className="text-sm font-medium">Holat</label>
                   <select
                     className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                     onChange={(event) => setEditStatus(event.target.value as AdminAccountStatus)}
                     value={editStatus}
                   >
-                    <option value="ACTIVE">ACTIVE</option>
-                    <option value="DISABLED">DISABLED</option>
+                    <option value="ACTIVE">Faol</option>
+                    <option value="DISABLED">O'chirilgan</option>
                   </select>
                 </div>
               </div>
               <div className="flex justify-end gap-2 border-t pt-4">
-                <Button onClick={clearModalState} type="button" variant="outline">Cancel</Button>
+                <Button onClick={clearModalState} type="button" variant="outline">Bekor qilish</Button>
                 <Button disabled={updateMutation.isPending} type="submit">
                   <Save className="mr-2 h-4 w-4" />
-                  Save
+                  Saqlash
                 </Button>
               </div>
             </form>
@@ -563,9 +588,9 @@ export function AdminsManager() {
           {modalMode === "permissions" && activeAdmin ? (
             activeAdmin.role === "SUPER_ADMIN" ? (
               <div className="space-y-4">
-                <Badge>All permissions</Badge>
+                <Badge>Barcha ruxsatlar</Badge>
                 <div className="flex justify-end border-t pt-4">
-                  <Button onClick={clearModalState} type="button" variant="outline">Close</Button>
+                  <Button onClick={clearModalState} type="button" variant="outline">Yopish</Button>
                 </div>
               </div>
             ) : (
@@ -576,10 +601,10 @@ export function AdminsManager() {
                   showSuperAdminManage={canManageSuperAdmins}
                 />
                 <div className="flex justify-end gap-2 border-t pt-4">
-                  <Button onClick={clearModalState} type="button" variant="outline">Cancel</Button>
+                  <Button onClick={clearModalState} type="button" variant="outline">Bekor qilish</Button>
                   <Button disabled={permissionsMutation.isPending} type="submit">
                     <Save className="mr-2 h-4 w-4" />
-                    Save permissions
+                    Ruxsatlarni saqlash
                   </Button>
                 </div>
               </form>
@@ -589,7 +614,7 @@ export function AdminsManager() {
           {modalMode === "reset-password" && activeAdmin ? (
             <form className="space-y-4" onSubmit={handlePasswordReset}>
               <div>
-                <label className="text-sm font-medium">New temporary password</label>
+                <label className="text-sm font-medium">Yangi vaqtinchalik parol</label>
                 <Input
                   autoComplete="new-password"
                   onChange={(event) => setResetPasswordValue(event.target.value)}
@@ -599,13 +624,13 @@ export function AdminsManager() {
                 />
               </div>
               <div className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
-                The admin must log in again with the new password.
+                Admin yangi parol bilan qayta kirishi kerak.
               </div>
               <div className="flex justify-end gap-2 border-t pt-4">
-                <Button onClick={clearModalState} type="button" variant="outline">Cancel</Button>
+                <Button onClick={clearModalState} type="button" variant="outline">Bekor qilish</Button>
                 <Button disabled={passwordMutation.isPending || !resetPasswordValue} type="submit" variant="outline">
                   <KeyRound className="mr-2 h-4 w-4" />
-                  Reset password
+                  Parolni tiklash
                 </Button>
               </div>
             </form>

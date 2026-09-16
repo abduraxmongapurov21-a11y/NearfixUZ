@@ -1,11 +1,13 @@
 import {
   OrderEventActorType,
   OrderEventType,
+  OrderSource,
   OrderStatus,
   ChatParticipantRole,
   ChatRoomType,
   type Prisma,
   UserRole,
+  UserStatus,
   WorkerAvailabilityStatus,
   WorkerProfileStatus
 } from "@prisma/client";
@@ -14,6 +16,7 @@ import type { AuthUser } from "../auth/auth-context.js";
 import { createNotificationSafely } from "../notifications/notification.service.js";
 import { getActiveCategoriesByIds, matchCategoriesByLegacyValues } from "../categories/category.service.js";
 import { ensureWorkerAvailableForOrder } from "../workers/worker.service.js";
+import { normalizePhone } from "../../utils/phone.js";
 import {
   assertApprovedProviderOwnership,
   canAccessOrder,
@@ -22,7 +25,7 @@ import {
   ownsOrderAsClient,
   resolveOrderExperienceMode
 } from "./order-access.js";
-import type { CreateOrderInput } from "./order.contracts.js";
+import type { CreateOrderInput, CreateWorkerOrderInput } from "./order.contracts.js";
 import { orderInclude } from "./order.dto.js";
 import { eventByTransition, transitionOrderStatus } from "./order-state.js";
 
@@ -92,6 +95,38 @@ async function releaseWorkerAvailability(tx: Prisma.TransactionClient, workerId:
   }
 }
 
+async function markWorkerBusyForAcceptedOrder(
+  tx: Prisma.TransactionClient,
+  input: {
+    workerId: string;
+    orderId: string;
+    reservedOrder: boolean;
+    conflictCode: string;
+  }
+) {
+  const updated = await tx.workerAvailability.updateMany({
+    where: {
+      workerId: input.workerId,
+      activeOrderId: input.reservedOrder ? input.orderId : null,
+      status: input.reservedOrder
+        ? WorkerAvailabilityStatus.AVAILABLE
+        : { in: [WorkerAvailabilityStatus.AVAILABLE, WorkerAvailabilityStatus.OFFLINE] }
+    },
+    data: {
+      status: WorkerAvailabilityStatus.BUSY,
+      activeOrderId: input.orderId,
+      lockedUntil: null
+    }
+  });
+
+  if (updated.count !== 1) {
+    throw Object.assign(new Error("Worker already has an active order"), {
+      status: 409,
+      code: input.conflictCode
+    });
+  }
+}
+
 async function notifyOrderCancelled(input: {
   orderId: string;
   publicCode: string;
@@ -100,15 +135,21 @@ async function notifyOrderCancelled(input: {
   workerUserId: string;
   actor: OrderEventActorType;
   reason?: string;
+  clientIsProvisional?: boolean;
 }) {
+  const clientRecipients = input.clientIsProvisional ? [] : [input.clientId];
   const recipients =
     input.actor === OrderEventActorType.CLIENT
       ? [input.workerUserId]
       : input.actor === OrderEventActorType.WORKER
-        ? [input.clientId]
-        : [input.clientId, input.workerUserId];
+        ? clientRecipients
+        : [...clientRecipients, input.workerUserId];
 
   const uniqueRecipients = Array.from(new Set(recipients));
+  const cancellationBody =
+    input.actor === OrderEventActorType.WORKER && input.reason
+      ? `${input.serviceType} buyurtmasi usta tomonidan bekor qilindi. Sabab: ${input.reason}`
+      : `${input.serviceType} buyurtmasi bekor qilindi.`;
 
   for (const userId of uniqueRecipients) {
     await createNotificationSafely({
@@ -117,7 +158,7 @@ async function notifyOrderCancelled(input: {
       dedupeKey: `order:${input.orderId}:ORDER_CANCELLED:${userId}`,
       type: "ORDER_CANCELLED",
       title: "Buyurtma bekor qilindi",
-      body: `${input.serviceType} buyurtmasi bekor qilindi.`,
+      body: cancellationBody,
       payload: {
         orderId: input.orderId,
         publicCode: input.publicCode,
@@ -334,6 +375,163 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
   return createdOrder;
 }
 
+export async function createWorkerOrder(user: AuthUser, input: CreateWorkerOrderInput) {
+  if (!isProvider(user)) {
+    throw Object.assign(new Error("Only providers can create worker phone orders"), {
+      status: 403,
+      code: "PROVIDER_REQUIRED"
+    });
+  }
+
+  const clientPhone = normalizePhone(input.clientPhone);
+  const result = await prisma.$transaction(async (tx) => {
+    const worker = await tx.workerProfile.findUnique({
+      where: { userId: user.id },
+      include: {
+        availability: true,
+        user: true,
+        categories: { include: { category: true } }
+      }
+    });
+
+    if (!worker || worker.status !== WorkerProfileStatus.APPROVED) {
+      throw Object.assign(new Error("Only approved providers can create worker phone orders"), {
+        status: 403,
+        code: "WORKER_NOT_APPROVED"
+      });
+    }
+
+    if (worker.user.phone === clientPhone) {
+      throw Object.assign(new Error("Worker cannot create an order for their own phone"), {
+        status: 409,
+        code: "SELF_BOOKING_NOT_ALLOWED"
+      });
+    }
+
+    const workerCategory = worker.categories.find(
+      (item) => item.categoryId === input.categoryId && item.category.isActive
+    );
+    if (!workerCategory) {
+      throw Object.assign(new Error("Worker does not offer the selected active category"), {
+        status: 400,
+        code: "WORKER_CATEGORY_NOT_OFFERED"
+      });
+    }
+
+    const existingClient = await tx.user.findUnique({ where: { phone: clientPhone } });
+    if (
+      existingClient &&
+      (existingClient.status !== UserStatus.ACTIVE ||
+        existingClient.deletedAt ||
+        (existingClient.role !== UserRole.CLIENT && existingClient.role !== UserRole.PROVIDER))
+    ) {
+      throw Object.assign(new Error("Client phone cannot be used for an order"), {
+        status: 400,
+        code: "CLIENT_NOT_ELIGIBLE"
+      });
+    }
+
+    const client = existingClient || await tx.user.create({
+      data: {
+        phone: clientPhone,
+        name: input.clientName?.trim() || null,
+        role: UserRole.CLIENT,
+        status: UserStatus.ACTIVE,
+        isProvisional: true,
+        cityId: worker.user.cityId
+      }
+    });
+    const cityId = worker.user.cityId || client.cityId || "tashkent";
+    const serviceType = workerCategory.category.nameUz;
+
+    const order = await tx.order.create({
+      data: {
+        publicCode: createPublicCode(),
+        clientId: client.id,
+        workerId: worker.id,
+        locationLabel: input.location.label,
+        locationAddressText: input.location.addressText.trim(),
+        locationDistrict: input.location.district,
+        locationLat: input.location.latitude,
+        locationLng: input.location.longitude,
+        cityId,
+        serviceType,
+        categoryId: workerCategory.categoryId,
+        problemTitle: `${serviceType} buyurtmasi`,
+        problemDescription: input.description.trim(),
+        urgency: "NORMAL",
+        status: OrderStatus.ACCEPTED,
+        source: OrderSource.WORKER_PHONE,
+        priceEstimate: input.priceEstimate,
+        responseDeadlineAt: null
+      }
+    });
+
+    await markWorkerBusyForAcceptedOrder(tx, {
+      workerId: worker.id,
+      orderId: order.id,
+      reservedOrder: false,
+      conflictCode: "WORKER_BUSY"
+    });
+
+    await tx.orderEvent.create({
+      data: {
+        orderId: order.id,
+        actorType: OrderEventActorType.WORKER,
+        actorId: user.id,
+        eventType: OrderEventType.ORDER_CREATED,
+        fromStatus: OrderStatus.CREATED,
+        toStatus: OrderStatus.ACCEPTED,
+        message: "Worker created and accepted a phone-originated order",
+        metadata: { source: OrderSource.WORKER_PHONE }
+      }
+    });
+
+    await tx.chatRoom.create({
+      data: {
+        type: ChatRoomType.ORDER,
+        title: `${serviceType} buyurtmasi`,
+        orderId: order.id,
+        cityId,
+        serviceType,
+        createdById: user.id,
+        participants: {
+          create: [
+            { userId: client.id, role: ChatParticipantRole.CLIENT },
+            { userId: worker.userId, role: ChatParticipantRole.PROVIDER }
+          ]
+        }
+      }
+    });
+
+    const createdOrder = await tx.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: orderInclude
+    });
+
+    return { createdOrder, notifyExistingClient: Boolean(existingClient && !existingClient.isProvisional) };
+  });
+
+  if (result.notifyExistingClient) {
+    await createNotificationSafely({
+      userId: result.createdOrder.clientId,
+      orderId: result.createdOrder.id,
+      dedupeKey: `order:${result.createdOrder.id}:WORKER_PHONE_CREATED:${result.createdOrder.clientId}`,
+      type: "ORDER_ACCEPTED",
+      title: "Buyurtma yaratildi va qabul qilindi",
+      body: `${result.createdOrder.worker.user.name || "Usta"} telefon orqali kelishilgan buyurtmani yaratdi.`,
+      payload: {
+        orderId: result.createdOrder.id,
+        publicCode: result.createdOrder.publicCode,
+        status: result.createdOrder.status,
+        source: result.createdOrder.source
+      }
+    });
+  }
+
+  return result.createdOrder;
+}
+
 export async function getOrderForUser(user: AuthUser, orderId: string) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -455,13 +653,11 @@ export async function acceptOrder(user: AuthUser, orderId: string) {
       conflictCode: "ORDER_ALREADY_ACCEPTED"
     });
 
-    await tx.workerAvailability.update({
-      where: { workerId: order.workerId },
-      data: {
-        status: WorkerAvailabilityStatus.BUSY,
-        activeOrderId: order.id,
-        lockedUntil: null
-      }
+    await markWorkerBusyForAcceptedOrder(tx, {
+      workerId: order.workerId,
+      orderId: order.id,
+      reservedOrder: true,
+      conflictCode: "WORKER_NOT_AVAILABLE"
     });
 
     await tx.orderEvent.create({
@@ -649,7 +845,7 @@ export async function transitionOrder(user: AuthUser, orderId: string, toStatus:
   });
 
   const notificationCopy = lifecycleNotificationCopy[toStatus];
-  if (notificationCopy) {
+  if (notificationCopy && !transitionedOrder.client.isProvisional) {
     await createNotificationSafely({
       userId: transitionedOrder.clientId,
       orderId: transitionedOrder.id,
@@ -733,7 +929,8 @@ export async function cancelOrder(
     clientId: cancelledOrder.clientId,
     workerUserId: cancelledOrder.worker.userId,
     actor: actorTypeForUser(user),
-    reason
+    reason,
+    clientIsProvisional: cancelledOrder.client.isProvisional
   });
 
   return cancelledOrder;

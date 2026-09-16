@@ -2,7 +2,7 @@
   "expo": {
     "name": "NearFIX",
     "slug": "nearfix-mobile",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "icon": "./assets/images/icon.png",
     "scheme": "nearfix",
     "orientation": "portrait",
@@ -61,6 +61,7 @@
       "icon": "./assets/images/icon.png",
       "supportsTablet": true,
       "bundleIdentifier": "uz.nearfix.app",
+      "buildNumber": "2026072607",
       "infoPlist": {
         "NSCameraUsageDescription": "NearFIX chatda rasmga olish uchun kameraga ruxsat kerak.",
         "NSPhotoLibraryUsageDescription": "NearFIX chatda rasm tanlash uchun galereyaga ruxsat kerak.",
@@ -69,6 +70,7 @@
     },
     "android": {
       "package": "uz.nearfix.app",
+      "versionCode": 4,
       "googleServicesFile": "./google-services.json",
       "icon": "./assets/images/icon.png",
       "predictiveBackGestureEnabled": false,

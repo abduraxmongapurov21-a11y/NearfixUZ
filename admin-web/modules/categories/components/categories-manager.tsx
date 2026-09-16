@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { DataTable } from "@/shared/components/data-table";
 import { hasPermission } from "@/shared/auth/permissions";
 import { useAdminSessionStore } from "@/stores/admin-session-store";
-import { resolveCategoryIcon } from "../category-icons";
+import { resolveCategoryIcon, resolveCategoryIconLabel } from "../category-icons";
 import { useCategories } from "../hooks/use-categories";
 import { createCategory, deleteCategory, reorderCategories, updateCategory } from "../services/categories-service";
 import type { AdminCategory, CategoryInput } from "../types/category";
@@ -40,18 +40,18 @@ export function CategoriesManager() {
     mutationFn: () => editingId
       ? updateCategory(editingId, { nameUz: draft.nameUz, nameRu: draft.nameRu, nameEn: draft.nameEn, iconKey: draft.iconKey, isActive: draft.isActive })
       : createCategory(draft),
-    onSuccess: async () => { setDraft(emptyDraft); setEditingId(null); await refresh(editingId ? "Category yangilandi." : "Category yaratildi."); },
-    onError: (value) => setError(value instanceof Error ? value.message : "Category saqlanmadi")
+    onSuccess: async () => { setDraft(emptyDraft); setEditingId(null); await refresh(editingId ? "Kategoriya yangilandi." : "Kategoriya yaratildi."); },
+    onError: (value) => setError(value instanceof Error ? value.message : "Kategoriya saqlanmadi")
   });
   const toggleMutation = useMutation({
     mutationFn: (category: AdminCategory) => updateCategory(category.id, { isActive: !category.isActive }),
-    onSuccess: () => refresh("Category holati yangilandi."),
+    onSuccess: () => refresh("Kategoriya holati yangilandi."),
     onError: (value) => setError(value instanceof Error ? value.message : "Holat saqlanmadi")
   });
   const deleteMutation = useMutation({
     mutationFn: deleteCategory,
-    onSuccess: () => refresh("Category o'chirildi."),
-    onError: (value) => setError(value instanceof Error ? value.message : "Category o'chirilmadi")
+    onSuccess: () => refresh("Kategoriya o'chirildi."),
+    onError: (value) => setError(value instanceof Error ? value.message : "Kategoriya o'chirilmadi")
   });
   const reorderMutation = useMutation({
     mutationFn: reorderCategories,
@@ -73,16 +73,16 @@ export function CategoriesManager() {
   }
 
   const columns: ColumnDef<AdminCategory>[] = [
-    { header: "Category", cell: ({ row }) => { const Icon = resolveCategoryIcon(row.original.iconKey); return <div className="flex items-center gap-3"><div className="rounded-md bg-primary/10 p-2"><Icon className="h-5 w-5 text-primary" /></div><div><div className="font-medium">{row.original.nameUz}</div><div className="text-xs text-muted-foreground">{row.original.slug}</div></div></div>; } },
-    { header: "RU / EN", cell: ({ row }) => <div className="text-sm"><div>{row.original.nameRu}</div><div className="text-muted-foreground">{row.original.nameEn}</div></div> },
-    { header: "Status", cell: ({ row }) => <Badge variant={row.original.isActive ? "success" : "secondary"}>{row.original.isActive ? "Active" : "Inactive"}</Badge> },
-    { header: "References", cell: ({ row }) => <span title={`Workers: ${row.original.references.workers}, Orders: ${row.original.references.orders}, Banners: ${row.original.references.banners}`}>{row.original.referenceCount}</span> },
-    { header: "Actions", cell: ({ row }) => { const index = categories.findIndex((item) => item.id === row.original.id); return <div className="flex flex-wrap gap-2">
+    { header: "Kategoriya", cell: ({ row }) => { const Icon = resolveCategoryIcon(row.original.iconKey); return <div className="flex items-center gap-3"><div className="rounded-md bg-primary/10 p-2"><Icon className="h-5 w-5 text-primary" /></div><div><div className="font-medium">{row.original.nameUz}</div><div className="text-xs text-muted-foreground">{row.original.slug}</div></div></div>; } },
+    { header: "Ruscha / Inglizcha", cell: ({ row }) => <div className="text-sm"><div>{row.original.nameRu}</div><div className="text-muted-foreground">{row.original.nameEn}</div></div> },
+    { header: "Holat", cell: ({ row }) => <Badge variant={row.original.isActive ? "success" : "secondary"}>{row.original.isActive ? "Faol" : "Nofaol"}</Badge> },
+    { header: "Bog'lanishlar", cell: ({ row }) => <span title={`Ustalar: ${row.original.references.workers}, buyurtmalar: ${row.original.references.orders}, bannerlar: ${row.original.references.banners}`}>{row.original.referenceCount}</span> },
+    { header: "Amallar", cell: ({ row }) => { const index = categories.findIndex((item) => item.id === row.original.id); return <div className="flex flex-wrap gap-2">
       <Button disabled={!canManage || index === 0 || reorderMutation.isPending} onClick={() => move(row.original, -1)} size="icon" variant="outline"><ArrowUp className="h-4 w-4" /></Button>
       <Button disabled={!canManage || index === categories.length - 1 || reorderMutation.isPending} onClick={() => move(row.original, 1)} size="icon" variant="outline"><ArrowDown className="h-4 w-4" /></Button>
-      <Button disabled={!canManage} onClick={() => toggleMutation.mutate(row.original)} size="sm" variant="outline">{row.original.isActive ? "Deactivate" : "Activate"}</Button>
+      <Button disabled={!canManage} onClick={() => toggleMutation.mutate(row.original)} size="sm" variant="outline">{row.original.isActive ? "Nofaol qilish" : "Faollashtirish"}</Button>
       <Button disabled={!canManage} onClick={() => edit(row.original)} size="icon" variant="outline"><Pencil className="h-4 w-4" /></Button>
-      <Button disabled={!canManage || row.original.referenceCount > 0} onClick={() => { if (window.confirm(`Delete ${row.original.nameUz}?`)) deleteMutation.mutate(row.original.id); }} size="icon" variant="outline" title={row.original.referenceCount ? "Referenced categories must be deactivated" : "Delete"}><Trash2 className="h-4 w-4" /></Button>
+      <Button disabled={!canManage || row.original.referenceCount > 0} onClick={() => { if (window.confirm(`“${row.original.nameUz}” kategoriyasi o'chirilsinmi?`)) deleteMutation.mutate(row.original.id); }} size="icon" variant="outline" title={row.original.referenceCount ? "Bog'langan kategoriya o'chirilmaydi, uni nofaol qiling" : "O'chirish"}><Trash2 className="h-4 w-4" /></Button>
     </div>; } }
   ];
   const PreviewIcon = resolveCategoryIcon(draft.iconKey);
@@ -90,17 +90,17 @@ export function CategoriesManager() {
   return <div className="space-y-6">
     {message ? <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">{message}</div> : null}
     {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div> : null}
-    {canManage ? <Card><CardHeader><CardTitle>{editingId ? "Edit category" : "Create category"}</CardTitle></CardHeader><CardContent>
+    {canManage ? <Card><CardHeader><CardTitle>{editingId ? "Kategoriyani tahrirlash" : "Kategoriya yaratish"}</CardTitle></CardHeader><CardContent>
       <form className="grid gap-4 md:grid-cols-3" onSubmit={submit}>
         <label className="space-y-1 text-sm">Slug<Input disabled={Boolean(editingId)} onChange={(e) => setDraft((v) => ({ ...v, slug: e.target.value }))} required value={draft.slug} /></label>
-        <label className="space-y-1 text-sm">Name UZ<Input onChange={(e) => setDraft((v) => ({ ...v, nameUz: e.target.value }))} required value={draft.nameUz} /></label>
-        <label className="space-y-1 text-sm">Name RU<Input onChange={(e) => setDraft((v) => ({ ...v, nameRu: e.target.value }))} required value={draft.nameRu} /></label>
-        <label className="space-y-1 text-sm">Name EN<Input onChange={(e) => setDraft((v) => ({ ...v, nameEn: e.target.value }))} required value={draft.nameEn} /></label>
-        <label className="space-y-1 text-sm">Icon<div className="flex gap-2"><select className="h-10 flex-1 rounded-md border bg-card px-3 text-sm" onChange={(e) => setDraft((v) => ({ ...v, iconKey: e.target.value }))} value={draft.iconKey}>{data.iconKeys.map((key) => <option key={key} value={key}>{key}</option>)}</select><div className="flex h-10 w-10 items-center justify-center rounded-md border"><PreviewIcon className="h-5 w-5" /></div></div></label>
-        <label className="flex items-center gap-2 self-end pb-2 text-sm"><input checked={draft.isActive} onChange={(e) => setDraft((v) => ({ ...v, isActive: e.target.checked }))} type="checkbox" />Active</label>
-        <div className="flex gap-2 md:col-span-3"><Button disabled={saveMutation.isPending} type="submit">{editingId ? "Save" : "Create"}</Button>{editingId ? <Button onClick={() => { setEditingId(null); setDraft(emptyDraft); }} type="button" variant="outline">Cancel</Button> : null}</div>
+        <label className="space-y-1 text-sm">O'zbekcha nomi<Input onChange={(e) => setDraft((v) => ({ ...v, nameUz: e.target.value }))} required value={draft.nameUz} /></label>
+        <label className="space-y-1 text-sm">Ruscha nomi<Input onChange={(e) => setDraft((v) => ({ ...v, nameRu: e.target.value }))} required value={draft.nameRu} /></label>
+        <label className="space-y-1 text-sm">Inglizcha nomi<Input onChange={(e) => setDraft((v) => ({ ...v, nameEn: e.target.value }))} required value={draft.nameEn} /></label>
+        <label className="space-y-1 text-sm">Ikonka<div className="flex gap-2"><select className="h-10 flex-1 rounded-md border bg-card px-3 text-sm" onChange={(e) => setDraft((v) => ({ ...v, iconKey: e.target.value }))} value={draft.iconKey}>{data.iconKeys.map((key) => <option key={key} value={key}>{resolveCategoryIconLabel(key)} ({key})</option>)}</select><div className="flex h-10 w-10 items-center justify-center rounded-md border"><PreviewIcon className="h-5 w-5" /></div></div></label>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm"><input checked={draft.isActive} onChange={(e) => setDraft((v) => ({ ...v, isActive: e.target.checked }))} type="checkbox" />Faol</label>
+        <div className="flex gap-2 md:col-span-3"><Button disabled={saveMutation.isPending} type="submit">{editingId ? "Saqlash" : "Yaratish"}</Button>{editingId ? <Button onClick={() => { setEditingId(null); setDraft(emptyDraft); }} type="button" variant="outline">Bekor qilish</Button> : null}</div>
       </form>
     </CardContent></Card> : null}
-    <DataTable columns={columns} data={categories} emptyDescription="Create the first category." emptyTitle="No categories" />
+    <DataTable columns={columns} data={categories} emptyDescription="Birinchi kategoriyani yarating." emptyTitle="Kategoriyalar yo'q" />
   </div>;
 }

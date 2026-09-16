@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "NearFIX Admin",
-  description: "Operational control center for NearFIX"
+  title: "NearFIX boshqaruv paneli",
+  description: "NearFIX xizmatini boshqarish markazi"
 };
 
 export default function RootLayout({

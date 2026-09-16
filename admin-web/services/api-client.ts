@@ -2,11 +2,11 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 if (process.env.NODE_ENV === "production") {
   if (!API_BASE_URL) {
-    throw new Error("NEXT_PUBLIC_API_URL is required for production builds");
+    throw new Error("Ishlab chiqarish muhiti uchun NEXT_PUBLIC_API_URL ko'rsatilishi shart");
   }
 
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/i.test(API_BASE_URL)) {
-    throw new Error("NEXT_PUBLIC_API_URL cannot point to localhost in production");
+    throw new Error("Ishlab chiqarish muhitida NEXT_PUBLIC_API_URL localhost manziliga yo'naltirilmasligi kerak");
   }
 }
 
@@ -29,7 +29,7 @@ export async function apiClient<TResponse>(
   init?: RequestInit & { token?: string }
 ): Promise<TResponse> {
   if (!API_BASE_URL) {
-    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+    throw new Error("NEXT_PUBLIC_API_URL sozlanmagan");
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -48,7 +48,7 @@ export async function apiClient<TResponse>(
     const message =
       payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
         ? payload.message
-        : `Request failed: ${response.status}`;
+        : `So'rov bajarilmadi: ${response.status}`;
     const code =
       payload && typeof payload === "object" && "code" in payload && typeof payload.code === "string"
         ? payload.code

@@ -22,6 +22,7 @@ export const ROUTES = {
   WORKER_EARNINGS_TAB: "WorkerEarningsTab",
   WORKER_PROFILE_TAB: "WorkerProfileTab",
   WORKER_SUPPORT_TAB: "WorkerSupportTab",
+  WORKER_CREATE_ORDER: "WorkerCreateOrder",
   CATEGORY: "Category",
   WORKER_PROFILE: "WorkerProfile",
   BOOKING: "Booking",

@@ -111,6 +111,7 @@ async function main() {
     const clientAAuth = authUser(clientA);
     const clientBAuth = authUser(clientB);
     const providerAAuth = authUser(providerA);
+    const providerBAuth = authUser(providerB);
 
     await savePushToken(providerA.id, "ExponentPushToken[worker-a-old]", "android", "device-worker-a");
     await savePushToken(providerA.id, "ExponentPushToken[worker-a-new]", "android", "device-worker-a");
@@ -171,6 +172,26 @@ async function main() {
     const cancelled = await createOrder(clientAAuth, { ...createInput, problemTitle: "Cancelled notification" });
     await cancelOrder(clientAAuth, cancelled.id, "Kerak emas");
     assert.equal(await prisma.notification.count({ where: { orderId: cancelled.id, userId: providerA.id, type: "ORDER_CANCELLED" } }), 1);
+
+    const workerCancelled = await createOrder(clientAAuth, {
+      ...createInput,
+      problemTitle: "Worker cancelled after acceptance"
+    });
+    await acceptOrder(providerAAuth, workerCancelled.id);
+    await expectCode(() => cancelOrder(providerBAuth, workerCancelled.id, "Begona order"), "ORDER_NOT_ASSIGNED");
+    const workerCancellationReason = "Favqulodda oilaviy holat";
+    const workerCancelledResult = await cancelOrder(providerAAuth, workerCancelled.id, workerCancellationReason);
+    assert.equal(workerCancelledResult.status, OrderStatus.CANCELLED);
+    assert.equal(workerCancelledResult.cancelReason, workerCancellationReason);
+    const clientCancellationNotification = await prisma.notification.findFirstOrThrow({
+      where: { orderId: workerCancelled.id, userId: clientA.id, type: "ORDER_CANCELLED" }
+    });
+    const cancellationPayload = clientCancellationNotification.payload as { reason?: string; body?: string };
+    assert.equal(cancellationPayload.reason, workerCancellationReason);
+    assert.match(cancellationPayload.body || "", new RegExp(workerCancellationReason));
+    const availableWorker = await prisma.workerAvailability.findUniqueOrThrow({ where: { workerId: workerA.id } });
+    assert.equal(availableWorker.status, WorkerAvailabilityStatus.AVAILABLE);
+    assert.equal(availableWorker.activeOrderId, null);
 
     const selfOrder = await prisma.order.create({
       data: {

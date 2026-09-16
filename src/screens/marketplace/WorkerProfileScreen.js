@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
+import { Image, Linking, Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -11,6 +11,7 @@ import {
   Home,
   MapPin,
   MessageCircle,
+  Phone,
   Share2,
   Star,
   UserRound
@@ -34,6 +35,7 @@ import { formatDistanceMeters } from "../../services/catalog/catalogDistance.mjs
 import { Alert, Text } from "../../i18n/native";
 import { useTranslation } from "react-i18next";
 import { workerCategoryLabel } from "../../services/content/categoryService";
+import { formatWorkerPhone, normalizeWorkerPhone } from "../../utils/workerPhone.mjs";
 
 const font = {
   medium: "Inter_500Medium",
@@ -43,12 +45,13 @@ const font = {
 };
 
 export function WorkerProfileScreen({ navigation, route }) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const worker = useSelectedWorker();
   const session = useAuthStore((state) => state.session);
   const favoriteWorkerIds = useClientStore((state) => state.favoriteWorkerIds);
   const toggleFavoriteWorker = useClientStore((state) => state.toggleFavoriteWorker);
   const upsertPublicWorker = useClientStore((state) => state.upsertPublicWorker);
+  const syncCatalogFromApi = useClientStore((state) => state.syncCatalogFromApi);
   const [openingChat, setOpeningChat] = useState(false);
   const [savingFavorite, setSavingFavorite] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
@@ -102,6 +105,22 @@ export function WorkerProfileScreen({ navigation, route }) {
   const heroImage = resolveWorkerImage(worker);
   const isBookable = worker.availability === WORKER_STATUS.AVAILABLE;
   const reviewCount = reviews.length || Number(worker.reviews || 0);
+  const displayPhone = formatWorkerPhone(worker.phone);
+
+  async function handleCall() {
+    const phone = normalizeWorkerPhone(worker.phone);
+    if (!phone) {
+      const phoneMissing = typeof worker.phone !== "string" || !worker.phone.trim();
+      Alert.alert("Xatolik", phoneMissing ? "Telefon raqam topilmadi" : "Telefon raqam noto'g'ri");
+      return;
+    }
+
+    try {
+      await Linking.openURL(`tel:${phone}`);
+    } catch {
+      Alert.alert("Xatolik", "Telefon ilovasini ochib bo'lmadi.");
+    }
+  }
 
   async function handleChat() {
     if (openingChat) return;
@@ -186,6 +205,10 @@ export function WorkerProfileScreen({ navigation, route }) {
             setBlocking(true);
             const result = await blockUserApi(session.token, undefined, worker.id);
             if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
+            if (result.ok) {
+              await syncCatalogFromApi(route.params?.categoryId);
+              if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
+            }
             setBlocking(false);
             Alert.alert(
               result.ok ? "Usta bloklandi" : "Bloklab bo'lmadi",
@@ -193,6 +216,7 @@ export function WorkerProfileScreen({ navigation, route }) {
                 ? "Bloklangan foydalanuvchilar ro'yxatidan qayta ochishingiz mumkin."
                 : result.message || "Qayta urinib ko'ring."
             );
+            if (result.ok && navigation.canGoBack()) navigation.goBack();
           }
         }
       ]
@@ -275,6 +299,21 @@ export function WorkerProfileScreen({ navigation, route }) {
                 {isBookable ? "Buyurtma berish mumkin" : "Boshqa mavjud ustani tanlang"}
               </Text>
             </View>
+          </View>
+
+          <View style={styles.phoneRow}>
+            <Text style={[styles.phoneText, !displayPhone && styles.phoneTextUnavailable]} translate={!displayPhone}>
+              {displayPhone || "Telefon raqami mavjud emas"}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Ustaga qo'ng'iroq qilish")}
+              hitSlop={8}
+              onPress={handleCall}
+              style={styles.callButton}
+            >
+              <Phone size={22} color="#FFFFFF" strokeWidth={2.7} />
+            </Pressable>
           </View>
         </View>
 
@@ -546,13 +585,13 @@ const styles = StyleSheet.create({
   },
   statValue: {
     color: "#273248",
-    fontSize: 22,
+    fontSize: 16,
     fontFamily: font.extra
   },
   statLabel: {
     marginTop: 9,
     color: "#6B7280",
-    fontSize: 13,
+    fontSize: 11,
     fontFamily: font.semi,
     textAlign: "center"
   },
@@ -582,14 +621,45 @@ const styles = StyleSheet.create({
   },
   availableTitle: {
     color: "#273248",
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: font.extra
   },
   availableText: {
     marginTop: 6,
     color: "#6B7280",
-    fontSize: 15,
+    fontSize: 13,
     fontFamily: font.medium
+  },
+  phoneRow: {
+    minHeight: 54,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#DCECF3",
+    backgroundColor: "#F8FCFE",
+    paddingLeft: 18,
+    paddingRight: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  phoneText: {
+    flex: 1,
+    color: "#273248",
+    fontSize: 15,
+    fontFamily: font.bold
+  },
+  phoneTextUnavailable: {
+    color: "#6B7280",
+    fontSize: 13
+  },
+  callButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    backgroundColor: "#0F80B7",
+    alignItems: "center",
+    justifyContent: "center"
   },
   aboutSection: {
     paddingHorizontal: 24,

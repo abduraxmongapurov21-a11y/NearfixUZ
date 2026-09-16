@@ -13,7 +13,7 @@ export type AdminSupportTicket = {
 
 function token() {
   const value = getAdminToken();
-  if (!value) throw new Error("Admin authentication required");
+  if (!value) throw new Error("Admin sifatida kirish talab qilinadi");
   return value;
 }
 

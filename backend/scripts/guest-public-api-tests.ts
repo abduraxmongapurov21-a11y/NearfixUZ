@@ -21,12 +21,13 @@ const forbidden = new Set([
   , "location", "locationLabel", "locationAddressText", "locationDistrict", "locationLat", "locationLng"
 ]);
 
-function assertNoForbiddenFields(value: unknown, path = "response") {
+function assertNoForbiddenFields(value: unknown, path = "response", allowedPaths = new Set<string>()) {
   if (!value || typeof value !== "object") return;
   for (const [key, nested] of Object.entries(value)) {
     const publicAvailabilityStatus = key === "status" && path.endsWith(".availability");
-    assert.equal(forbidden.has(key) && !publicAvailabilityStatus, false, `forbidden field ${path}.${key}`);
-    assertNoForbiddenFields(nested, `${path}.${key}`);
+    const fieldPath = `${path}.${key}`;
+    assert.equal(forbidden.has(key) && !publicAvailabilityStatus && !allowedPaths.has(fieldPath), false, `forbidden field ${fieldPath}`);
+    assertNoForbiddenFields(nested, fieldPath, allowedPaths);
   }
 }
 
@@ -123,9 +124,13 @@ async function main() {
     const detail = await request(`/workers/${approved.id}`);
     assert.equal(detail.response.status, 200);
     assert.match(detail.response.headers.get("cache-control") || "", /no-store/);
-    assertNoForbiddenFields(detail.payload.worker);
+    assertNoForbiddenFields(detail.payload.worker, "response", new Set(["response.phone"]));
+    assert.equal(detail.payload.worker.phone, provider.phone);
     assert.equal("createdAt" in detail.payload.worker, false);
-    assert.deepEqual(Object.keys(detail.payload.worker).sort(), Object.keys(catalog.payload.workers[0]).sort());
+    assert.deepEqual(
+      Object.keys(detail.payload.worker).filter((key) => key !== "phone").sort(),
+      Object.keys(catalog.payload.workers[0]).sort()
+    );
 
     const catalogEtag = catalog.response.headers.get("etag");
     if (catalogEtag) {
@@ -142,7 +147,29 @@ async function main() {
     const busyDetail = await request(`/workers/${approved.id}`);
     assert.equal(busyDetail.payload.worker.availability.status, WorkerAvailabilityStatus.BUSY);
     const busyCatalog = await request(`/workers/catalog?cityId=${encodeURIComponent(`city-${suffix}`)}`);
-    assert.equal(busyCatalog.payload.workers.length, 0);
+    assert.equal(busyCatalog.payload.workers.length, 1);
+    assert.equal(busyCatalog.payload.workers[0].id, approved.id);
+    assert.equal(busyCatalog.payload.workers[0].availability.status, WorkerAvailabilityStatus.BUSY);
+    assert.equal("activeOrderId" in busyCatalog.payload.workers[0].availability, false);
+
+    await prisma.workerAvailability.update({
+      where: { workerId: approved.id },
+      data: { status: WorkerAvailabilityStatus.BUSY, activeOrderId: null, lockedUntil: null }
+    });
+    const manuallyBusyCatalog = await request(`/workers/catalog?cityId=${encodeURIComponent(`city-${suffix}`)}`);
+    assert.equal(manuallyBusyCatalog.payload.workers.length, 1);
+    assert.equal(manuallyBusyCatalog.payload.workers[0].availability.status, WorkerAvailabilityStatus.BUSY);
+
+    await prisma.workerAvailability.update({
+      where: { workerId: approved.id },
+      data: { status: WorkerAvailabilityStatus.OFFLINE }
+    });
+    const offlineCatalog = await request(`/workers/catalog?cityId=${encodeURIComponent(`city-${suffix}`)}`);
+    assert.equal(offlineCatalog.payload.workers.length, 0);
+    await prisma.workerAvailability.update({
+      where: { workerId: approved.id },
+      data: { status: WorkerAvailabilityStatus.AVAILABLE }
+    });
 
     const privateDetail = await request(`/workers/${draft.id}`);
     assert.equal(privateDetail.response.status, 404);
@@ -167,6 +194,14 @@ async function main() {
     assert.equal(blocked.response.status, 201);
     assert.deepEqual(blocked.payload, { ok: true });
     assertNoForbiddenFields(blocked.payload);
+    const blockedClientCatalog = await request(
+      `/workers/catalog?cityId=${encodeURIComponent(`city-${suffix}`)}`,
+      { token: clientToken }
+    );
+    assert.equal(blockedClientCatalog.response.status, 200);
+    assert.equal(blockedClientCatalog.payload.workers.length, 0, "a client must not see a worker they blocked");
+    const guestCatalogAfterBlock = await request(`/workers/catalog?cityId=${encodeURIComponent(`city-${suffix}`)}`);
+    assert.equal(guestCatalogAfterBlock.payload.workers.length, 1, "a client's block must not alter the guest catalog");
     const duplicate = await request(`/blocks/worker/${approved.id}`, { method: "POST", token: clientToken });
     assert.equal(duplicate.response.status, 201);
     assert.deepEqual(duplicate.payload, { ok: true });

@@ -4,6 +4,7 @@ export type Coordinates = {
 };
 
 const EARTH_RADIUS_METERS = 6_371_008.8;
+export const CATALOG_RADIUS_METERS = 100_000;
 
 function assertCoordinates({ lat, lng }: Coordinates) {
   if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
@@ -37,4 +38,8 @@ export function haversineDistanceMeters(origin: Coordinates, destination: Coordi
   }
 
   return distance;
+}
+
+export function isWithinCatalogRadius(distanceMeters: number | null) {
+  return distanceMeters !== null && distanceMeters <= CATALOG_RADIUS_METERS;
 }

@@ -78,7 +78,7 @@ export const useAdminSessionStore = create<AdminSessionState>((set, get) => ({
       });
       return { ok: true };
     } catch {
-      return { ok: false, message: "Username yoki password noto'g'ri." };
+      return { ok: false, message: "Foydalanuvchi nomi yoki parol noto'g'ri." };
     }
   },
   logout: () => {

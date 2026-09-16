@@ -6,7 +6,7 @@ import { colors, iconSizes, radius, shadow } from "../../theme";
 import { OrderActions } from "./OrderActions";
 import { Text } from "../../i18n/native";
 
-export function ActiveJobCard({ job, onChat, onUpdateStatus, onComplete }) {
+export function ActiveJobCard({ job, onChat, onUpdateStatus, onComplete, onCancel, cancelling }) {
   if (!job) return null;
 
   const category = job.service || "Xizmat";
@@ -69,7 +69,13 @@ export function ActiveJobCard({ job, onChat, onUpdateStatus, onComplete }) {
       </View>
 
       {onUpdateStatus && onComplete ? (
-        <OrderActions currentStatus={statusKey} onComplete={onComplete} onUpdateStatus={onUpdateStatus} />
+        <OrderActions
+          currentStatus={statusKey}
+          onCancel={onCancel}
+          cancelling={cancelling}
+          onComplete={onComplete}
+          onUpdateStatus={onUpdateStatus}
+        />
       ) : null}
     </View>
   );

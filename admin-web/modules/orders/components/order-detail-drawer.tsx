@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AdminOrderDetail } from "@/contracts/admin";
+import { adminLabel } from "@/lib/admin-labels";
 import type { AdminOrderAction } from "../services/orders-service";
 
 type OrderDetailDrawerProps = {
@@ -50,29 +51,29 @@ function getAvailableActions(status?: string): { action: AdminOrderAction; label
 
   if (value === "WAITING_RESPONSE" || value === "WAITING") {
     return [
-      { action: "accept", label: "Accept Order" },
-      { action: "cancel", label: "Cancel Order" }
+      { action: "accept", label: "Buyurtmani qabul qilish" },
+      { action: "cancel", label: "Buyurtmani bekor qilish" }
     ];
   }
 
   if (value === "ACCEPTED") {
     return [
-      { action: "on_the_way", label: "Mark On The Way" },
-      { action: "cancel", label: "Cancel Order" }
+      { action: "on_the_way", label: "Yo'lga chiqdi deb belgilash" },
+      { action: "cancel", label: "Buyurtmani bekor qilish" }
     ];
   }
 
   if (value === "ON_THE_WAY") {
     return [
-      { action: "in_progress", label: "Mark In Progress" },
-      { action: "cancel", label: "Cancel Order" }
+      { action: "in_progress", label: "Ish boshlandi deb belgilash" },
+      { action: "cancel", label: "Buyurtmani bekor qilish" }
     ];
   }
 
   if (value === "IN_PROGRESS") {
     return [
-      { action: "completed", label: "Mark Completed" },
-      { action: "cancel", label: "Cancel Order" }
+      { action: "completed", label: "Bajarildi deb belgilash" },
+      { action: "cancel", label: "Buyurtmani bekor qilish" }
     ];
   }
 
@@ -98,10 +99,10 @@ export function OrderDetailDrawer({
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div>
-            <p className="text-xs font-medium text-muted-foreground">Order detail</p>
-            <h2 className="text-lg font-semibold text-foreground">{order?.publicCode || "Loading"}</h2>
+            <p className="text-xs font-medium text-muted-foreground">Buyurtma tafsilotlari</p>
+            <h2 className="text-lg font-semibold text-foreground">{order?.publicCode || "Yuklanmoqda"}</h2>
           </div>
-          <Button aria-label="Close order detail" onClick={onClose} size="icon" variant="ghost">
+          <Button aria-label="Buyurtma tafsilotlarini yopish" onClick={onClose} size="icon" variant="ghost">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -109,7 +110,7 @@ export function OrderDetailDrawer({
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {isLoading ? (
             <div className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
-              Order detail yuklanmoqda...
+              Buyurtma tafsilotlari yuklanmoqda...
             </div>
           ) : order ? (
             <div className="space-y-4">
@@ -123,55 +124,55 @@ export function OrderDetailDrawer({
                         onClick={() => onAction?.(item.action)}
                         variant={item.action === "cancel" ? "outline" : "default"}
                       >
-                        {pendingAction === item.action ? "Processing..." : item.label}
+                        {pendingAction === item.action ? "Bajarilmoqda..." : item.label}
                       </Button>
                     ))
                   ) : (
-                    <p className="text-sm text-muted-foreground">Read only</p>
+                    <p className="text-sm text-muted-foreground">Faqat ko'rish uchun</p>
                   )}
                 </div>
                 {actionSuccess ? <p className="mt-3 text-sm text-green-600">{actionSuccess}</p> : null}
                 {actionError ? <p className="mt-3 text-sm text-red-600">{actionError}</p> : null}
               </section>
 
-              <Section title="Order Information">
-                <Field label="Order ID" value={order.id} />
-                <Field label="Public Code" value={order.publicCode} />
-                <Field label="Status" value={order.status} />
-                <Field label="Created At" value={order.createdAt} />
-                <Field label="City" value={order.city} />
-                <Field label="Service" value={order.service} />
-                <Field label="Problem Title" value={order.problemTitle} />
-                <Field label="Problem Description" value={order.problemDescription} />
-                <Field label="Price Estimate" value={formatAmount(order.priceEstimate)} />
-                <Field label="Final Amount" value={formatAmount(order.finalAmount)} />
-                <Field label="Response Deadline" value={order.responseDeadline} />
-                <Field label="Cancel Reason" value={order.cancelReason} />
+              <Section title="Buyurtma ma'lumotlari">
+                <Field label="Buyurtma ID raqami" value={order.id} />
+                <Field label="Ochiq kod" value={order.publicCode} />
+                <Field label="Holat" value={adminLabel(order.status)} />
+                <Field label="Yaratilgan vaqti" value={order.createdAt} />
+                <Field label="Shahar" value={adminLabel(order.city)} />
+                <Field label="Xizmat" value={order.service} />
+                <Field label="Muammo sarlavhasi" value={order.problemTitle} />
+                <Field label="Muammo tavsifi" value={order.problemDescription} />
+                <Field label="Taxminiy narx" value={formatAmount(order.priceEstimate)} />
+                <Field label="Yakuniy summa" value={formatAmount(order.finalAmount)} />
+                <Field label="Javob muddati" value={order.responseDeadline} />
+                <Field label="Bekor qilish sababi" value={order.cancelReason} />
               </Section>
 
-              <Section title="Client Information">
-                <Field label="Client ID" value={order.client.id} />
-                <Field label="Name" value={order.client.name} />
-                <Field label="Phone" value={order.client.phone} />
+              <Section title="Mijoz ma'lumotlari">
+                <Field label="Mijoz ID raqami" value={order.client.id} />
+                <Field label="Ism" value={order.client.name} />
+                <Field label="Telefon" value={order.client.phone} />
               </Section>
 
-              <Section title="Worker Information">
-                <Field label="Worker ID" value={order.worker.id} />
-                <Field label="Name" value={order.worker.name} />
-                <Field label="Phone" value={order.worker.phone} />
-                <Field label="Profession" value={order.worker.profession} />
-                <Field label="Availability" value={order.worker.availability} />
+              <Section title="Usta ma'lumotlari">
+                <Field label="Usta ID raqami" value={order.worker.id} />
+                <Field label="Ism" value={order.worker.name} />
+                <Field label="Telefon" value={order.worker.phone} />
+                <Field label="Kasb" value={order.worker.profession} />
+                <Field label="Bandlik holati" value={adminLabel(order.worker.availability)} />
               </Section>
 
-              <Section title="Address Information">
+              <Section title="Manzil ma'lumotlari">
                 {order.location ? (
                   <>
-                    <Field label="Label" value={order.location.label} />
-                    <Field label="City" value={order.location.cityId} />
-                    <Field label="District" value={order.location.district} />
-                    <Field label="Address" value={order.location.addressText} />
+                    <Field label="Nomi" value={order.location.label} />
+                    <Field label="Shahar" value={adminLabel(order.location.cityId)} />
+                    <Field label="Tuman" value={order.location.district} />
+                    <Field label="Manzil" value={order.location.addressText} />
                     <Field
-                      label="Coordinates"
+                      label="Koordinatalar"
                       value={
                         order.location.lat && order.location.lng
                           ? `${order.location.lat}, ${order.location.lng}`
@@ -180,57 +181,57 @@ export function OrderDetailDrawer({
                     />
                   </>
                 ) : (
-                  <p className="text-muted-foreground">Address ma'lumoti yo'q.</p>
+                  <p className="text-muted-foreground">Manzil ma'lumoti yo'q.</p>
                 )}
               </Section>
 
-              <Section title="Payment Information">
+              <Section title="To'lov ma'lumotlari">
                 {order.payments.length ? (
                   <div className="space-y-3">
                     {order.payments.map((payment) => (
                       <div className="rounded-md border p-3" key={payment.id}>
-                        <Field label="Provider" value={payment.provider} />
-                        <Field label="Status" value={payment.status} />
-                        <Field label="Amount" value={formatAmount(payment.amount)} />
-                        <Field label="External ID" value={payment.externalId} />
-                        <Field label="Created At" value={payment.createdAt} />
-                        <Field label="Updated At" value={payment.updatedAt} />
+                        <Field label="To'lov tizimi" value={payment.provider} />
+                        <Field label="Holat" value={adminLabel(payment.status)} />
+                        <Field label="Summa" value={formatAmount(payment.amount)} />
+                        <Field label="Tashqi ID raqami" value={payment.externalId} />
+                        <Field label="Yaratilgan vaqti" value={payment.createdAt} />
+                        <Field label="Yangilangan vaqti" value={payment.updatedAt} />
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground">Payment yozuvlari yo'q.</p>
+                  <p className="text-muted-foreground">To'lov yozuvlari yo'q.</p>
                 )}
               </Section>
 
-              <Section title="Timeline Information">
+              <Section title="Buyurtma tarixi">
                 {order.timeline.length ? (
                   <div className="space-y-3">
                     {order.timeline.map((event) => (
                       <div className="rounded-md border p-3" key={event.id}>
-                        <Field label="Created At" value={event.createdAt} />
-                        <Field label="Event Type" value={event.eventType} />
-                        <Field label="Actor Type" value={event.actorType} />
+                        <Field label="Yaratilgan vaqti" value={event.createdAt} />
+                        <Field label="Hodisa turi" value={adminLabel(event.eventType)} />
+                        <Field label="Bajaruvchi turi" value={adminLabel(event.actorType)} />
                         <Field
-                          label="Status Change"
+                          label="Holat o'zgarishi"
                           value={
                             event.fromStatus || event.toStatus
                               ? `${valueOrDash(event.fromStatus)} -> ${valueOrDash(event.toStatus)}`
                               : null
                           }
                         />
-                        <Field label="Message" value={event.message} />
+                        <Field label="Xabar" value={event.message} />
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground">Timeline yozuvlari yo'q.</p>
+                  <p className="text-muted-foreground">Buyurtma tarixi yozuvlari yo'q.</p>
                 )}
               </Section>
             </div>
           ) : (
             <div className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
-              Order detail topilmadi.
+              Buyurtma tafsilotlari topilmadi.
             </div>
           )}
         </div>

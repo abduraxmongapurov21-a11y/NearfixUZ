@@ -20,7 +20,7 @@ async function promoteUser(userId: string) {
 export const usersColumns: ColumnDef<AdminUser>[] = [
   {
     accessorKey: "name",
-    header: "User",
+    header: "Foydalanuvchi",
     cell: ({ row }) => (
       <div>
         <div className="font-medium">{row.original.name}</div>
@@ -30,21 +30,21 @@ export const usersColumns: ColumnDef<AdminUser>[] = [
   },
   {
     accessorKey: "role",
-    header: "Role",
+    header: "Rol",
     cell: ({ row }) => <StatusBadge status={row.original.role} />
   },
-  { accessorKey: "city", header: "City" },
-  { accessorKey: "registeredAt", header: "Registered" },
+  { accessorKey: "city", header: "Shahar" },
+  { accessorKey: "registeredAt", header: "Ro'yxatdan o'tgan" },
   {
     id: "actions",
-    header: "Action",
+    header: "Amal",
     cell: ({ row }) =>
       row.original.role === "client" ? (
         <Button onClick={() => promoteUser(row.original.id)} size="sm" variant="outline">
-          Prepare worker application
+          Usta arizasiga tayyorlash
         </Button>
       ) : (
-        <span className="text-xs text-muted-foreground">Worker access active</span>
+        <span className="text-xs text-muted-foreground">Usta huquqi faol</span>
       )
   }
 ];

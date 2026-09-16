@@ -10,7 +10,7 @@ import { colors } from "./src/theme";
 import "./src/i18n";
 import { Text } from "./src/i18n/native";
 import { useAuthStore } from "./src/store/authStore";
-import { navigateToNotificationTarget } from "./src/services/notifications/notificationNavigation.mjs";
+import { processNotificationResponse } from "./src/services/notifications/notificationNavigation.mjs";
 
 enableScreens();
 
@@ -51,6 +51,7 @@ class ErrorBoundary extends React.Component {
 
 export default function App() {
   const handledNotificationId = useRef(null);
+  const processingNotificationId = useRef(null);
   const pendingNotificationResponse = useRef(null);
   const session = useAuthStore((state) => state.session);
   const [fontsLoaded] = useFonts({
@@ -63,19 +64,28 @@ export default function App() {
 
   const handleNotificationResponse = useCallback((response) => {
     const identifier = response?.notification?.request?.identifier;
-    if (!identifier || identifier === handledNotificationId.current) return;
-    const currentSession = useAuthStore.getState().session;
-    if (!currentSession || !navigationRef.isReady()) {
-      pendingNotificationResponse.current = response;
-      return;
+    if (!identifier || identifier === processingNotificationId.current) return false;
+
+    processingNotificationId.current = identifier;
+    try {
+      const result = processNotificationResponse({
+        navigation: navigationRef,
+        response,
+        session: useAuthStore.getState().session,
+        handledIdentifier: handledNotificationId.current
+      });
+
+      if (result.status === "handled") {
+        handledNotificationId.current = result.identifier;
+        pendingNotificationResponse.current = null;
+        return true;
+      }
+
+      if (result.status === "pending") pendingNotificationResponse.current = response;
+      return false;
+    } finally {
+      processingNotificationId.current = null;
     }
-    handledNotificationId.current = identifier;
-    pendingNotificationResponse.current = null;
-    navigateToNotificationTarget(
-      navigationRef,
-      response.notification.request.content.data,
-      currentSession.role
-    );
   }, []);
 
   useEffect(() => {
@@ -83,9 +93,12 @@ export default function App() {
 
     const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
     Notifications.getLastNotificationResponseAsync().then(handleResponse).catch(() => null);
-    if (pendingNotificationResponse.current) handleResponse(pendingNotificationResponse.current);
     return () => subscription.remove();
-  }, [handleNotificationResponse, session?.role, session?.userId]);
+  }, [handleNotificationResponse]);
+
+  useEffect(() => {
+    if (pendingNotificationResponse.current) handleNotificationResponse(pendingNotificationResponse.current);
+  }, [handleNotificationResponse, session?.experienceMode, session?.role, session?.userId]);
 
   if (!fontsLoaded) {
     return <View style={styles.app} />;
@@ -98,6 +111,7 @@ export default function App() {
           <NavigationContainer
             ref={navigationRef}
             onReady={() => handleNotificationResponse(pendingNotificationResponse.current)}
+            onStateChange={() => handleNotificationResponse(pendingNotificationResponse.current)}
           >
             <StatusBar barStyle="dark-content" />
             <AppNavigator />

@@ -1,21 +1,3 @@
-export const CITIES = [
-  {
-    id: "tashkent",
-    name: "Toshkent",
-    supported: true
-  },
-  {
-    id: "andijan",
-    name: "Andijon",
-    supported: false
-  },
-  {
-    id: "samarkand",
-    name: "Samarqand",
-    supported: false
-  }
-];
-
 export const DISTRICTS = ["Barchasi", "Yunusobod", "Chilonzor", "Mirzo Ulug'bek"];
 
 export const PRICE_RANGES = [

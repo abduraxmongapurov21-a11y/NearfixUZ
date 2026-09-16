@@ -9,7 +9,7 @@ function mapRole(role: string): UserRole {
 
 export async function getUsers(): Promise<AdminUser[]> {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin authentication required");
+  if (!token) throw new Error("Admin sifatida kirish talab qilinadi");
 
   const payload = await apiClient<{ ok: boolean; users: any[] }>("/admin/users", { token });
   return payload.users.map((user) => ({

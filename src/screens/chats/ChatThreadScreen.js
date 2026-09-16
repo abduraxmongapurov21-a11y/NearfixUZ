@@ -34,6 +34,7 @@ import { useAuthStore } from "../../store/authStore";
 import { ReportModal } from "../../components/moderation/ReportModal";
 import { blockUserApi } from "../../services/moderation/moderationService";
 import { Alert, Text, TextInput } from "../../i18n/native";
+import { normalizeExperienceMode } from "../../navigation/experienceMode.mjs";
 
 const font = {
   medium: "Inter_500Medium",
@@ -100,6 +101,7 @@ export function ChatThreadScreen({ navigation, route }) {
   const scrollRef = useRef(null);
   const insets = useSafeAreaInsets();
   const session = useAuthStore((state) => state.session);
+  const experienceMode = normalizeExperienceMode(session?.role, session?.experienceMode);
   const room = route.params?.room || {
     title: "Chat",
     participants: 0,
@@ -537,7 +539,7 @@ export function ChatThreadScreen({ navigation, route }) {
         onSuccess={() => Alert.alert("Shikoyat yuborildi", "Moderatorlar murojaatingizni ko‘rib chiqadi.")}
       />
 
-      {keyboardVisible ? null : <ScreenBottomNav navigation={navigation} role={session?.role} />}
+      {keyboardVisible ? null : <ScreenBottomNav navigation={navigation} experienceMode={experienceMode} />}
     </View>
   );
 }
@@ -650,12 +652,12 @@ function AttachmentSheet({ visible, onClose, onPickImage, onTakePhoto }) {
   );
 }
 
-function ScreenBottomNav({ navigation, role }) {
+function ScreenBottomNav({ navigation, experienceMode }) {
   function goTab(screen) {
-    navigation.navigate(role === "provider" ? ROUTES.WORKER_TABS : ROUTES.CLIENT_TABS, { screen });
+    navigation.navigate(experienceMode === "worker" ? ROUTES.WORKER_TABS : ROUTES.CLIENT_TABS, { screen });
   }
 
-  if (role === "provider") {
+  if (experienceMode === "worker") {
     return (
       <View style={styles.bottomNav}>
         <Pressable style={styles.navItem} onPress={() => goTab(ROUTES.WORKER_DASHBOARD_TAB)}>

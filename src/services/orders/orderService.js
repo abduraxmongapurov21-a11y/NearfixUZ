@@ -39,10 +39,12 @@ export function mapApiOrder(order) {
     price: amount ? `${Number(amount).toLocaleString("uz-UZ")} so'm` : "Kelishiladi",
     amount: amount ? `${Number(amount).toLocaleString("uz-UZ")} so'm` : "Kelishiladi",
     status: order.status,
+    source: order.source || "CLIENT_APP",
     statusKey: apiToTrackingStatus[order.status] || TRACKING_STATUSES.REQUEST_SENT,
     eta: order.status === "ON_THE_WAY" ? "Yo'lda" : "1 soat ichida",
     createdAt: order.createdAt ? new Date(order.createdAt).getTime() : Date.now(),
     responseDeadlineAt: order.responseDeadlineAt ? new Date(order.responseDeadlineAt).getTime() : undefined,
+    cancellationReason: order.cancelReason || null,
     events: order.events || [],
     review: order.review || null
   };

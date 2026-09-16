@@ -16,7 +16,10 @@ const usernames = [
   "mgmt-regular-target",
   "mgmt-disabled-target"
 ];
-const mobilePhone = "+998991119915";
+const mobilePhone = "+998997770151";
+const workerPhone = "+998997770152";
+const historyWorkerPhone = "+998997770153";
+const historyOrderCode = "ADMIN-WORKER-DELETE-HISTORY";
 
 async function cleanup() {
   const admins = await prisma.adminAccount.findMany({
@@ -30,7 +33,8 @@ async function cleanup() {
     where: {
       OR: [
         { actorAdminId: { in: admins.map((admin) => admin.id) } },
-        { targetId: { in: admins.map((admin) => admin.id) } }
+        { targetId: { in: admins.map((admin) => admin.id) } },
+        { action: "worker.deleted" }
       ]
     }
   });
@@ -39,8 +43,9 @@ async function cleanup() {
       username: { in: usernames }
     }
   });
+  await prisma.order.deleteMany({ where: { publicCode: historyOrderCode } });
   await prisma.user.deleteMany({
-    where: { phone: mobilePhone }
+    where: { phone: { in: [mobilePhone, workerPhone, historyWorkerPhone] } }
   });
 }
 
@@ -93,6 +98,32 @@ async function main() {
       role: UserRole.CLIENT
     }
   });
+  const workerUser = await prisma.user.create({
+    data: {
+      phone: workerPhone,
+      role: UserRole.PROVIDER,
+      workerProfile: { create: {} }
+    },
+    include: { workerProfile: true }
+  });
+  const historyWorkerUser = await prisma.user.create({
+    data: {
+      phone: historyWorkerPhone,
+      role: UserRole.PROVIDER,
+      workerProfile: { create: {} }
+    },
+    include: { workerProfile: true }
+  });
+  await prisma.order.create({
+    data: {
+      publicCode: historyOrderCode,
+      clientId: mobileUser.id,
+      workerId: historyWorkerUser.workerProfile!.id,
+      cityId: "tashkent",
+      serviceType: "Sinov xizmati",
+      problemTitle: "Tarixiy buyurtma"
+    }
+  });
 
   const server = createApp().listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -123,6 +154,39 @@ async function main() {
     const superToken = await login("mgmt-super", "SuperAdminPassword-123");
     const noManageToken = await login("mgmt-regular-no-manage", "NoManagePassword-123");
     const manageToken = await login("mgmt-regular-manage", "ManageAdminPassword-123");
+
+    const forbiddenWorkerDelete = await request(
+      "DELETE",
+      `/admin/workers/${workerUser.workerProfile!.id}`,
+      noManageToken
+    );
+    assert.equal(forbiddenWorkerDelete.response.status, 403);
+
+    const deletedWorker = await request(
+      "DELETE",
+      `/admin/workers/${workerUser.workerProfile!.id}`,
+      envToken
+    );
+    assert.equal(deletedWorker.response.status, 200);
+    assert.equal(deletedWorker.payload.workerId, workerUser.workerProfile!.id);
+    assert.equal(
+      await prisma.workerProfile.findUnique({ where: { id: workerUser.workerProfile!.id } }),
+      null
+    );
+    const revertedWorkerUser = await prisma.user.findUniqueOrThrow({ where: { id: workerUser.id } });
+    assert.equal(revertedWorkerUser.role, UserRole.CLIENT);
+    assert.equal(revertedWorkerUser.sessionVersion, workerUser.sessionVersion + 1);
+
+    const historyWorkerDelete = await request(
+      "DELETE",
+      `/admin/workers/${historyWorkerUser.workerProfile!.id}`,
+      envToken
+    );
+    assert.equal(historyWorkerDelete.response.status, 409);
+    assert.equal(historyWorkerDelete.payload.code, "WORKER_DELETE_HAS_HISTORY");
+    assert.ok(
+      await prisma.workerProfile.findUnique({ where: { id: historyWorkerUser.workerProfile!.id } })
+    );
 
     const userCountBefore = await prisma.user.count();
     const envCreate = await request("POST", "/admin/admins", envToken, {
@@ -238,7 +302,8 @@ async function main() {
             "admin.created",
             "admin.password_reset",
             "admin.permissions_updated",
-            "admin.disabled"
+            "admin.disabled",
+            "worker.deleted"
           ]
         }
       }

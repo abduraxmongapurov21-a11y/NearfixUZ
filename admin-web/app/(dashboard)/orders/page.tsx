@@ -5,8 +5,8 @@ export default function OrdersPage() {
   return (
     <>
       <PageHeader
-        description="Operational radar for service lifecycle, response waiting, payment state and order transparency."
-        title="Orders"
+        description="Buyurtma jarayoni, javob kutish, to'lov va xizmat holatini kuzatish."
+        title="Buyurtmalar"
       />
       <OrdersTable />
     </>

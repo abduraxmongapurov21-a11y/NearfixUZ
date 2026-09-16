@@ -8,13 +8,13 @@ import { hasPermission, isSuperAdmin, type AdminPermission } from "@/shared/auth
 import { useAdminSessionStore } from "@/stores/admin-session-store";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "analytics.read" },
-  { href: "/orders", label: "Orders", icon: ClipboardList, permission: "orders.read" },
-  { href: "/workers", label: "Workers", icon: Wrench, permission: "workers.read" },
-  { href: "/users", label: "Users", icon: Users, permission: "users.read" },
-  { href: "/reviews", label: "Reviews", icon: Star, permission: "reviews.read" },
-  { href: "/reports", label: "Reports", icon: Flag, permission: "reports.read" },
-  { href: "/support", label: "Support", icon: LifeBuoy, permission: "support.read" }
+  { href: "/dashboard", label: "Bosh sahifa", icon: LayoutDashboard, permission: "analytics.read" },
+  { href: "/orders", label: "Buyurtmalar", icon: ClipboardList, permission: "orders.read" },
+  { href: "/workers", label: "Ustalar", icon: Wrench, permission: "workers.read" },
+  { href: "/users", label: "Foydalanuvchilar", icon: Users, permission: "users.read" },
+  { href: "/reviews", label: "Sharhlar", icon: Star, permission: "reviews.read" },
+  { href: "/reports", label: "Shikoyatlar", icon: Flag, permission: "reports.read" },
+  { href: "/support", label: "Yordam", icon: LifeBuoy, permission: "support.read" }
 ] satisfies {
   href: string;
   label: string;
@@ -23,8 +23,8 @@ const navItems = [
 }[];
 
 const contentNavItems = [
-  { href: "/content/banners", label: "Banners", icon: Images, permission: "content.read" },
-  { href: "/content/categories", label: "Categories", icon: Shapes, permission: "content.read" }
+  { href: "/content/banners", label: "Bannerlar", icon: Images, permission: "content.read" },
+  { href: "/content/categories", label: "Kategoriyalar", icon: Shapes, permission: "content.read" }
 ] satisfies {
   href: string;
   label: string;
@@ -33,8 +33,8 @@ const contentNavItems = [
 }[];
 
 const systemNavItems = [
-  { href: "/system/admins", label: "Admins", icon: Shield, permissions: ["admins.read", "admins.manage"] },
-  { href: "/system/audit-logs", label: "Audit Logs", icon: History, permissions: ["audit.read"] }
+  { href: "/system/admins", label: "Adminlar", icon: Shield, permissions: ["admins.read", "admins.manage"] },
+  { href: "/system/audit-logs", label: "Amallar tarixi", icon: History, permissions: ["audit.read"] }
 ] satisfies {
   href: string;
   label: string;
@@ -75,7 +75,7 @@ export function AppSidebar() {
       <div className="border-b px-6 py-5">
         <div className="text-xl font-semibold tracking-tight">NearFIX</div>
         <div className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Operations Center
+          Boshqaruv markazi
         </div>
       </div>
 
@@ -84,7 +84,7 @@ export function AppSidebar() {
         {visibleContentNavItems.length ? (
           <>
             <div className="px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Content
+              Kontent
             </div>
             {visibleContentNavItems.map(renderLink)}
           </>
@@ -92,7 +92,7 @@ export function AppSidebar() {
         {visibleSystemNavItems.length ? (
           <>
             <div className="px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              System
+              Tizim
             </div>
             {visibleSystemNavItems.map(renderLink)}
           </>
@@ -101,8 +101,8 @@ export function AppSidebar() {
 
       <div className="border-t p-4">
         <div className="rounded-md bg-muted px-3 py-3 text-xs text-muted-foreground">
-          Admin buyurtmalarni kuzatadi, worker sifatini nazorat qiladi va zarur
-          holatda order statusini boshqaradi.
+          Bu panel orqali buyurtmalar kuzatiladi, ustalar sifati nazorat qilinadi
+          va zarur holatda buyurtma holati boshqariladi.
         </div>
       </div>
     </aside>

@@ -3,7 +3,7 @@ import type { AdminCategory, CategoriesPayload, CategoryInput } from "../types/c
 
 function token() {
   const value = getAdminToken();
-  if (!value) throw new Error("Admin token is missing");
+  if (!value) throw new Error("Admin sessiyasi topilmadi");
   return value;
 }
 

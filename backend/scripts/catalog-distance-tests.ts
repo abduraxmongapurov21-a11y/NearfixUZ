@@ -5,7 +5,11 @@ import { prisma } from "../src/db/prisma.js";
 import { createApp } from "../src/http/app.js";
 import { createAccessToken } from "../src/modules/auth/session.js";
 import { promoteProviderSchema } from "../src/modules/admin/admin.contracts.js";
-import { haversineDistanceMeters } from "../src/modules/workers/distance.js";
+import {
+  CATALOG_RADIUS_METERS,
+  haversineDistanceMeters,
+  isWithinCatalogRadius
+} from "../src/modules/workers/distance.js";
 
 const suffix = String(Date.now()).slice(-7);
 const cityId = `distance-test-${suffix}`;
@@ -16,7 +20,8 @@ const phones = [
   `+99897${suffix}`,
   `+99898${suffix}`,
   `+99899${suffix}`,
-  `+99894${suffix}`
+  `+99894${suffix}`,
+  `+99893${suffix}`
 ];
 
 async function cleanup() {
@@ -44,6 +49,10 @@ async function main() {
   const oneDegreeAtEquator = haversineDistanceMeters({ lat: 0, lng: 0 }, { lat: 0, lng: 1 });
   assert.ok(Number.isInteger(oneDegreeAtEquator));
   assert.ok(oneDegreeAtEquator >= 111_100 && oneDegreeAtEquator <= 111_300);
+  assert.equal(CATALOG_RADIUS_METERS, 100_000);
+  assert.equal(isWithinCatalogRadius(100_000), true);
+  assert.equal(isWithinCatalogRadius(100_001), false);
+  assert.equal(isWithinCatalogRadius(null), false);
   assert.throws(
     () => haversineDistanceMeters({ lat: Number.NaN, lng: 0 }, { lat: 0, lng: 0 }),
     RangeError
@@ -57,17 +66,18 @@ async function main() {
 
   await cleanup();
 
-  const [client, otherClient, locatedProvider, unlocatedProvider, fartherProvider, draftProvider] = await Promise.all([
+  const [client, otherClient, locatedProvider, unlocatedProvider, fartherProvider, draftProvider, distantProvider] = await Promise.all([
     prisma.user.create({ data: { phone: phones[0], name: "Distance Client", role: UserRole.CLIENT, cityId } }),
     prisma.user.create({ data: { phone: phones[1], name: "Other Client", role: UserRole.CLIENT, cityId } }),
     prisma.user.create({ data: { phone: phones[2], name: "Located Provider", role: UserRole.PROVIDER, cityId } }),
     prisma.user.create({ data: { phone: phones[3], name: "Unlocated Provider", role: UserRole.PROVIDER, cityId } }),
-    prisma.user.create({ data: { phone: phones[4], name: "Farther Provider", role: UserRole.PROVIDER, cityId } }),
-    prisma.user.create({ data: { phone: phones[5], name: "Draft Provider", role: UserRole.PROVIDER, cityId } })
+    prisma.user.create({ data: { phone: phones[4], name: "Farther Provider", role: UserRole.PROVIDER, cityId: `other-${cityId}` } }),
+    prisma.user.create({ data: { phone: phones[5], name: "Draft Provider", role: UserRole.PROVIDER, cityId } }),
+    prisma.user.create({ data: { phone: phones[6], name: "Distant Provider", role: UserRole.PROVIDER, cityId } })
   ]);
 
   const initialLocationTimestamp = new Date(Date.now() - 1000);
-  const [locatedWorker, unlocatedWorker, fartherWorker] = await Promise.all([
+  const [locatedWorker, unlocatedWorker, fartherWorker, distantWorker] = await Promise.all([
     prisma.workerProfile.create({
       data: {
         userId: locatedProvider.id,
@@ -112,6 +122,22 @@ async function main() {
         serviceLng: 69.35,
         serviceLocationUpdatedAt: initialLocationTimestamp
       }
+    }),
+    prisma.workerProfile.create({
+      data: {
+        userId: distantProvider.id,
+        status: WorkerProfileStatus.APPROVED,
+        profession,
+        professions: [profession],
+        experienceYears: 6,
+        profileImageUrl: "https://example.com/distant-worker.png",
+        bio: "Worker outside the 100 kilometer catalog radius.",
+        basePrice: 70_000,
+        ratingAvg: 4.8,
+        serviceLat: 42.5,
+        serviceLng: 69.24,
+        serviceLocationUpdatedAt: initialLocationTimestamp
+      }
     })
   ]);
 
@@ -134,6 +160,9 @@ async function main() {
     }),
     prisma.workerAvailability.create({
       data: { workerId: fartherWorker.id, status: WorkerAvailabilityStatus.AVAILABLE }
+    }),
+    prisma.workerAvailability.create({
+      data: { workerId: distantWorker.id, status: WorkerAvailabilityStatus.AVAILABLE }
     })
   ]);
 
@@ -207,7 +236,7 @@ async function main() {
     const existingCatalog = await request(`/workers/catalog?${catalogQuery}`);
     assert.equal(existingCatalog.response.status, 200);
     assert.equal(existingCatalog.payload.workers.length, 3);
-    assert.equal(existingCatalog.payload.workers[0].id, fartherWorker.id);
+    assert.equal(existingCatalog.payload.workers[0].id, locatedWorker.id);
     assert.ok(existingCatalog.payload.workers.every((worker: any) => worker.distanceMeters === null));
 
     const filteredCatalog = await request(
@@ -227,9 +256,16 @@ async function main() {
     assert.equal(catalogWithDistance.response.status, 200);
     const locatedResult = catalogWithDistance.payload.workers.find((worker: any) => worker.id === locatedWorker.id);
     const unlocatedResult = catalogWithDistance.payload.workers.find((worker: any) => worker.id === unlocatedWorker.id);
+    const distantResult = catalogWithDistance.payload.workers.find((worker: any) => worker.id === distantWorker.id);
     assert.ok(Number.isInteger(locatedResult.distanceMeters));
     assert.ok(locatedResult.distanceMeters > 0);
-    assert.equal(unlocatedResult.distanceMeters, null);
+    assert.equal(unlocatedResult, undefined, "workers without service coordinates must not appear in radius results");
+    assert.equal(distantResult, undefined, "workers beyond 100 km must not appear in radius results");
+    assert.ok(
+      catalogWithDistance.payload.workers.some((worker: any) => worker.id === fartherWorker.id),
+      "radius results must ignore the legacy city filter"
+    );
+    assert.ok(catalogWithDistance.payload.workers.every((worker: any) => worker.distanceMeters <= CATALOG_RADIUS_METERS));
     for (const worker of catalogWithDistance.payload.workers) {
       assert.equal("serviceLat" in worker, false);
       assert.equal("serviceLng" in worker, false);
@@ -243,10 +279,9 @@ async function main() {
     assert.equal(nearestCatalog.response.status, 200);
     assert.deepEqual(
       nearestCatalog.payload.workers.map((worker: any) => worker.id),
-      [locatedWorker.id, fartherWorker.id, unlocatedWorker.id]
+      [locatedWorker.id, fartherWorker.id]
     );
     assert.ok(nearestCatalog.payload.workers[0].distanceMeters < nearestCatalog.payload.workers[1].distanceMeters);
-    assert.equal(nearestCatalog.payload.workers[2].distanceMeters, null);
 
     const nearestWithIgnoredPagination = await request(
       `/workers/catalog?${catalogQuery}&originAddressId=${encodeURIComponent(originAddress.id)}&sort=nearest&limit=1&page=2`,
@@ -254,7 +289,7 @@ async function main() {
     );
     assert.deepEqual(
       nearestWithIgnoredPagination.payload.workers.map((worker: any) => worker.id),
-      [locatedWorker.id, fartherWorker.id, unlocatedWorker.id]
+      [locatedWorker.id, fartherWorker.id]
     );
 
     const nearestWithoutOrigin = await request(`/workers/catalog?${catalogQuery}&sort=nearest`);
@@ -489,6 +524,8 @@ async function main() {
       JSON.stringify({
         haversine: "pass",
         catalogDistance: "pass",
+        catalogRadius100Km: "pass",
+        catalogCityIndependence: "pass",
         addressOwnership: "pass",
         workerLocationValidation: "pass",
         catalogPrivacy: "pass",

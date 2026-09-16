@@ -90,7 +90,6 @@ export const useClientStore = create((set, get) => ({
     saving: false,
     error: null
   },
-  selectedCityId: "tashkent",
   favoriteWorkerIds: [],
   apiStatus: {
     catalogSource: "mock",
@@ -128,19 +127,21 @@ export const useClientStore = create((set, get) => ({
       }
     });
   },
-  setSelectedCity: (cityId) => set({ selectedCityId: cityId }),
   setCatalogOriginAddressId: (addressId) =>
     set((state) => {
       const resolvedAddressId = resolveCatalogOriginAddressId(addressId, state.savedAddresses);
       return {
         catalogOriginAddressId: resolvedAddressId,
-        catalogSort: resolvedAddressId ? state.catalogSort : "recommended"
+        catalogSort: !resolvedAddressId && state.catalogSort === "nearest" ? "recommended" : state.catalogSort
       };
     }),
   setCatalogSort: (sort) =>
-    set((state) => ({
-      catalogSort: sort === "nearest" && state.catalogOriginAddressId ? "nearest" : "recommended"
-    })),
+    set((state) => {
+      const requestedSort = ["recommended", "nearest", "rating", "price"].includes(sort) ? sort : "recommended";
+      return {
+        catalogSort: requestedSort === "nearest" && !state.catalogOriginAddressId ? "recommended" : requestedSort
+      };
+    }),
   syncCategoriesFromApi: async () => {
     if (categorySyncPromise) return categorySyncPromise;
     categorySyncPromise = (async () => {
@@ -209,20 +210,24 @@ export const useClientStore = create((set, get) => ({
       stateAtRequest.catalogOriginAddressId,
       stateAtRequest.savedAddresses
     );
-    const sort = stateAtRequest.catalogSort === "nearest" && originAddressId ? "nearest" : "recommended";
+    const selectedSort = ["recommended", "nearest", "rating", "price"].includes(stateAtRequest.catalogSort)
+      ? stateAtRequest.catalogSort
+      : "recommended";
+    const catalogSort = selectedSort === "nearest" && !originAddressId ? "recommended" : selectedSort;
+    const requestSort = catalogSort === "nearest" ? "nearest" : "recommended";
     const requestVersion = ++catalogRequestSequence;
     const token = useAuthStore.getState().session?.token;
 
     set({
       catalogOriginAddressId: originAddressId,
-      catalogSort: sort,
+      catalogSort,
       catalogLoading: true,
       catalogRequestVersion: requestVersion
     });
 
-    const result = await clientStoreDependencies.fetchCatalogWorkers(stateAtRequest.selectedCityId, categoryId, {
+    const result = await clientStoreDependencies.fetchCatalogWorkers(categoryId, {
       originAddressId,
-      sort,
+      sort: requestSort,
       token
     });
 

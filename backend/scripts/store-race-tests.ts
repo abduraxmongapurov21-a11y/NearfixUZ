@@ -5,6 +5,7 @@ process.env.EXPO_PUBLIC_API_BASE_URL = "http://127.0.0.1:4000";
 
 const { configureClientStoreForTests, useClientStore } = await import("../../src/store/clientStore.js");
 const { configureWorkerStoreForTests, useWorkerStore } = await import("../../src/store/workerStore.js");
+const { mapApiWorkerProfile } = await import("../../src/services/workers/workerService.js");
 const { useAuthStore } = await import("../../src/store/authStore.js");
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
@@ -37,7 +38,9 @@ const workerCalls = {
   orders: [] as Deferred<any>[],
   earnings: [] as Deferred<any>[],
   transactions: [] as Deferred<any>[],
-  location: [] as Deferred<any>[]
+  location: [] as Deferred<any>[],
+  cancel: [] as Deferred<any>[],
+  createOrder: [] as Deferred<any>[]
 };
 
 function enqueue<T>(queue: Deferred<T>[]) {
@@ -73,7 +76,9 @@ const restoreWorkerDependencies = configureWorkerStoreForTests({
   fetchWorkerOrdersApi: () => take(workerCalls.orders),
   fetchWorkerEarningsApi: () => take(workerCalls.earnings),
   fetchWorkerTransactionsApi: () => take(workerCalls.transactions),
-  updateWorkerServiceLocationApi: () => take(workerCalls.location)
+  updateWorkerServiceLocationApi: () => take(workerCalls.location),
+  cancelWorkerOrderApi: () => take(workerCalls.cancel),
+  createWorkerOrderApi: () => take(workerCalls.createOrder)
 });
 
 function resetStores() {
@@ -86,6 +91,13 @@ function resetStores() {
 function setAccount(account: "a" | "b") {
   session = { userId: `account-${account}`, token: `test-token-${account}` };
 }
+
+const mappedNestedCategories = mapApiWorkerProfile({
+  id: "nested-category-worker",
+  categories: [{ categoryId: "plumbing", category: { id: "plumbing", nameUz: "Santexnik", isActive: true } }]
+});
+assert.deepEqual(mappedNestedCategories.categoryIds, ["plumbing"]);
+assert.equal(mappedNestedCategories.categories[0].nameUz, "Santexnik");
 
 async function testClientAccountSwitches() {
   resetStores();
@@ -204,15 +216,17 @@ async function testClientAccountSwitches() {
   setAccount("a");
   useClientStore.setState({
     categories: [{ id: "category-a", nameUz: "Service A" }],
-    workers: [{ id: "stale-worker", specialty: "A", cityId: "tashkent" }],
+    workers: [{ id: "stale-worker", specialty: "A" }],
     selectedWorkerId: "stale-worker",
+    savedAddresses: [{ id: "origin-a", lat: 41.31, lng: 69.24, isDefault: true }],
+    catalogOriginAddressId: "origin-a",
     orderDraft: { serviceId: "category-a", selectedWorkerId: "stale-worker" }
   });
   const unavailableOrderResponse = enqueue(clientCalls.orderCreate);
   const refreshedCatalogResponse = enqueue(clientCalls.catalog);
   const unavailableOrder = useClientStore.getState().createOrderFromDraft();
   unavailableOrderResponse.resolve({ ok: false, code: "WORKER_NOT_AVAILABLE", message: "Worker is not available for a new order" });
-  refreshedCatalogResponse.resolve({ ok: true, workers: [{ id: "fresh-worker", specialty: "A", cityId: "tashkent" }] });
+  refreshedCatalogResponse.resolve({ ok: true, workers: [{ id: "fresh-worker", specialty: "A", distanceMeters: 1200 }] });
   const unavailableResult = await unavailableOrder;
   assert.equal(unavailableResult.code, "WORKER_NOT_AVAILABLE");
   assert.match(unavailableResult.message, /Katalog yangilandi/);
@@ -374,6 +388,60 @@ async function testWorkerRaces() {
   olderLocationResponse.resolve({ ok: true, worker: { id: "worker-b", serviceLat: 41.31, serviceLng: 69.21 } });
   assert.equal((await olderLocation).stale, true);
   assert.equal(useWorkerStore.getState().workerProfile.serviceLat, 41.32);
+
+  useWorkerStore.setState({ activeJob: null, operationalStatus: "available", workerProfile: { id: "worker-b", availability: "available" } });
+  const createResponse = enqueue(workerCalls.createOrder);
+  const createOrder = useWorkerStore.getState().createPhoneOrder({ clientPhone: "+998901234567" });
+  createResponse.resolve({ ok: true, order: { id: "worker-created", status: "ACCEPTED" } });
+  assert.equal((await createOrder).ok, true);
+  assert.equal(useWorkerStore.getState().activeJob.id, "worker-created");
+  assert.equal(useWorkerStore.getState().operationalStatus, "busy");
+  assert.equal(useWorkerStore.getState().workerProfile.availability, "busy");
+
+  const duplicate = await useWorkerStore.getState().createPhoneOrder({ clientPhone: "+998901234568" });
+  assert.equal(duplicate.code, "WORKER_BUSY");
+  assert.equal(workerCalls.createOrder.length, 0, "local duplicate guard must not call the API");
+
+  resetStores();
+  setAccount("a");
+  useWorkerStore.setState({ activeJob: null, workerProfile: { id: "worker-a" } });
+  const staleCreateResponse = enqueue(workerCalls.createOrder);
+  const staleCreate = useWorkerStore.getState().createPhoneOrder({ clientPhone: "+998901234569" });
+  useWorkerStore.getState().clearUserData();
+  setAccount("b");
+  useWorkerStore.setState({ activeJob: { id: "b-active" }, workerProfile: { id: "worker-b" } });
+  staleCreateResponse.resolve({ ok: true, order: { id: "a-created" } });
+  assert.equal((await staleCreate).stale, true);
+  assert.equal(useWorkerStore.getState().activeJob.id, "b-active");
+
+  useWorkerStore.setState({
+    activeJob: { id: "b-active" },
+    operationalStatus: "busy",
+    workerProfile: { id: "worker-b", availability: "busy" }
+  });
+  const invalidCancellation = await useWorkerStore.getState().cancelActiveJob("  ");
+  assert.equal(invalidCancellation.code, "CANCEL_REASON_REQUIRED");
+  assert.equal(workerCalls.cancel.length, 0, "invalid reason must not call the API");
+
+  const cancellationResponse = enqueue(workerCalls.cancel);
+  const cancellation = useWorkerStore.getState().cancelActiveJob("Manzil uzoq");
+  cancellationResponse.resolve({ ok: true, order: { id: "b-active", statusKey: "CANCELLED" } });
+  assert.equal((await cancellation).ok, true);
+  assert.equal(useWorkerStore.getState().activeJob, null);
+  assert.equal(useWorkerStore.getState().operationalStatus, "available");
+  assert.equal(useWorkerStore.getState().workerProfile.availability, "available");
+
+  resetStores();
+  setAccount("a");
+  useWorkerStore.setState({ activeJob: { id: "a-active" }, workerProfile: { id: "worker-a" } });
+  const staleCancellationResponse = enqueue(workerCalls.cancel);
+  const staleCancellation = useWorkerStore.getState().cancelActiveJob("Hozir bandman");
+  useWorkerStore.getState().clearUserData();
+  setAccount("b");
+  useWorkerStore.setState({ activeJob: { id: "b-active" }, workerProfile: { id: "worker-b" } });
+  staleCancellationResponse.resolve({ ok: true, order: { id: "a-active", statusKey: "CANCELLED" } });
+  assert.equal((await staleCancellation).stale, true);
+  assert.equal(useWorkerStore.getState().activeJob.id, "b-active");
 }
 
 async function testModeSwitchInvalidatesStaleRoleState() {

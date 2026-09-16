@@ -15,7 +15,7 @@ function mapWorkerStatus(status: string): WorkerProfileStatus {
 
 export async function getWorkers(): Promise<AdminWorker[]> {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin authentication required");
+  if (!token) throw new Error("Admin sifatida kirish talab qilinadi");
 
   const payload = await apiClient<{ ok: boolean; workers: any[] }>("/admin/workers", { token });
   return payload.workers.map((worker) => ({
@@ -41,13 +41,13 @@ export async function getWorkers(): Promise<AdminWorker[]> {
     ignoredRequests: 0,
     rating: Number(worker.ratingAvg || 0),
     totalEarnings: 0,
-    responseSpeed: "1 hour"
+    responseSpeed: "1 soat"
   }));
 }
 
 export async function approveWorker(worker: AdminWorker): Promise<AdminWorker> {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin token is missing");
+  if (!token) throw new Error("Admin sessiyasi topilmadi");
 
   const payload = await apiClient<{ ok: boolean; worker: any }>(`/admin/workers/${worker.id}/approve`, {
     method: "POST",
@@ -78,7 +78,7 @@ async function moderateWorker(
   reason: string
 ): Promise<AdminWorker> {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin token is missing");
+  if (!token) throw new Error("Admin sessiyasi topilmadi");
 
   const payload = await apiClient<{ ok: boolean; worker: any }>(`/admin/workers/${worker.id}/${action}`, {
     method: "POST",
@@ -106,4 +106,14 @@ export async function suspendWorker(worker: AdminWorker, reason = "Suspended by 
 
 export async function unsuspendWorker(worker: AdminWorker, reason = "Unsuspended by admin") {
   return moderateWorker(worker, "unsuspend", reason);
+}
+
+export async function deleteWorker(workerId: string) {
+  const token = getAdminToken();
+  if (!token) throw new Error("Admin sessiyasi topilmadi");
+
+  return apiClient<{ ok: boolean; workerId: string; userId: string }>(`/admin/workers/${workerId}`, {
+    method: "DELETE",
+    token
+  });
 }

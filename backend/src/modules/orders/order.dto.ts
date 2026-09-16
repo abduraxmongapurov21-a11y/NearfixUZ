@@ -20,7 +20,7 @@ export const orderInclude = Prisma.validator<Prisma.OrderInclude>()({
       availability: { select: { status: true, activeOrderId: true, lockedUntil: true } }
     }
   },
-  client: { select: { id: true, name: true, phone: true } },
+  client: { select: { id: true, name: true, phone: true, isProvisional: true } },
   address: {
     select: {
       id: true,
@@ -113,6 +113,7 @@ export function toOrderDto(order: OrderRecord) {
     problemDescription: order.problemDescription,
     urgency: order.urgency,
     status: order.status,
+    source: order.source,
     priceEstimate: order.priceEstimate,
     finalAmount: order.finalAmount,
     responseDeadlineAt: order.responseDeadlineAt,

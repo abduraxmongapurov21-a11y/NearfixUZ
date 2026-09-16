@@ -40,6 +40,33 @@ export const createOrderSchema = z.object({
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
+const workerOrderLocationSchema = z.object({
+  addressText: z.string().trim().min(4).max(240),
+  label: z.string().trim().min(2).max(60).optional(),
+  district: z.string().trim().max(80).optional(),
+  latitude: z.number().finite().min(-90).max(90).optional(),
+  longitude: z.number().finite().min(-180).max(180).optional()
+}).superRefine((location, context) => {
+  if (Boolean(location.latitude === undefined) !== Boolean(location.longitude === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Latitude and longitude must be provided together",
+      path: ["latitude"]
+    });
+  }
+});
+
+export const createWorkerOrderSchema = z.object({
+  clientPhone: z.string().min(7).max(32),
+  clientName: z.string().trim().min(2).max(80).optional(),
+  categoryId: z.string().min(1).max(191),
+  description: z.string().trim().min(3).max(1200),
+  location: workerOrderLocationSchema,
+  priceEstimate: z.number().int().positive().max(2_000_000_000).optional()
+}).strict();
+
+export type CreateWorkerOrderInput = z.infer<typeof createWorkerOrderSchema>;
+
 export const transitionOrderSchema = z.object({
   status: z.enum([
     OrderStatus.ON_THE_WAY,
@@ -49,7 +76,7 @@ export const transitionOrderSchema = z.object({
 });
 
 export const cancelOrderSchema = z.object({
-  reason: z.string().min(3).max(240)
+  reason: z.string().trim().min(3).max(240)
 });
 
 export const rejectOrderSchema = cancelOrderSchema;

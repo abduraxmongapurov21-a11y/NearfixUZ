@@ -36,6 +36,7 @@
     "test:worker-application": "tsx scripts/worker-application-tests.ts",
     "test:order-capabilities": "tsx scripts/order-capability-tests.ts",
     "test:order-lifecycle": "tsx scripts/order-lifecycle-tests.ts",
+    "test:worker-created-order": "tsx scripts/worker-created-order-tests.ts",
     "test:notification-rating-v1": "tsx scripts/notification-rating-v1-tests.ts",
     "test:order-location": "tsx scripts/order-location-snapshot-tests.ts",
     "test:local-database-guard": "tsx scripts/local-database-guard-tests.ts",

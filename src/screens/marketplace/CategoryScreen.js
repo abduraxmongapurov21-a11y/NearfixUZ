@@ -16,7 +16,6 @@ import {
 import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../constants/routes";
 import { WORKER_STATUS } from "../../constants/workerStatus";
-import { CitySelector } from "../../components/catalog/CitySelector";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useClientStore } from "../../store/clientStore";
 import { WorkerAvatar } from "../../components/ui/WorkerAvatar";
@@ -28,6 +27,7 @@ import {
   hasAddressCoordinates,
   resolveCatalogOriginAddressId
 } from "../../services/catalog/catalogDistance.mjs";
+import { sortCatalogWorkers } from "../../services/catalog/catalogSorting.mjs";
 import { categoryName, workerCategoryLabel } from "../../services/content/categoryService";
 import { resolveCategoryIcon } from "../../constants/categoryIcons";
 import { CategoryAvailabilityState } from "../../components/category/CategoryAvailabilityState";
@@ -40,35 +40,30 @@ const font = {
   extra: "Inter_800ExtraBold"
 };
 
-function statusRank(worker) {
-  if (worker.availability === WORKER_STATUS.AVAILABLE) return 0;
-  if (worker.availability === WORKER_STATUS.BUSY) return 2;
-  return 3;
-}
-
 function hasCategory(worker, categoryId) {
   return !categoryId || (worker.categoryIds || []).includes(categoryId);
 }
 
 export function CategoryScreen({ navigation, route }) {
   const { i18n } = useTranslation();
+  const allCategories = route.params?.categoryId === null;
   const session = useAuthStore((state) => state.session);
   const categories = useClientStore((state) => state.categories);
   const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
   const categoryStatus = useClientStore((state) => state.categoryStatus);
   const categoryError = useClientStore((state) => state.categoryError);
   const categoriesLastLoadedAt = useClientStore((state) => state.categoriesLastLoadedAt);
-  const categoryResolution = resolveCategoryRoute(
-    { categories, status: categoryStatus, lastLoadedAt: categoriesLastLoadedAt },
-    route.params?.categoryId
-  );
+  const categoryResolution = allCategories
+    ? { kind: "ready", categoryId: undefined, category: undefined }
+    : resolveCategoryRoute(
+        { categories, status: categoryStatus, lastLoadedAt: categoriesLastLoadedAt },
+        route.params?.categoryId
+      );
   const categoryId = categoryResolution.kind === "ready" ? categoryResolution.categoryId : undefined;
   const category = categoryResolution.kind === "ready" ? categoryResolution.category : undefined;
-  const displayName = categoryName(category, i18n.language) || "Category";
+  const displayName = allCategories ? "Barchasi" : categoryName(category, i18n.language) || "Category";
   const CategoryIcon = resolveCategoryIcon(category?.iconKey);
   const workers = useClientStore((state) => state.workers);
-  const selectedCityId = useClientStore((state) => state.selectedCityId);
-  const setSelectedCity = useClientStore((state) => state.setSelectedCity);
   const catalogQuery = useClientStore((state) => state.catalogQuery);
   const setCatalogQuery = useClientStore((state) => state.setCatalogQuery);
   const selectWorker = useClientStore((state) => state.selectWorker);
@@ -104,27 +99,22 @@ export function CategoryScreen({ navigation, route }) {
 
   useEffect(() => {
     setCatalogQuery("");
-    if (categoryResolution.kind === "ready" && categoryId) syncCatalogFromApi(categoryId);
-  }, [catalogSort, categoryResolution.kind, categoryId, originAddressId, selectedCityId, setCatalogQuery, syncCatalogFromApi]);
+    if (categoryResolution.kind === "ready") syncCatalogFromApi(categoryId);
+  }, [catalogSort, categoryResolution.kind, categoryId, originAddressId, setCatalogQuery, syncCatalogFromApi]);
 
   const visibleWorkers = useMemo(() => {
     const cleanQuery = catalogQuery.trim().toLowerCase();
 
-    return workers
-      .filter((worker) => worker.cityId === selectedCityId)
+    const filteredWorkers = workers
       .filter((worker) => hasCategory(worker, categoryId))
-      .filter((worker) => worker.availability === WORKER_STATUS.AVAILABLE)
+      .filter((worker) => [WORKER_STATUS.AVAILABLE, WORKER_STATUS.BUSY].includes(worker.availability))
       .filter((worker) => {
         if (!cleanQuery) return true;
         return `${worker.name} ${workerCategoryLabel(worker, i18n.language).label}`.toLowerCase().includes(cleanQuery);
-      })
-      .sort((a, b) => {
-        if (catalogSort === "nearest") return 0;
-        const statusDiff = statusRank(a) - statusRank(b);
-        if (statusDiff) return statusDiff;
-        return Number(b.rating) - Number(a.rating);
       });
-  }, [catalogQuery, catalogSort, categoryId, i18n.language, selectedCityId, workers]);
+
+    return sortCatalogWorkers(filteredWorkers, catalogSort);
+  }, [catalogQuery, catalogSort, categoryId, i18n.language, workers]);
 
   function openWorker(workerId) {
     selectWorker(workerId);
@@ -133,7 +123,7 @@ export function CategoryScreen({ navigation, route }) {
 
   async function handleRefresh() {
     setRefreshing(true);
-    if (categoryId) await syncCatalogFromApi(categoryId);
+    await syncCatalogFromApi(categoryId);
     setRefreshing(false);
   }
 
@@ -186,10 +176,6 @@ export function CategoryScreen({ navigation, route }) {
           <View style={styles.headerSpacer} />
         </View>
         <CategoryAvailabilityState status={categoryStatus} error={categoryError} hasData onRetry={syncCategoriesFromApi} />
-
-        <View style={styles.citySelectorWrap}>
-          <CitySelector selectedCityId={selectedCityId} onSelectCity={setSelectedCity} />
-        </View>
 
         <View style={styles.originWrap}>
           <Pressable style={styles.originSelector} onPress={() => setAddressPickerOpen((open) => !open)}>
@@ -252,8 +238,18 @@ export function CategoryScreen({ navigation, route }) {
             label="Eng yaqin"
             onPress={chooseNearestSort}
           />
-          <FilterChip icon={Star} label="Reyting" />
-          <FilterChip icon={BriefcaseBusiness} label="Narx" />
+          <FilterChip
+            active={catalogSort === "rating"}
+            icon={Star}
+            label="Reyting"
+            onPress={() => setCatalogSort("rating")}
+          />
+          <FilterChip
+            active={catalogSort === "price"}
+            icon={BriefcaseBusiness}
+            label="Narx"
+            onPress={() => setCatalogSort("price")}
+          />
         </ScrollView>
 
         {catalogError ? (
@@ -270,7 +266,9 @@ export function CategoryScreen({ navigation, route }) {
           ) : (
             <EmptyState
               title="Ustalar topilmadi"
-              text="Bu kategoriya bo'yicha tasdiqlangan ustalar chiqqanda shu yerda ko'rinadi."
+              text={originAddressId
+                ? "100 km radiusda mos va faol ustalar topilmadi."
+                : "100 km ichidagi ustalarni ko'rish uchun koordinatali manzil tanlang."}
             />
           )}
         </View>
@@ -295,6 +293,7 @@ function FilterChip({ active = false, icon: Icon, label, onPress }) {
 
 function WorkerListCard({ worker, index, onPress }) {
   const topWorker = Number(worker.rating) >= 4.85 || index === 0;
+  const isBusy = worker.availability === WORKER_STATUS.BUSY;
   const price = worker.basePriceValue ? `${Number(worker.basePriceValue).toLocaleString("uz-UZ")} so'm` : worker.price;
 
   return (
@@ -308,6 +307,12 @@ function WorkerListCard({ worker, index, onPress }) {
       <View style={styles.workerInfo}>
         <Text style={styles.workerName}>{worker.name}</Text>
         <Text style={styles.experience}>Tajriba: {worker.experience || "Ko'rsatilmagan"}</Text>
+        {isBusy ? (
+          <View style={styles.busyBadge}>
+            <View style={styles.busyDot} />
+            <Text style={styles.busyText}>Hozir band</Text>
+          </View>
+        ) : null}
         <View style={styles.ratingRow}>
           {[0, 1, 2, 3, 4].map((starIndex) => (
             <Star
@@ -419,13 +424,9 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 46
   },
-  citySelectorWrap: {
-    marginTop: 18,
-    paddingHorizontal: 24
-  },
   originWrap: {
     zIndex: 5,
-    marginTop: 10,
+    marginTop: 18,
     paddingHorizontal: 24
   },
   originSelector: {
@@ -612,6 +613,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: font.semi
   },
+  busyBadge: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    borderRadius: 10,
+    backgroundColor: "#FFF7E6",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  busyDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#F59E0B"
+  },
+  busyText: {
+    color: "#B45309",
+    fontSize: 12,
+    fontFamily: font.bold
+  },
   ratingRow: {
     marginTop: 12,
     flexDirection: "row",
@@ -630,29 +653,33 @@ const styles = StyleSheet.create({
     fontFamily: font.medium
   },
   workerBottom: {
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between"
+    marginTop: 10,
+    gap: 6
   },
   distanceRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8
+    gap: 6,
+    maxWidth: "100%"
   },
   distanceText: {
+    flexShrink: 1,
     color: "#6B7280",
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: font.semi
   },
   priceText: {
+    alignSelf: "flex-end",
+    maxWidth: "100%",
+    flexShrink: 1,
     color: "#0F80B7",
-    fontSize: 16,
+    fontSize: 15,
+    textAlign: "right",
     fontFamily: font.extra
   },
   priceMuted: {
     color: "#A3ABB8",
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: font.medium
   },
   sortFab: {

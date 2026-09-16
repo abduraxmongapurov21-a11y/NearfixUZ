@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/shared/components/data-table";
+import { adminLabel } from "@/lib/admin-labels";
 import { useBanners } from "../hooks/use-banners";
 import {
   createBanner,
@@ -178,7 +179,7 @@ export function BannersManager() {
           columns={[
             {
               id: "preview",
-              header: "Preview",
+              header: "Ko'rinishi",
               cell: ({ row }) => (
                 <div className="h-12 w-20 overflow-hidden rounded-md border bg-muted">
                   {row.original.imageUrl ? (
@@ -190,25 +191,25 @@ export function BannersManager() {
                 </div>
               )
             },
-            { accessorKey: "title", header: "Title" },
-            { accessorKey: "targetType", header: "Target Type" },
+            { accessorKey: "title", header: "Sarlavha" },
+            { accessorKey: "targetType", header: "Yo'naltirish turi", cell: ({ row }) => adminLabel(row.original.targetType) },
             {
               accessorKey: "targetValue",
-              header: "Target Value",
+              header: "Yo'naltirish manzili",
               cell: ({ row }) => <span className="line-clamp-1 max-w-xs">{row.original.targetValue || "-"}</span>
             },
             {
               accessorKey: "isActive",
-              header: "Active",
+              header: "Holat",
               cell: ({ row }) => (
                 <Badge variant={row.original.isActive ? "success" : "secondary"}>
-                  {row.original.isActive ? "Active" : "Inactive"}
+                  {row.original.isActive ? "Faol" : "Nofaol"}
                 </Badge>
               )
             },
             {
               id: "actions",
-              header: "Actions",
+              header: "Amallar",
               cell: ({ row }) => {
                 const index = sortedBanners.findIndex((item) => item.id === row.original.id);
                 return (
@@ -238,7 +239,7 @@ export function BannersManager() {
                       type="button"
                       variant="outline"
                     >
-                      {row.original.isActive ? "Deactivate" : "Activate"}
+                      {row.original.isActive ? "Nofaol qilish" : "Faollashtirish"}
                     </Button>
                     <Button onClick={() => handleEdit(row.original)} size="icon" type="button" variant="outline">
                       <Edit3 className="h-4 w-4" />
@@ -265,12 +266,12 @@ export function BannersManager() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{editingBannerId ? "Edit banner" : "Create banner"}</CardTitle>
+          <CardTitle>{editingBannerId ? "Bannerni tahrirlash" : "Banner yaratish"}</CardTitle>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
-              <label className="text-sm font-medium">Title</label>
+              <label className="text-sm font-medium">Sarlavha</label>
               <Input
                 onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
                 required
@@ -278,9 +279,9 @@ export function BannersManager() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">Image Upload</label>
+              <label className="text-sm font-medium">Rasm yuklash</label>
               <Input accept="image/jpeg,image/png,image/webp" disabled={uploadingImage} onChange={handleImageChange} type="file" />
-              {uploadingImage ? <p className="mt-2 text-sm text-muted-foreground">Uploading...</p> : null}
+              {uploadingImage ? <p className="mt-2 text-sm text-muted-foreground">Yuklanmoqda...</p> : null}
               {draft.imageUrl ? (
                 <div className="mt-3 overflow-hidden rounded-md border bg-muted">
                   <div className="h-32 bg-cover bg-center" style={{ backgroundImage: `url("${draft.imageUrl}")` }} />
@@ -288,7 +289,7 @@ export function BannersManager() {
               ) : null}
             </div>
             <div>
-              <label className="text-sm font-medium">Target Type</label>
+              <label className="text-sm font-medium">Yo'naltirish turi</label>
               <select
                 className="flex h-10 w-full rounded-md border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onChange={(event) =>
@@ -300,13 +301,13 @@ export function BannersManager() {
                 }
                 value={draft.targetType}
               >
-                <option value="NONE">NONE</option>
-                <option value="CATEGORY">CATEGORY</option>
-                <option value="URL">URL</option>
+                <option value="NONE">Yo'naltirishsiz</option>
+                <option value="CATEGORY">Kategoriya</option>
+                <option value="URL">Havola</option>
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium">Target Value</label>
+              <label className="text-sm font-medium">Yo'naltirish manzili</label>
               <Input
                 disabled={draft.targetType === "NONE"}
                 onChange={(event) => setDraft((current) => ({ ...current, targetValue: event.target.value }))}
@@ -321,15 +322,15 @@ export function BannersManager() {
                 onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.checked }))}
                 type="checkbox"
               />
-              Active
+              Faol
             </label>
             <div className="flex gap-2">
               <Button disabled={saveMutation.isPending || uploadingImage || !draft.imageUrl} type="submit">
-                {saveMutation.isPending ? "Saving..." : editingBannerId ? "Save" : "Create"}
+                {saveMutation.isPending ? "Saqlanmoqda..." : editingBannerId ? "Saqlash" : "Yaratish"}
               </Button>
               {editingBannerId ? (
                 <Button onClick={handleCancelEdit} type="button" variant="outline">
-                  Cancel
+                  Bekor qilish
                 </Button>
               ) : null}
             </div>

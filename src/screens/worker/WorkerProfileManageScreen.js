@@ -15,7 +15,6 @@ import {
   Trash2,
   UserRound
 } from "lucide-react-native";
-import { CITIES } from "../../constants/catalog";
 import { ROUTES } from "../../constants/routes";
 import { uploadMediaApi } from "../../services/media/mediaService";
 import { fetchUnreadNotificationCountApi } from "../../services/notifications/notificationService";
@@ -81,10 +80,6 @@ function getStatusMeta(status) {
   }
 }
 
-function cityName(cityId) {
-  return CITIES.find((city) => city.id === cityId)?.name || "Shahar tanlanmagan";
-}
-
 function formatLocationUpdatedAt(value, language) {
   if (!value) return null;
   const date = new Date(value);
@@ -116,7 +111,6 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   const [basePrice, setBasePrice] = useState(worker?.basePriceValue ? String(worker.basePriceValue) : "");
   const [bio, setBio] = useState(worker?.about || "");
   const [profileImageUrl, setProfileImageUrl] = useState(worker?.profileImageUrl || "");
-  const [cityId, setCityId] = useState(worker?.cityId || "");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState(worker?.categoryIds || []);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -174,7 +168,6 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     setBasePrice(worker?.basePriceValue ? String(worker.basePriceValue) : "");
     setBio(worker?.about || "");
     setProfileImageUrl(worker?.profileImageUrl || "");
-    setCityId(worker?.cityId || "");
     const legacyValues = worker?.professions || [worker?.specialty].filter(Boolean);
     setSelectedCategoryIds(worker?.categoryIds?.length
       ? worker.categoryIds
@@ -182,7 +175,6 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   }, [
     worker?.about,
     worker?.basePriceValue,
-    worker?.cityId,
     worker?.experienceYears,
     worker?.name,
     worker?.profileImageUrl,
@@ -211,7 +203,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   }
 
   async function handlePickImage() {
-    if (isApproved) return;
+    if (uploadingImage) return;
 
     if (!token) {
       Alert.alert("Tizimga kiring", "Rasm yuklash uchun qayta tizimga kiring.");
@@ -245,17 +237,30 @@ export function WorkerProfileManageScreen({ navigation, route }) {
         },
         { scope: "WORKER_GALLERY" }
       );
-      setUploadingImage(false);
 
       if (uploadResult.ok && uploadResult.media?.url) {
-        setProfileImageUrl(uploadResult.media.url);
+        const nextProfileImageUrl = uploadResult.media.url;
+        if (!isApproved) {
+          setProfileImageUrl(nextProfileImageUrl);
+          return;
+        }
+
+        const saveResult = await submitWorkerProfile({ profileImageUrl: nextProfileImageUrl });
+        if (!saveResult.ok) {
+          Alert.alert("Rasm saqlanmadi", saveResult.message || "Qayta urinib ko'ring.");
+          return;
+        }
+
+        setProfileImageUrl(nextProfileImageUrl);
+        Alert.alert("Profil rasmi yangilandi", "Yangi rasm admin tasdig'isiz darhol saqlandi.");
         return;
       }
 
-      Alert.alert("Rasm yuklanmadi", "Qayta urinib ko'ring.");
+      Alert.alert("Rasm yuklanmadi", uploadResult.message || "Qayta urinib ko'ring.");
     } catch (error) {
-      setUploadingImage(false);
       Alert.alert("Rasm tanlanmadi", error?.message || "Galereyani ochishda xatolik yuz berdi.");
+    } finally {
+      setUploadingImage(false);
     }
   }
 
@@ -272,11 +277,6 @@ export function WorkerProfileManageScreen({ navigation, route }) {
 
     if (!selectedCategoryIds.length) {
       Alert.alert("Soha tanlang", "Kamida bitta xizmat sohasini tanlang.");
-      return;
-    }
-
-    if (!cityId) {
-      Alert.alert("Shahar tanlang", "Mijozlar sizni topishi uchun shaharni tanlang.");
       return;
     }
 
@@ -303,7 +303,6 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     setSaving(true);
     const result = await submitWorkerProfile({
       name: name.trim(),
-      cityId,
       categoryIds: selectedCategoryIds,
       experienceYears: Number(experienceYears || 0),
       profileImageUrl: profileImageUrl.trim() || undefined,
@@ -476,7 +475,8 @@ export function WorkerProfileManageScreen({ navigation, route }) {
           <View style={styles.readOnlyNotice}>
             <ShieldCheck size={20} color={colors.primary} strokeWidth={2.6} />
             <Text style={styles.readOnlyNoticeText}>
-              Profilingiz tasdiqlangan. Ma'lumotlarni o'zgartirish uchun qo'llab-quvvatlashga murojaat qiling.
+              Profilingiz tasdiqlangan. Profil rasmini o'zingiz almashtira olasiz; boshqa ma'lumotlar uchun
+              qo'llab-quvvatlashga murojaat qiling.
             </Text>
           </View>
         ) : null}
@@ -494,47 +494,25 @@ export function WorkerProfileManageScreen({ navigation, route }) {
               <Text style={styles.photoTitle}>{profileImageUrl ? "Rasm yuklangan" : "Rasm yuklanmagan"}</Text>
               <Text style={styles.photoText}>
                 {isApproved
-                  ? "Tasdiqlangan profilda rasmni o'zgartirish uchun yordamga murojaat qiling."
+                  ? "Yangi rasm darhol saqlanadi, admin tasdig'i talab qilinmaydi."
                   : "Admin tekshiruvi uchun aniq profil rasmi kerak."}
               </Text>
-              {!isApproved ? (
-                <Pressable
-                  onPress={handlePickImage}
-                  disabled={uploadingImage}
-                  style={[styles.secondaryButton, uploadingImage && styles.controlDisabled]}
-                >
-                  <Camera size={17} color={colors.primary} strokeWidth={2.6} />
-                  <Text style={styles.secondaryButtonText}>
-                    {uploadingImage ? "Yuklanmoqda..." : profileImageUrl ? "Rasmni almashtirish" : "Rasm yuklash"}
-                  </Text>
-                </Pressable>
-              ) : null}
+              <Pressable
+                onPress={handlePickImage}
+                disabled={uploadingImage}
+                style={[styles.secondaryButton, uploadingImage && styles.controlDisabled]}
+              >
+                <Camera size={17} color={colors.primary} strokeWidth={2.6} />
+                <Text style={styles.secondaryButtonText}>
+                  {uploadingImage ? "Saqlanmoqda..." : profileImageUrl ? "Rasmni almashtirish" : "Rasm yuklash"}
+                </Text>
+              </Pressable>
             </View>
           </View>
         </SectionCard>
 
         <SectionCard title="Profil ma'lumotlari">
           <Field label="Ism" value={name} onChangeText={setName} placeholder="Masalan: Ism" editable={!isApproved} />
-
-          <Text style={styles.inputLabel}>Shahar</Text>
-          {isApproved ? (
-            <ReadOnlyValue value={cityName(cityId)} />
-          ) : (
-            <View style={styles.chips}>
-              {CITIES.map((city) => {
-                const active = city.id === cityId;
-                return (
-                  <Pressable
-                    key={city.id}
-                    onPress={() => setCityId(city.id)}
-                    style={[styles.chip, active && styles.chipActive]}
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{city.name}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
 
           <Text style={styles.inputLabel}>Xizmat sohalari</Text>
           {!isApproved ? <CategoryAvailabilityState status={categoryStatus} error={categoryError} hasData={categories.length > 0} onRetry={syncCategoriesFromApi} /> : null}

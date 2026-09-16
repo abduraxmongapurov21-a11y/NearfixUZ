@@ -5,8 +5,8 @@ export default function AuditLogsPage() {
   return (
     <>
       <PageHeader
-        description="Security and operational admin activity history."
-        title="Audit Logs"
+        description="Adminlarning xavfsizlik va boshqaruv bo'yicha amallari tarixi."
+        title="Amallar tarixi"
       />
       <AuditLogsTable />
     </>

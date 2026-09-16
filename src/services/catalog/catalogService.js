@@ -17,6 +17,7 @@ export function mapApiWorker(worker) {
   return {
     id: worker.id,
     name,
+    phone: worker.phone,
     specialty: worker.profession || professions[0] || "Usta",
     professions,
     categoryIds: Array.isArray(worker.categoryIds) ? worker.categoryIds : [],
@@ -31,7 +32,6 @@ export function mapApiWorker(worker) {
     verification: "NearFIX tasdiqlagan",
     guarantee: "NearFIX kafolati ostida",
     distanceMeters: normalizeDistanceMeters(worker.distanceMeters),
-    cityId: worker.cityId || worker.user?.cityId || "",
     basePriceValue: worker.basePrice || 0,
     experience: worker.experienceYears ? `${worker.experienceYears} yil` : "Tasdiqlangan",
     price,
@@ -44,11 +44,10 @@ export function mapApiWorker(worker) {
   };
 }
 
-export async function fetchCatalogWorkers(cityId, categoryId, options = {}) {
+export async function fetchCatalogWorkers(categoryId, options = {}) {
   return apiRequest(
     async () => {
       const params = new URLSearchParams();
-      if (cityId) params.set("cityId", cityId);
       if (categoryId) params.set("categoryId", categoryId);
       if (options.originAddressId) params.set("originAddressId", options.originAddressId);
       if (options.sort === "nearest") params.set("sort", "nearest");

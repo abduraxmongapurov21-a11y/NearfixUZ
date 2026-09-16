@@ -17,7 +17,7 @@ type ManagedAdminApi = Omit<ManagedAdmin, "role" | "status"> & {
 
 function requireToken() {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin token is missing");
+  if (!token) throw new Error("Admin sessiyasi topilmadi");
   return token;
 }
 
@@ -28,18 +28,18 @@ export function getAdminErrorMessage(error: unknown, fallback: string) {
     case "ADMIN_UNAUTHORIZED":
       return "Sessiya tugagan. Qayta kiring.";
     case "ADMIN_DISABLED":
-      return "Bu admin akkaunt o'chirilgan.";
+      return "Bu admin hisobi o'chirilgan.";
     case "ADMIN_ACCESS_DENIED":
     case "PERMISSION_REQUIRED":
     case "SUPER_ADMIN_REQUIRED":
       return "Bu amal uchun ruxsat yetarli emas.";
     case "ADMIN_USERNAME_EXISTS":
-      return "Bu username bilan admin allaqachon mavjud.";
+      return "Bu foydalanuvchi nomi bilan admin allaqachon mavjud.";
     case "INVALID_ADMIN_PASSWORD":
     case "ADMIN_PASSWORD_WEAK":
-      return "Password kamida 10 belgi bo'lsin, username ichida bo'lmasin va oddiy password bo'lmasin.";
+      return "Parol kamida 10 belgidan iborat, murakkab va foydalanuvchi nomidan farqli bo'lishi kerak.";
     case "VALIDATION_ERROR":
-      return "Username kamida 3 belgi, name bo'lsa kamida 2 belgi, password esa to'g'ri kiritilishi kerak.";
+      return "Foydalanuvchi nomi kamida 3 belgi, ism kamida 2 belgi va parol talabga mos bo'lishi kerak.";
     default:
       if (error.status === 400) return "Kiritilgan ma'lumotlarni tekshiring.";
       return fallback;

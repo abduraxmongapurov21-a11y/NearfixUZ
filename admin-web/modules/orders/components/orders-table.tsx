@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { adminLabel } from "@/lib/admin-labels";
 import { FilterBar } from "@/shared/components/filter-bar";
 import { DataTable } from "@/shared/components/data-table";
 import { useWorkers } from "@/modules/workers/hooks/use-workers";
@@ -73,7 +74,7 @@ export function OrdersTable() {
       setActionError(null);
     },
     onError: async (error) => {
-      setActionError(error instanceof Error ? error.message : "Order action bajarilmadi");
+      setActionError(error instanceof Error ? error.message : "Buyurtma bo'yicha amal bajarilmadi");
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ["orders"] }),
         selectedOrderId
@@ -82,7 +83,7 @@ export function OrdersTable() {
       ]);
     },
     onSuccess: async (_result, variables) => {
-      setActionSuccess("Order action muvaffaqiyatli bajarildi.");
+      setActionSuccess("Buyurtma bo'yicha amal muvaffaqiyatli bajarildi.");
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ["orders"] }),
         queryClient.refetchQueries({ queryKey: ["admin-order-detail", variables.orderId] })
@@ -112,22 +113,22 @@ export function OrdersTable() {
         controls={
           <>
             <select className={controlClassName} onChange={(event) => setStatus(event.target.value)} value={status}>
-              <option value="">Status</option>
-              <option value="waiting">Waiting</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="">Holat</option>
+              <option value="waiting">Kutilmoqda</option>
+              <option value="active">Faol</option>
+              <option value="completed">Bajarilgan</option>
+              <option value="cancelled">Bekor qilingan</option>
             </select>
             <select className={controlClassName} onChange={(event) => setCityId(event.target.value)} value={cityId}>
-              <option value="">City</option>
+              <option value="">Shahar</option>
               {cityOptions.map((city) => (
                 <option key={city} value={city}>
-                  {city}
+                  {adminLabel(city)}
                 </option>
               ))}
             </select>
             <select className={controlClassName} onChange={(event) => setWorkerId(event.target.value)} value={workerId}>
-              <option value="">Worker</option>
+              <option value="">Usta</option>
               {workers.map((worker) => (
                 <option key={worker.id} value={worker.id}>
                   {worker.name}
@@ -148,22 +149,22 @@ export function OrdersTable() {
             />
           </>
         }
-        filters={["Status", "City", "Worker", "Date"]}
+        filters={["Holat", "Shahar", "Usta", "Sana"]}
         onSearchChange={setSearch}
-        searchPlaceholder="Order yoki client qidirish"
+        searchPlaceholder="Buyurtma yoki mijozni qidirish"
         searchValue={search}
       />
       <DataTable columns={ordersColumns} data={items} onRowClick={(order) => openOrder(order.orderId)} />
       <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
         <div>
-          {data?.total ?? 0} orders - page {data?.page ?? page} / {totalPages}
+          Jami {data?.total ?? 0} ta buyurtma — {data?.page ?? page} / {totalPages}-sahifa
         </div>
         <div className="flex items-center gap-2">
           <Button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} variant="outline">
-            Previous
+            Oldingi
           </Button>
           <Button disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} variant="outline">
-            Next
+            Keyingi
           </Button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { ArrowLeft, CalendarDays, MapPin, MessageCircle, WalletCards } from "lucide-react-native";
 import { ActiveOrderCard } from "../../components/orders/ActiveOrderCard";
 import { CancelReasonSheet } from "../../components/orders/CancelReasonSheet";
@@ -260,6 +260,7 @@ export function OrdersScreen({ navigation, route }) {
 
 function OrderListCard({ order, worker, onChat, onDetail }) {
   const status = statusCopy[order.statusKey] || statusCopy[TRACKING_STATUSES.REQUEST_SENT];
+  const waitingForResponse = order.statusKey === TRACKING_STATUSES.REQUEST_SENT;
 
   return (
     <View style={styles.orderCard}>
@@ -273,7 +274,8 @@ function OrderListCard({ order, worker, onChat, onDetail }) {
             {worker?.name || order.provider || "NearFIX usta"}
           </Text>
         </View>
-        <View style={[styles.statusBadge, styles[`status_${status.tone}`]]}>
+        <View style={[styles.statusBadge, waitingForResponse && styles.waitingStatusBadge, styles[`status_${status.tone}`]]}>
+          {waitingForResponse ? <ActivityIndicator size="small" color="#FB8C00" style={styles.waitingSpinner} /> : null}
           <Text style={[styles.statusText, styles[`statusText_${status.tone}`]]}>{status.label}</Text>
         </View>
       </View>
@@ -413,6 +415,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center"
+  },
+  waitingStatusBadge: {
+    maxWidth: 116,
+    flexDirection: "row",
+    gap: 5
+  },
+  waitingSpinner: {
+    marginHorizontal: -3,
+    transform: [{ scale: 0.68 }]
   },
   status_warning: {
     backgroundColor: "#FFF3E2"

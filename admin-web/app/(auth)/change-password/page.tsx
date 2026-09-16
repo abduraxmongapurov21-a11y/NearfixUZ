@@ -13,22 +13,22 @@ function passwordValidationMessage(username: string, password: string) {
   const normalizedPassword = password.toLowerCase();
   const trivialPasswords = new Set(["admin321", "password", "password123", "12345678", "1234567890", "qwerty123"]);
 
-  if (password.length < 10) return "New password kamida 10 ta belgi bo'lishi kerak.";
-  if (trivialPasswords.has(normalizedPassword)) return "New password juda oddiy.";
-  if (normalizedPassword.includes(username.toLowerCase())) return "New password username'ni ichiga olmasin.";
+  if (password.length < 10) return "Yangi parol kamida 10 ta belgidan iborat bo'lishi kerak.";
+  if (trivialPasswords.has(normalizedPassword)) return "Yangi parol juda oddiy.";
+  if (normalizedPassword.includes(username.toLowerCase())) return "Yangi parol foydalanuvchi nomini o'z ichiga olmasin.";
   return null;
 }
 
 function changePasswordErrorMessage(error: unknown) {
   if (error instanceof ApiClientError) {
-    if (error.code === "INVALID_CURRENT_PASSWORD") return "Current password noto'g'ri.";
+    if (error.code === "INVALID_CURRENT_PASSWORD") return "Joriy parol noto'g'ri.";
     if (error.code === "INVALID_ADMIN_PASSWORD") {
-      return "New password kamida 10 belgi bo'lsin, username ichida bo'lmasin va oddiy password bo'lmasin.";
+      return "Yangi parol kamida 10 belgidan iborat, murakkab va foydalanuvchi nomidan farqli bo'lishi kerak.";
     }
-    if (error.code === "ADMIN_ACCOUNT_REQUIRED") return "Env-admin password deployment muhiti orqali boshqariladi.";
+    if (error.code === "ADMIN_ACCOUNT_REQUIRED") return "Muhit admini paroli server joylashuvi orqali boshqariladi.";
   }
 
-  return "Password o'zgartirilmadi.";
+  return "Parol o'zgartirilmadi.";
 }
 
 export default function ChangePasswordPage() {
@@ -67,7 +67,7 @@ export default function ChangePasswordPage() {
     try {
       await changeAdminPassword(session.token, { currentPassword, newPassword });
       logout();
-      window.localStorage.setItem("nearfix-admin-flash", "Password changed. Please log in again.");
+      window.localStorage.setItem("nearfix-admin-flash", "Parol o'zgartirildi. Yangi parol bilan qayta kiring.");
       router.replace("/login");
     } catch (error) {
       setError(changePasswordErrorMessage(error));
@@ -82,9 +82,9 @@ export default function ChangePasswordPage() {
     <main className="flex min-h-screen items-center justify-center bg-background px-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Change password</CardTitle>
+          <CardTitle>Parolni o'zgartirish</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Continue using the admin panel after setting a new password.
+            Boshqaruv panelidan foydalanishni davom ettirish uchun yangi parol o'rnating.
           </p>
         </CardHeader>
         <CardContent>
@@ -92,7 +92,7 @@ export default function ChangePasswordPage() {
             <Input
               autoComplete="current-password"
               onChange={(event) => setCurrentPassword(event.target.value)}
-              placeholder="Current password"
+              placeholder="Joriy parol"
               required
               type="password"
               value={currentPassword}
@@ -100,14 +100,14 @@ export default function ChangePasswordPage() {
             <Input
               autoComplete="new-password"
               onChange={(event) => setNewPassword(event.target.value)}
-              placeholder="New password"
+              placeholder="Yangi parol"
               required
               type="password"
               value={newPassword}
             />
             {error ? <p className="text-sm text-danger">{error}</p> : null}
             <Button className="w-full" disabled={isSubmitting || !currentPassword || !newPassword} type="submit">
-              {isSubmitting ? "Saving..." : "Change password"}
+              {isSubmitting ? "Saqlanmoqda..." : "Parolni o'zgartirish"}
             </Button>
           </form>
         </CardContent>

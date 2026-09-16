@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { Modal, Pressable, StyleSheet, View } from "react-native";
-import { CheckCircle2, Navigation, Wrench } from "lucide-react-native";
+import { CheckCircle2, Navigation, Wrench, XCircle } from "lucide-react-native";
 import { TRACKING_STATUSES } from "../../constants/orderTracking";
 import { colors, iconSizes, radius } from "../../theme";
 import { Text } from "../../i18n/native";
+import { WorkerCancelReasonModal } from "./WorkerCancelReasonModal";
 
 const nextActionByStatus = {
   [TRACKING_STATUSES.ACCEPTED]: {
@@ -29,8 +30,9 @@ const confirmationText = {
   [TRACKING_STATUSES.COMPLETED]: "Ishni tugatganingizni tasdiqlaysizmi?"
 };
 
-export function OrderActions({ currentStatus, onUpdateStatus, onComplete }) {
+export function OrderActions({ currentStatus, onUpdateStatus, onComplete, onCancel, cancelling = false }) {
   const [pendingAction, setPendingAction] = useState(null);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const nextAction = nextActionByStatus[currentStatus];
   const NextIcon = nextAction?.icon;
 
@@ -46,6 +48,11 @@ export function OrderActions({ currentStatus, onUpdateStatus, onComplete }) {
     }
 
     onUpdateStatus(nextStatus);
+  }
+
+  async function handleCancel(reason) {
+    const cancelled = await onCancel(reason);
+    if (cancelled !== false) setCancelModalOpen(false);
   }
 
   return (
@@ -64,6 +71,16 @@ export function OrderActions({ currentStatus, onUpdateStatus, onComplete }) {
             <Text style={styles.idleText}>Status yangilangan</Text>
           </View>
         )}
+        {onCancel ? (
+          <Pressable
+            disabled={cancelling}
+            onPress={() => setCancelModalOpen(true)}
+            style={({ pressed }) => [styles.cancelOrderAction, pressed && styles.pressed]}
+          >
+            <XCircle size={iconSizes.sm} color="#B42318" strokeWidth={2.5} />
+            <Text style={styles.cancelOrderText}>Buyurtmani bekor qilish</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <Modal
@@ -89,13 +106,20 @@ export function OrderActions({ currentStatus, onUpdateStatus, onComplete }) {
           </View>
         </View>
       </Modal>
+
+      <WorkerCancelReasonModal
+        visible={cancelModalOpen}
+        loading={cancelling}
+        onClose={() => setCancelModalOpen(false)}
+        onSubmit={handleCancel}
+      />
     </>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: "row"
+    gap: 9
   },
   primaryAction: {
     flex: 1,
@@ -111,6 +135,24 @@ const styles = StyleSheet.create({
   primaryText: {
     color: colors.white,
     fontSize: 16,
+    textAlign: "center",
+    fontWeight: "900"
+  },
+  cancelOrderAction: {
+    minHeight: 46,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: "#F3B4AF",
+    backgroundColor: "#FFF5F5",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 7,
+    paddingHorizontal: 14
+  },
+  cancelOrderText: {
+    color: "#B42318",
+    fontSize: 14,
     textAlign: "center",
     fontWeight: "900"
   },

@@ -19,13 +19,13 @@ export function Topbar() {
         <Input
           className="pl-9"
           onChange={(event) => setGlobalSearch(event.target.value)}
-          placeholder="Order, worker yoki user qidirish"
+          placeholder="Buyurtma, usta yoki foydalanuvchini qidirish"
           value={globalSearch}
         />
       </div>
 
       <div className="flex items-center gap-4">
-        <button className="flex h-10 w-10 items-center justify-center rounded-md border bg-card text-muted-foreground">
+        <button aria-label="Bildirishnomalar" className="flex h-10 w-10 items-center justify-center rounded-md border bg-card text-muted-foreground">
           <Bell className="h-4 w-4" />
         </button>
         {session?.tokenType === "admin_account" ? (
@@ -33,7 +33,7 @@ export function Topbar() {
             className="rounded-md border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
             href="/change-password"
           >
-            Change password
+            Parolni o'zgartirish
           </Link>
         ) : null}
         <div className="flex items-center gap-3">
@@ -41,8 +41,8 @@ export function Topbar() {
             {initials}
           </div>
           <div>
-            <div className="text-sm font-medium">{session?.name || session?.username || "Operations Admin"}</div>
-            <div className="text-xs text-muted-foreground">{session?.role === "super_admin" ? "Super admin" : "Admin"}</div>
+            <div className="text-sm font-medium">{session?.name || session?.username || "Boshqaruv admini"}</div>
+            <div className="text-xs text-muted-foreground">{session?.role === "super_admin" ? "Bosh admin" : "Admin"}</div>
           </div>
         </div>
       </div>

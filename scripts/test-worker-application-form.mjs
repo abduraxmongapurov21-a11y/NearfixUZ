@@ -23,7 +23,6 @@ assert.deepEqual(toggleProfessionSelection(full, "F"), { professions: full, limi
 
 const complete = {
   name: "Test Usta",
-  cityId: "tashkent",
   professions: ["Elektrik", "Santexnik"],
   experienceYears: "5",
   profileImageUrl: "https://example.com/photo.jpg",
@@ -32,7 +31,6 @@ const complete = {
 };
 assert.deepEqual(workerApplicationPayload(complete), {
   name: "Test Usta",
-  cityId: "tashkent",
   profession: "Elektrik",
   professions: ["Elektrik", "Santexnik"],
   experienceYears: 5,
@@ -44,7 +42,6 @@ assert.deepEqual(missingWorkerApplicationFields(complete), []);
 const categoryComplete = { ...complete, professions: undefined, categoryIds: ["cat_electric", "cat_plumbing"] };
 assert.deepEqual(workerApplicationPayload(categoryComplete), {
   name: "Test Usta",
-  cityId: "tashkent",
   categoryIds: ["cat_electric", "cat_plumbing"],
   experienceYears: 5,
   profileImageUrl: "https://example.com/photo.jpg",

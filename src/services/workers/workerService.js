@@ -23,6 +23,9 @@ function formatRequestAge(createdAt) {
 export function mapApiWorkerProfile(worker) {
   if (!worker) return null;
 
+  const categories = Array.isArray(worker.categories)
+    ? worker.categories.map((item) => item?.category || item).filter(Boolean)
+    : [];
   const professions = Array.isArray(worker.professions) && worker.professions.length
     ? worker.professions
     : worker.profession
@@ -33,14 +36,15 @@ export function mapApiWorkerProfile(worker) {
   return {
     id: worker.id,
     userId: worker.userId,
-    cityId: worker.user?.cityId,
     status: String(worker.status || "DRAFT").toLowerCase(),
     phone: worker.user?.phone,
     name: worker.user?.name || worker.profession || "NearFIX usta",
     specialty: worker.profession || professions[0] || "Usta",
     professions,
-    categoryIds: Array.isArray(worker.categoryIds) ? worker.categoryIds : [],
-    categories: Array.isArray(worker.categories) ? worker.categories : [],
+    categoryIds: Array.isArray(worker.categoryIds) && worker.categoryIds.length
+      ? worker.categoryIds
+      : categories.map((category) => category.id).filter(Boolean),
+    categories,
     experienceYears: worker.experienceYears || 0,
     profileImageUrl: worker.profileImageUrl,
     about: worker.bio,
@@ -212,6 +216,32 @@ export async function fetchWorkerOrdersApi(token) {
   });
 }
 
+export async function createWorkerOrderApi(token, input) {
+  return apiRequest(async () => {
+    const payload = await httpAuthRequest("/workers/orders", {
+      method: "POST",
+      token,
+      body: {
+        clientPhone: input.clientPhone,
+        ...(input.clientName ? { clientName: input.clientName } : {}),
+        categoryId: input.categoryId,
+        description: input.description,
+        location: {
+          addressText: input.addressText,
+          ...(input.district ? { district: input.district } : {})
+        },
+        ...(input.priceEstimate ? { priceEstimate: input.priceEstimate } : {})
+      }
+    });
+
+    return {
+      ok: true,
+      order: mapApiOrder(payload.order),
+      raw: payload.order
+    };
+  });
+}
+
 export async function acceptOrderApi(token, orderId) {
   return apiRequest(async () => {
     const payload = await httpAuthRequest(`/orders/${orderId}/accept`, {
@@ -250,6 +280,21 @@ export async function updateOrderStatusApi(token, orderId, statusKey) {
 export async function rejectOrderApi(token, orderId, reason) {
   return apiRequest(async () => {
     const payload = await httpAuthRequest(`/orders/${orderId}/reject`, {
+      method: "POST",
+      token,
+      body: { reason }
+    });
+
+    return {
+      ok: true,
+      order: mapApiOrder(payload.order)
+    };
+  });
+}
+
+export async function cancelWorkerOrderApi(token, orderId, reason) {
+  return apiRequest(async () => {
+    const payload = await httpAuthRequest(`/orders/${orderId}/cancel`, {
       method: "POST",
       token,
       body: { reason }

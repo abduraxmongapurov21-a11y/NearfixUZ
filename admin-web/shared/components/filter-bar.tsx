@@ -14,7 +14,7 @@ export function FilterBar({
   searchValue,
   onSearchChange,
   searchPlaceholder = "Qidirish",
-  filters = ["Status", "City", "Date"]
+  filters = ["Holat", "Shahar", "Sana"]
 }: FilterBarProps) {
   return (
     <div className="mb-4 flex items-center justify-between gap-3">

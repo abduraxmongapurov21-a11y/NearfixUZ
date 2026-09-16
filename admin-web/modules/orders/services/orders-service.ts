@@ -40,8 +40,8 @@ function mapOrder(order: any): AdminOrder {
   return {
     orderId: order.id,
     id: order.publicCode || order.id,
-    client: order.client?.name || order.client?.phone || "Client",
-    worker: order.worker?.user?.name || order.worker?.profession || "Worker",
+    client: order.client?.name || order.client?.phone || "Mijoz",
+    worker: order.worker?.user?.name || order.worker?.profession || "Usta",
     city: (order.cityId || "Tashkent") as City,
     service: order.serviceType,
     status: mapStatus(String(order.status || "")),
@@ -62,12 +62,12 @@ function mapOrderDetail(order: any): AdminOrderDetail {
     createdAt: formatDate(order.createdAt) || "",
     client: {
       id: order.client?.id || order.clientId || "",
-      name: order.client?.name || order.client?.phone || "Client",
+      name: order.client?.name || order.client?.phone || "Mijoz",
       phone: order.client?.phone || ""
     },
     worker: {
       id: order.worker?.id || order.workerId || "",
-      name: order.worker?.user?.name || order.worker?.user?.phone || order.worker?.profession || "Worker",
+      name: order.worker?.user?.name || order.worker?.user?.phone || order.worker?.profession || "Usta",
       phone: order.worker?.user?.phone || "",
       profession: order.worker?.profession || "",
       availability: String(order.worker?.availability?.status || "")
@@ -129,7 +129,7 @@ function buildQueryString(query: AdminOrdersQuery) {
 
 export async function getOrders(query: AdminOrdersQuery = {}): Promise<AdminOrdersResult> {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin authentication required");
+  if (!token) throw new Error("Admin sifatida kirish talab qilinadi");
 
   const payload = await apiClient<{
     ok: boolean;
@@ -151,7 +151,7 @@ export async function getOrders(query: AdminOrdersQuery = {}): Promise<AdminOrde
 
 export async function getOrderDetail(orderId: string): Promise<AdminOrderDetail> {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin authentication required");
+  if (!token) throw new Error("Admin sifatida kirish talab qilinadi");
 
   const payload = await apiClient<{ ok: boolean; order: any }>(`/orders/${orderId}`, { token });
   return mapOrderDetail(payload.order);
@@ -171,7 +171,7 @@ export async function runOrderAction(orderId: string, action: AdminOrderAction) 
 
   if (action === "cancel") {
     await apiClient<{ ok: boolean; order: any }>(`/orders/${orderId}/cancel`, {
-      body: JSON.stringify({ reason: "Cancelled by admin" }),
+      body: JSON.stringify({ reason: "Admin tomonidan bekor qilindi" }),
       method: "POST",
       token
     });

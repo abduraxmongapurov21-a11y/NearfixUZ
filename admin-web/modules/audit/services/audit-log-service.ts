@@ -3,7 +3,7 @@ import type { AdminAuditLogsQuery, AdminAuditLogsResult } from "../types/audit-l
 
 function requireToken() {
   const token = getAdminToken();
-  if (!token) throw new Error("Admin token is missing");
+  if (!token) throw new Error("Admin sessiyasi topilmadi");
   return token;
 }
 

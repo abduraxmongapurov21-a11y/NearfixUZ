@@ -4,7 +4,7 @@ import { PageHeader } from "@/shared/components/page-header";
 export default function ReportsPage() {
   return (
     <>
-      <PageHeader title="Reports moderation" description="Review abuse reports, inspect target context, record decisions and take moderation action." />
+      <PageHeader title="Shikoyatlar moderatsiyasi" description="Shikoyatlarni ko'rib chiqing, sabab va obyektni tekshiring hamda tegishli chorani belgilang." />
       <ReportsCenter />
     </>
   );

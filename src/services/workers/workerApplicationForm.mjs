@@ -23,7 +23,6 @@ export function workerApplicationPayload(form, partial = false) {
   const professions = Array.from(new Set((form.professions || []).map((item) => item.trim()).filter(Boolean)));
   const payload = {
     name: form.name.trim(),
-    cityId: form.cityId.trim(),
     ...(categoryIds.length ? { categoryIds } : { profession: professions[0] || "", professions }),
     experienceYears: form.experienceYears === "" ? undefined : Number(normalizeDigits(form.experienceYears)),
     profileImageUrl: form.profileImageUrl.trim(),
@@ -42,7 +41,6 @@ export function workerApplicationPayload(form, partial = false) {
 export function missingWorkerApplicationFields(form) {
   const missing = [];
   if (form.name.trim().length < 2) missing.push("Ism");
-  if (form.cityId.trim().length < 2) missing.push("Shahar");
   if (!form.categoryIds?.length && !form.professions?.length) missing.push("Xizmat sohasi");
   if (form.experienceYears === "") missing.push("Tajriba");
   if (!form.profileImageUrl.trim()) missing.push("Profil rasmi");

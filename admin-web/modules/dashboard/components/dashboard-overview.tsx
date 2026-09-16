@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/shared/components/empty-state";
 import { StatCard } from "@/shared/components/stat-card";
+import { adminLabel } from "@/lib/admin-labels";
 import { useDashboardSummary } from "../hooks/use-dashboard-summary";
 
 export function DashboardOverview() {
@@ -21,23 +22,23 @@ export function DashboardOverview() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-5">
-        <StatCard helper="Hozir jarayonda" label="Active orders" value={data.activeOrders} />
+        <StatCard helper="Hozir jarayonda" label="Faol buyurtmalar" value={data.activeOrders} />
         <StatCard
           helper="Usta javobi kutilmoqda"
-          label="Waiting response"
+          label="Javob kutilmoqda"
           tone="warning"
           value={data.waitingResponse}
         />
-        <StatCard helper="Faol buyurtmada" label="Busy workers" value={data.busyWorkers} />
+        <StatCard helper="Faol buyurtmada" label="Band ustalar" value={data.busyWorkers} />
         <StatCard
           helper="Bugun yakunlangan"
-          label="Completed today"
+          label="Bugun bajarilgan"
           tone="success"
           value={data.completedToday}
         />
         <StatCard
           helper="Bugungi bekorlar"
-          label="Cancelled today"
+          label="Bugun bekor qilingan"
           tone="danger"
           value={data.cancelledToday}
         />
@@ -45,19 +46,19 @@ export function DashboardOverview() {
 
       <Card>
         <CardHeader>
-          <CardTitle>City overview</CardTitle>
+          <CardTitle>Shaharlar bo'yicha holat</CardTitle>
         </CardHeader>
         <CardContent>
           {data.cityOverview.length ? (
             <div className="divide-y">
               {data.cityOverview.map((city) => (
                 <div className="grid grid-cols-3 py-3 text-sm" key={city.city}>
-                  <div className="font-medium">{city.city}</div>
+                  <div className="font-medium">{adminLabel(city.city)}</div>
                   <div className="text-muted-foreground">
-                    {city.activeOrders} active orders
+                    {city.activeOrders} ta faol buyurtma
                   </div>
                   <div className="text-muted-foreground">
-                    {city.availableWorkers} available workers
+                    {city.availableWorkers} ta bo'sh usta
                   </div>
                 </div>
               ))}
@@ -65,7 +66,7 @@ export function DashboardOverview() {
           ) : (
             <EmptyState
               description="Shahar kesimidagi operatsion holat backend ulanganda ko'rinadi."
-              title="City data tayyor emas"
+              title="Shahar ma'lumotlari tayyor emas"
             />
           )}
         </CardContent>
