@@ -31,6 +31,7 @@ export function mapApiChatRoom(room, currentUserId) {
     cityId: room.cityId,
     serviceType: room.serviceType,
     orderId: room.orderId,
+    orderCode: room.order?.publicCode,
     participants: room.participants || [],
     participantCount: room.participants?.length || 0,
     unread: room.unreadCount || 0,
@@ -131,11 +132,12 @@ export async function sendChatMessageApi(token, roomId, message, currentUserId) 
   });
 }
 
-export async function markChatRoomReadApi(token, roomId) {
+export async function markChatRoomReadApi(token, roomId, throughMessageId) {
   return apiRequest(async () => {
-    await httpAuthRequest(`/chats/rooms/${roomId}/read`, {
+    await httpAuthRequest(`/chats/rooms/${roomId}/read-through`, {
       method: "PATCH",
-      token
+      token,
+      body: { throughMessageId }
     });
 
     return { ok: true };

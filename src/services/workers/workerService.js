@@ -3,6 +3,7 @@ import { WORKER_STATUS } from "../../constants/workerStatus";
 import { apiRequest, httpRequest } from "../api/client";
 import { httpAuthRequest } from "../api/authenticatedClient";
 import { mapApiOrder } from "../orders/orderService";
+import { orderLocationDisplayText } from "../orders/bookingLocation.mjs";
 import { normalizeServiceLocation } from "./serviceLocation.mjs";
 
 function mapAvailability(status) {
@@ -188,7 +189,7 @@ export async function fetchIncomingOrdersApi(token) {
         id: order.id,
         clientName: order.client?.name || "Mijoz",
         district: order.location?.district || order.cityId,
-        address: order.location?.addressText || "Manzil ma'lumoti yo'q",
+        address: orderLocationDisplayText(order.location),
         location: order.location || null,
         distance: order.distance || order.distanceKm ? `${order.distance || order.distanceKm} km` : "Yaqin hudud",
         service: order.serviceType,

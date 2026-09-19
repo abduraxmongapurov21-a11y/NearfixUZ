@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { BriefcaseBusiness, DollarSign, Home, MessageCircle, UserRound } from "lucide-react-native";
 import { ROUTES } from "../../constants/routes";
-import { fetchChatRoomsApi } from "../../services/chats/chatService";
-import { useAuthStore } from "../../store/authStore";
+import { useChatRefresh } from "../../hooks/useChatRefresh";
+import { refreshChatRooms, useChatStore } from "../../store/chatStore";
+import { chatUnreadCount } from "../../services/chats/chatSync.mjs";
 import { colors, iconSizes, radius } from "../../theme";
 import { Text } from "../../i18n/native";
 
@@ -16,31 +17,9 @@ const tabMeta = {
 };
 
 export function WorkerTabBar({ state, descriptors, navigation }) {
-  const session = useAuthStore((store) => store.session);
-  const [unreadChats, setUnreadChats] = useState(0);
+  const unreadChats = useChatStore((store) => chatUnreadCount(store.rooms));
+  useChatRefresh(refreshChatRooms);
   const visibleRoutes = state.routes.filter((route) => tabMeta[route.name]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadUnreadChats() {
-      if (!session?.token) {
-        setUnreadChats(0);
-        return;
-      }
-
-      const result = await fetchChatRoomsApi(session.token, undefined, session.userId);
-      if (mounted && result.ok) {
-        setUnreadChats(result.rooms.reduce((sum, room) => sum + (room.unread || 0), 0));
-      }
-    }
-
-    loadUnreadChats();
-
-    return () => {
-      mounted = false;
-    };
-  }, [session?.token, session?.userId]);
 
   return (
     <View style={styles.wrap}>

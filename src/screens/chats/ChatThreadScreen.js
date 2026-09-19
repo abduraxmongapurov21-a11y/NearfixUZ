@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Image,
   InteractionManager,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -14,7 +13,6 @@ import {
   View
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ArrowLeft,
   Camera,
@@ -28,7 +26,9 @@ import {
   UserRound
 } from "lucide-react-native";
 import { ROUTES } from "../../constants/routes";
-import { fetchChatMessagesApi, markChatRoomReadApi, sendChatMessageApi } from "../../services/chats/chatService";
+import { sendChatMessageApi } from "../../services/chats/chatService";
+import { useChatThread } from "../../hooks/useChatThread";
+import { keyboardOverlap } from "../../services/chats/chatSync.mjs";
 import { uploadMediaApi } from "../../services/media/mediaService";
 import { useAuthStore } from "../../store/authStore";
 import { ReportModal } from "../../components/moderation/ReportModal";
@@ -43,7 +43,6 @@ const font = {
   extra: "Inter_800ExtraBold"
 };
 
-const initialMessages = [];
 const MIN_MESSAGE_INPUT_HEIGHT = 24;
 const MAX_MESSAGE_INPUT_HEIGHT = 96;
 const MESSAGE_INPUT_VERTICAL_PADDING = 10;
@@ -98,8 +97,19 @@ function waitForAttachmentSheetToClose() {
 }
 
 export function ChatThreadScreen({ navigation, route }) {
+  const session = useAuthStore((state) => state.session);
+  const generation = useAuthStore((state) => state.navigationGeneration);
+  const mode = normalizeExperienceMode(session?.role, session?.experienceMode);
+  return <ChatThreadContent key={`${session?.userId}:${generation}:${mode}:${route.params?.room?.id}`} navigation={navigation} route={route} />;
+}
+
+function ChatThreadContent({ navigation, route }) {
   const scrollRef = useRef(null);
-  const insets = useSafeAreaInsets();
+  const screenRef = useRef(null);
+  const nearBottom = useRef(true);
+  const userScrolling = useRef(false);
+  const scrollFrame = useRef(null);
+  const keyboardTop = useRef(null);
   const session = useAuthStore((state) => state.session);
   const experienceMode = normalizeExperienceMode(session?.role, session?.experienceMode);
   const room = route.params?.room || {
@@ -108,14 +118,15 @@ export function ChatThreadScreen({ navigation, route }) {
     color: "#17B9AD"
   };
   const isApiRoom = Boolean(room.id && session?.token);
-  const [messages, setMessages] = useState(initialMessages);
+  const { messages: apiMessages, sending, thread, refresh } = useChatThread(room.id);
+  const messages = useMemo(() => apiMessages.map((message) => ({ ...mapApiMessageToThread(message), status: message.status })), [apiMessages]);
   const [inputText, setInputText] = useState("");
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [inputHeight, setInputHeight] = useState(MIN_MESSAGE_INPUT_HEIGHT);
   const [inputTextWidth, setInputTextWidth] = useState(220);
   const [reportTarget, setReportTarget] = useState(null);
@@ -123,58 +134,59 @@ export function ChatThreadScreen({ navigation, route }) {
   const currentUserId = session?.userId;
   const counterpartUserId = room.participants?.find((participant) => participant.userId !== currentUserId)?.userId;
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadMessages() {
-      if (!isApiRoom) return;
-
-      const identity = useAuthStore.getState().captureAuthRequest(session.token);
-      const result = await fetchChatMessagesApi(session.token, room.id, currentUserId);
-      if (mounted && useAuthStore.getState().isAuthRequestCurrent(identity) && result.ok) {
-        setMessages(result.messages.map(mapApiMessageToThread));
-        await markChatRoomReadApi(session.token, room.id);
-      }
-    }
-
-    loadMessages();
-
-    return () => {
-      mounted = false;
-    };
-  }, [currentUserId, isApiRoom, room.id, session?.token]);
-
   async function handleRefresh() {
-    const identity = useAuthStore.getState().captureAuthRequest(session?.token);
     setRefreshing(true);
-
-    if (isApiRoom) {
-      const result = await fetchChatMessagesApi(session.token, room.id, currentUserId);
-      if (useAuthStore.getState().isAuthRequestCurrent(identity) && result.ok) {
-        setMessages(result.messages.map(mapApiMessageToThread));
-        await markChatRoomReadApi(session.token, room.id);
-      }
-    }
-
-    if (useAuthStore.getState().isAuthRequestCurrent(identity)) setRefreshing(false);
+    await refresh();
+    setRefreshing(false);
   }
 
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
+  const measureKeyboardOverlap = useCallback(() => {
+    // Native-stack's window origin can omit the root SafeAreaView offset.
+    // pageY and keyboard.screenY share screen coordinates; native resize is
+    // already included in height, so only the remaining overlap is reserved.
+    screenRef.current?.measure((_x, _y, _width, height, _pageX, pageY) => {
+      setKeyboardInset(keyboardOverlap(pageY, height, keyboardTop.current));
     });
-  }, [messages.length]);
+  }, []);
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
+    thread.setVisible(viewableItems.filter((item) => item.isViewable).map((item) => item.item.id));
+  }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50, minimumViewTime: 200 }).current;
+  function followNewMessages() {
+    if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
+    // Android can deliver contentSize before the native scroll range is
+    // committed. Wait for layout, then follow only if the user stayed at bottom.
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = requestAnimationFrame(() => {
+        scrollFrame.current = null;
+        if (nearBottom.current && navigation.isFocused()) scrollRef.current?.getScrollResponder()?.scrollToEnd({ animated: false });
+      });
+    });
+  }
+  useEffect(() => () => {
+    if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
+  }, []);
+  function rememberScrollPosition({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) {
+    // Layout/content changes also emit onScroll. Only a user's scroll changes
+    // the follow-new-messages preference; growing content must not turn it off.
+    if (userScrolling.current) nearBottom.current = contentSize.height - layoutMeasurement.height - contentOffset.y < 72;
+  }
+  function finishUserScroll(event) {
+    rememberScrollPosition(event);
+    userScrolling.current = false;
+  }
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const showSubscription = Keyboard.addListener(showEvent, (event) => {
-      const height = event.endCoordinates?.height || 0;
-      setKeyboardHeight(Math.max(0, height - insets.bottom));
+      keyboardTop.current = event.endCoordinates?.screenY ?? null;
       setKeyboardVisible(true);
+      measureKeyboardOverlap();
     });
     const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
+      keyboardTop.current = null;
+      setKeyboardInset(0);
       setKeyboardVisible(false);
     });
 
@@ -182,9 +194,9 @@ export function ChatThreadScreen({ navigation, route }) {
       showSubscription.remove();
       hideSubscription.remove();
     };
-  }, [insets.bottom]);
+  }, [measureKeyboardOverlap]);
 
-  const canSendText = useMemo(() => Boolean(inputText.trim()) && !uploading, [inputText, uploading]);
+  const canSendText = Boolean(inputText.trim()) && !uploading && !sending;
   const inputBoxHeight = inputHeight + MESSAGE_INPUT_VERTICAL_PADDING * 2;
   const estimatedInputLines = useMemo(() => estimateInputLines(inputText, inputTextWidth), [inputText, inputTextWidth]);
 
@@ -224,7 +236,7 @@ export function ChatThreadScreen({ navigation, route }) {
 
   async function sendTextMessage() {
     const body = inputText.trim();
-    if (!body) return;
+    if (!body || sending) return;
 
     setInputText("");
     setInputHeight(MIN_MESSAGE_INPUT_HEIGHT);
@@ -234,31 +246,14 @@ export function ChatThreadScreen({ navigation, route }) {
       return;
     }
 
-    const pendingId = `pending-text-${Date.now()}`;
     const identity = useAuthStore.getState().captureAuthRequest(session.token);
-    setMessages((current) => [
-      ...current,
-      {
-        id: pendingId,
-        direction: "out",
-        time: "Hozir",
-        type: "text",
-        body,
-        status: "sending"
-      }
-    ]);
-
-    const result = await sendChatMessageApi(session.token, room.id, { type: "TEXT", body }, currentUserId);
-    if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === pendingId
-          ? result.ok
-            ? mapApiMessageToThread({ ...result.message, outgoing: true })
-            : { ...message, status: "failed" }
-          : message
-      )
-    );
+    const result = await thread.send({ type: "text", body }, () =>
+      sendChatMessageApi(session.token, room.id, { type: "TEXT", body }, currentUserId));
+    if (!result.ok && useAuthStore.getState().isAuthRequestCurrent(identity) && navigation.isFocused()) {
+      setInputText((current) => current || body);
+      Alert.alert("Xabar yuborilmadi", result.message || "Aloqani tekshirib, qayta urinib ko'ring.");
+    }
+    void refresh();
   }
 
   async function ensureGalleryPermission() {
@@ -321,70 +316,49 @@ export function ChatThreadScreen({ navigation, route }) {
       return;
     }
 
-    const pendingId = `pending-image-${Date.now()}`;
     const identity = useAuthStore.getState().captureAuthRequest(session.token);
     setUploading(true);
-
-    setMessages((current) => [
-      ...current,
-      {
-        id: pendingId,
-        direction: "out",
-        time: "Hozir",
-        type: "image",
-        media: { uri: asset.uri },
-        status: "sending"
-      }
-    ]);
-
     try {
-      const optimized = await optimizeImage(asset);
+      const result = await thread.send({ type: "image", media: { url: asset.uri } }, async () => {
+        const optimized = await optimizeImage(asset);
 
-      const uploadResult = await uploadMediaApi(
-        session.token,
-        optimized,
-        room.orderId
-          ? {
-              orderId: room.orderId,
-              scope: "CHAT"
-            }
-          : {
-              roomId: room.id,
-              scope: "CHAT"
-            }
-      );
+        const uploadResult = await uploadMediaApi(
+          session.token,
+          optimized,
+          room.orderId
+            ? {
+                orderId: room.orderId,
+                scope: "CHAT"
+              }
+            : {
+                roomId: room.id,
+                scope: "CHAT"
+              }
+        );
 
-      if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
+        if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return { ok: false };
 
-      if (!uploadResult.ok) throw new Error(uploadResult.message || "Rasm yuklanmadi");
+        if (!uploadResult.ok) throw new Error(uploadResult.message || "Rasm yuklanmadi");
 
-      const messageResult = await sendChatMessageApi(
-        session.token,
-        room.id,
-        {
-          type: "IMAGE",
-          mediaId: uploadResult.media.id
-        },
-        currentUserId
-      );
+        const messageResult = await sendChatMessageApi(
+          session.token,
+          room.id,
+          {
+            type: "IMAGE",
+            mediaId: uploadResult.media.id
+          },
+          currentUserId
+        );
 
-      if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
-
-      if (!messageResult.ok) throw new Error(messageResult.message || "Rasmli xabar yuborilmadi");
-
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === pendingId ? mapApiMessageToThread({ ...messageResult.message, outgoing: true }) : message
-        )
-      );
+        return messageResult;
+      });
+      if (!result.ok) throw new Error(result.message || "Rasmli xabar yuborilmadi");
+      void refresh();
     } catch (error) {
       if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
       Alert.alert(
         "Rasm yuborilmadi",
         error?.message || "Internet yoki server holatini tekshirib, qayta urinib ko'ring."
-      );
-      setMessages((current) =>
-        current.map((message) => (message.id === pendingId ? { ...message, status: "failed" } : message))
       );
     } finally {
       if (useAuthStore.getState().isAuthRequestCurrent(identity)) setUploading(false);
@@ -416,10 +390,8 @@ export function ChatThreadScreen({ navigation, route }) {
     ]);
   }
 
-  const keyboardBottomInset = Platform.OS === "ios" && keyboardVisible ? keyboardHeight : 0;
-
   return (
-    <View style={styles.screen}>
+    <View ref={screenRef} collapsable={false} onLayout={measureKeyboardOverlap} style={[styles.screen, { paddingBottom: keyboardInset }]}>
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.headerIcon}>
           <ArrowLeft size={21} color="#273248" strokeWidth={2.8} />
@@ -438,15 +410,21 @@ export function ChatThreadScreen({ navigation, route }) {
         </Pressable>
       </View>
 
-      <KeyboardAvoidingView
-        style={[styles.chatArea, keyboardBottomInset ? { paddingBottom: keyboardBottomInset } : null]}
-        behavior={Platform.OS === "android" ? "height" : undefined}
-        keyboardVerticalOffset={0}
-      >
+      <View style={styles.chatArea}>
         <FlatList
           ref={scrollRef}
           style={styles.messageList}
           data={messages}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          onScroll={rememberScrollPosition}
+          onScrollBeginDrag={() => { userScrolling.current = true; }}
+          onScrollEndDrag={finishUserScroll}
+          onMomentumScrollBegin={() => { userScrolling.current = true; }}
+          onMomentumScrollEnd={finishUserScroll}
+          scrollEventThrottle={100}
+          onLayout={followNewMessages}
+          onContentSizeChange={followNewMessages}
           keyExtractor={(message) => String(message.id)}
           renderItem={({ item }) =>
             item.direction === "out" ? (
@@ -489,7 +467,7 @@ export function ChatThreadScreen({ navigation, route }) {
         />
 
         <View style={styles.inputPanel}>
-          <Pressable style={styles.plusButton} onPress={openAttachmentSheet} disabled={uploading}>
+          <Pressable style={styles.plusButton} onPress={openAttachmentSheet} disabled={uploading || sending}>
             <Plus size={24} color="#0F80B7" strokeWidth={2.7} />
           </Pressable>
           <View style={[styles.inputBox, { height: inputBoxHeight }]} onLayout={handleInputBoxLayout}>
@@ -513,6 +491,7 @@ export function ChatThreadScreen({ navigation, route }) {
             />
           </View>
           <Pressable
+            accessibilityLabel="Xabar yuborish"
             style={[styles.sendButton, !canSendText && styles.sendButtonDisabled]}
             onPress={sendTextMessage}
             disabled={!canSendText}
@@ -520,7 +499,7 @@ export function ChatThreadScreen({ navigation, route }) {
             {uploading ? <ActivityIndicator color="#FFFFFF" /> : <Send size={18} color="#FFFFFF" strokeWidth={2.7} />}
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       <AttachmentSheet
         visible={sheetVisible}

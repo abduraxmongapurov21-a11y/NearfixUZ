@@ -1,4 +1,8 @@
+import "./test-isolation-preload.js";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import type { AddressInfo } from "node:net";
+import { writeFile } from "node:fs/promises";
 import { OrderStatus, UserRole, WorkerAvailabilityStatus, WorkerProfileStatus } from "@prisma/client";
 import { prisma } from "../src/db/prisma.js";
 import type { AuthUser } from "../src/modules/auth/auth-context.js";
@@ -13,11 +17,13 @@ import {
   transitionOrder
 } from "../src/modules/orders/order.service.js";
 import { createOrderReview } from "../src/modules/reviews/review.service.js";
+import { createApp } from "../src/http/app.js";
+import { createAccessToken } from "../src/modules/auth/session.js";
 
 const suffix = String(Date.now()).slice(-7);
 const phones = [0, 1, 2, 3].map((index) => `+99888${suffix}${index}`);
 
-function auth(user: { id: string; phone: string; name: string | null; role: UserRole; sessionVersion: number }, permissions: string[] = []): AuthUser {
+function auth(user: { id: string; phone: string; name: string | null; role: UserRole; sessionVersion: number }, permissions: AuthUser["permissions"] = []): AuthUser {
   return {
     id: user.id,
     phone: user.phone,
@@ -67,9 +73,98 @@ assert.equal(
 for (const location of [
   { ...oneTimeLocation, latitude: 91 },
   { ...oneTimeLocation, longitude: -181 },
-  { ...oneTimeLocation, addressText: " " }
+  { ...oneTimeLocation, latitude: NaN },
+  { ...oneTimeLocation, longitude: Infinity },
+  { ...oneTimeLocation, latitude: null },
+  { ...oneTimeLocation, addressText: 123 }
 ]) {
   assert.equal(createOrderSchema.safeParse({ ...baseContract, location }).success, false);
+}
+
+async function f4HttpSnapshots() {
+  const client = await prisma.user.create({ data: { phone: "+998000000941", name: "F4 client", cityId: "tashkent" } });
+  async function token(user: typeof client) {
+    const session = await prisma.session.create({ data: {
+      userId: user.id, refreshToken: randomUUID(), expiresAt: new Date(Date.now() + 3600000)
+    } });
+    return createAccessToken({ userId: user.id, sessionId: session.id, sessionVersion: user.sessionVersion });
+  }
+  const clientToken = await token(client);
+  const server = createApp().listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const evidence: unknown[] = [];
+  async function http(method: string, route: string, body?: unknown, accessToken = clientToken) {
+    const response = await fetch(`${baseUrl}${route}`, { method, headers: {
+      "Content-Type": "application/json", Authorization: `Bearer ${accessToken}`
+    }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: response.status, ...await response.json() };
+  }
+  const saved = await prisma.address.create({ data: {
+    userId: client.id, label: "Uy", cityId: "tashkent", addressText: "F4 saved address", lat: 41.311081, lng: 69.240562
+  } });
+  try {
+    const scenarios = [
+      { name: "address-found", location: oneTimeLocation },
+      { name: "address-empty", location: { latitude: 41.311081, longitude: 69.240562, addressText: "" } },
+      { name: "address-omitted", location: { latitude: 41.3222222, longitude: 69.2555555 } },
+      { name: "address-whitespace", location: { latitude: 41.32, longitude: 69.25, addressText: "  " } },
+      { name: "short-real-address", location: { latitude: 41.32, longitude: 69.25, addressText: "A1" } },
+      { name: "zero-coordinates", location: { latitude: 0, longitude: 0, addressText: "" } },
+      { name: "saved-address", addressId: saved.id }
+    ];
+    for (const [index, scenario] of scenarios.entries()) {
+      const provider = await prisma.user.create({ data: {
+        phone: `+99800000095${index}`, role: "PROVIDER", name: "F4 worker", cityId: "tashkent"
+      } });
+      const worker = await prisma.workerProfile.create({ data: {
+        userId: provider.id, status: "APPROVED", profession: "Santexnik", professions: ["Santexnik"],
+        availability: { create: { status: "AVAILABLE" } }
+      } });
+      const body = { ...baseContract, workerId: worker.id, location: scenario.location, addressId: scenario.addressId };
+      const created = await http("POST", "/orders", body);
+      assert.equal(created.status, 201, scenario.name);
+      const expected = scenario.location || { latitude: 41.311081, longitude: 69.240562, addressText: "F4 saved address" };
+      const snapshot = await prisma.order.findUniqueOrThrow({ where: { id: created.order.id }, select: {
+        locationLat: true, locationLng: true, locationAddressText: true, locationLabel: true, locationDistrict: true
+      } });
+      assert.equal(Number(snapshot.locationLat), expected.latitude);
+      assert.equal(Number(snapshot.locationLng), expected.longitude);
+      assert.equal(snapshot.locationAddressText, expected.addressText?.trim() || null);
+      if (!expected.addressText?.trim()) {
+        assert.equal(snapshot.locationLabel, null);
+        assert.equal(snapshot.locationDistrict, null);
+      }
+      const workerToken = await token(provider);
+      for (const accessToken of [clientToken, workerToken]) {
+        const detail = await http("GET", `/orders/${created.order.id}`, undefined, accessToken);
+        assert.equal(detail.status, 200);
+        assert.equal(detail.order.location.latitude, expected.latitude);
+        assert.equal(detail.order.location.longitude, expected.longitude);
+        assert.equal(detail.order.location.addressText, expected.addressText?.trim() || "");
+      }
+      const incoming = await http("GET", "/orders/worker/incoming", undefined, workerToken);
+      assert.deepEqual(incoming.orders.find((order: any) => order.id === created.order.id).location, created.order.location);
+      evidence.push({ scenario: scenario.name, status: created.status, payload: body, snapshot, location: created.order.location });
+      if (scenario.addressId) {
+        await prisma.address.update({ where: { id: saved.id }, data: { addressText: "Changed later", lat: 40, lng: 68 } });
+        await prisma.address.delete({ where: { id: saved.id } });
+        assert.deepEqual((await http("GET", `/orders/${created.order.id}`)).order.location, created.order.location);
+      }
+      const beforeInvalid = await prisma.order.count();
+      for (const location of [
+        { latitude: 91, longitude: 69.2 }, { latitude: 41.3, longitude: -181 },
+        { latitude: null, longitude: 69.2 }, { latitude: "41.3", longitude: 69.2 },
+        { latitude: 41.3 }, { latitude: 41.3, longitude: 69.2, addressText: 42 }
+      ]) assert.equal((await http("POST", "/orders", { ...baseContract, workerId: worker.id, location })).status, 400);
+      assert.equal(await prisma.order.count(), beforeInvalid);
+    }
+    assert.equal(await prisma.address.count({ where: { userId: client.id } }), 0, "coordinate-only orders must not create saved addresses");
+    if (process.env.F4_EVIDENCE_FILE) await writeFile(process.env.F4_EVIDENCE_FILE, JSON.stringify(evidence, null, 2));
+    console.log("[F4] PASS: 7 HTTP create scenarios; client/worker detail, incoming DTO and exact DB snapshots; invalid coordinates rejected without writes; saved-address snapshot survives edit/delete");
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 }
 
 async function main() {
@@ -187,4 +282,4 @@ async function main() {
   console.log("Order location contract, snapshot integrity, DTO privacy, provider client-mode, lifecycle, cancellation, and review tests passed.");
 }
 
-main().finally(() => prisma.$disconnect());
+(process.env.F4_LOCATION_ONLY === "1" ? f4HttpSnapshots() : main()).finally(() => prisma.$disconnect());

@@ -4,7 +4,7 @@ import { z } from "zod";
 export const orderLocationSchema = z.object({
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
-  addressText: z.string().trim().min(4).max(240),
+  addressText: z.string().trim().max(240).optional(),
   label: z.string().trim().min(2).max(60).optional(),
   district: z.string().trim().max(80).optional()
 });

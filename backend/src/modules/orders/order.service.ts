@@ -28,13 +28,10 @@ import {
 import type { CreateOrderInput, CreateWorkerOrderInput } from "./order.contracts.js";
 import { orderInclude } from "./order.dto.js";
 import { eventByTransition, transitionOrderStatus } from "./order-state.js";
+import { orderResponseDeadline } from "./order-timeout.js";
 
 function createPublicCode() {
   return `NF-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-}
-
-function addMinutes(date: Date, minutes: number) {
-  return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
 function actorTypeForUser(user: AuthUser) {
@@ -69,8 +66,8 @@ function validateDirectLocationInput(input: CreateOrderInput) {
   if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     throw invalidLocation("Longitude is invalid", "ORDER_LOCATION_COORDINATES_INVALID");
   }
-  if (typeof addressText !== "string" || addressText.trim().length < 4) {
-    throw invalidLocation("Readable address is required", "ORDER_LOCATION_ADDRESS_INVALID");
+  if (addressText !== undefined && (typeof addressText !== "string" || addressText.trim().length > 240)) {
+    throw invalidLocation("Address text is invalid", "ORDER_LOCATION_ADDRESS_INVALID");
   }
 }
 
@@ -198,7 +195,7 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
   validateDirectLocationInput(input);
 
   const now = new Date();
-  const responseDeadlineAt = addMinutes(now, 60);
+  const responseDeadlineAt = orderResponseDeadline(now);
 
   const createdOrder = await prisma.$transaction(async (tx) => {
     const worker = await tx.workerProfile.findUnique({
@@ -290,7 +287,7 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
         workerId: worker.id,
         addressId: savedAddress?.id,
         locationLabel: savedAddress?.label || input.location?.label,
-        locationAddressText: savedAddress?.addressText || input.location?.addressText.trim(),
+        locationAddressText: savedAddress?.addressText || input.location?.addressText?.trim() || null,
         locationDistrict: savedAddress?.district || input.location?.district,
         locationLat: savedCoordinatesAreValid ? savedAddress?.lat : input.location?.latitude,
         locationLng: savedCoordinatesAreValid ? savedAddress?.lng : input.location?.longitude,
@@ -582,7 +579,6 @@ export async function listIncomingOrdersForProvider(user: AuthUser) {
   }
 
   const now = new Date();
-  await autoCancelExpiredWaitingOrders(now);
 
   return prisma.order.findMany({
     where: {
@@ -616,6 +612,9 @@ export async function acceptOrder(user: AuthUser, orderId: string) {
   }
 
   const acceptedOrder = await prisma.$transaction(async (tx) => {
+    // Evaluate the server clock after acquiring the row lock, not before a
+    // potentially long wait behind a concurrent cancel/expiry transaction.
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: { worker: true }
@@ -639,7 +638,8 @@ export async function acceptOrder(user: AuthUser, orderId: string) {
       });
     }
 
-    if (order.responseDeadlineAt && order.responseDeadlineAt <= new Date()) {
+    const acceptedAt = new Date();
+    if (order.responseDeadlineAt && order.responseDeadlineAt <= acceptedAt) {
       throw Object.assign(new Error("Order response window expired"), {
         status: 409,
         code: "ORDER_RESPONSE_EXPIRED"
@@ -650,6 +650,7 @@ export async function acceptOrder(user: AuthUser, orderId: string) {
       orderId: order.id,
       fromStatus: OrderStatus.WAITING_RESPONSE,
       toStatus: OrderStatus.ACCEPTED,
+      where: { OR: [{ responseDeadlineAt: null }, { responseDeadlineAt: { gt: acceptedAt } }] },
       conflictCode: "ORDER_ALREADY_ACCEPTED"
     });
 
@@ -946,19 +947,29 @@ export async function autoCancelExpiredWaitingOrders(now = new Date()) {
     }
   });
 
+  let cancelledCount = 0;
   for (const order of expiredOrders) {
     const cancelledOrder = await prisma.$transaction(async (tx) => {
-      await transitionOrderStatus(tx, {
-        orderId: order.id,
-        fromStatus: OrderStatus.WAITING_RESPONSE,
-        toStatus: OrderStatus.CANCELLED,
-        data: {
-          cancelReason: "Worker did not respond within 1 hour"
+      const changed = await tx.order.updateMany({
+        where: {
+          id: order.id,
+          status: OrderStatus.WAITING_RESPONSE,
+          responseDeadlineAt: { lte: now }
         },
-        conflictCode: "ORDER_STATUS_CONFLICT"
+        data: {
+          status: OrderStatus.CANCELLED,
+          cancelReason: "Worker did not respond within 1 hour"
+        }
       });
+      // Another runner/accept/cancel won. No duplicate event or notification.
+      if (changed.count !== 1) return null;
 
-      await releaseWorkerAvailability(tx, order.workerId, order.id);
+      // Old/legacy waiting orders may no longer own the reservation. Expiring
+      // them must not release a different active job, or roll back cancellation.
+      await tx.workerAvailability.updateMany({
+        where: { workerId: order.workerId, activeOrderId: order.id },
+        data: { status: WorkerAvailabilityStatus.AVAILABLE, activeOrderId: null, lockedUntil: null }
+      });
 
       await tx.orderEvent.create({
         data: {
@@ -979,6 +990,8 @@ export async function autoCancelExpiredWaitingOrders(now = new Date()) {
       });
     });
 
+    if (!cancelledOrder) continue;
+    cancelledCount += 1;
     await notifyOrderCancelled({
       orderId: cancelledOrder.id,
       publicCode: cancelledOrder.publicCode,
@@ -990,5 +1003,5 @@ export async function autoCancelExpiredWaitingOrders(now = new Date()) {
     });
   }
 
-  return { cancelledCount: expiredOrders.length };
+  return { cancelledCount };
 }

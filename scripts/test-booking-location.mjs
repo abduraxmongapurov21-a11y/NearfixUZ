@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { createLatestReverseGeocodeController, resolveReverseGeocode } from "../src/services/location/reverseGeocodeModel.mjs";
 import {
   bookingLocationDraft,
   bookingProblemOptions,
@@ -6,6 +8,7 @@ import {
   createBookingSubmissionLock,
   createOrderThenOptionallySave,
   normalizeBookingMapSelection,
+  orderLocationDisplayText,
   sortBookingAddresses
 } from "../src/services/orders/bookingLocation.mjs";
 
@@ -26,7 +29,79 @@ assert.deepEqual(mapLocation, {
   source: "yandex-mapkit"
 });
 assert.equal(normalizeBookingMapSelection({ latitude: 91, longitude: 69.2, address: "Invalid" }), null);
-assert.equal(normalizeBookingMapSelection({ latitude: 41.3, longitude: 69.2, address: " " }), null);
+const coordinateOnly = { latitude: 41.311081, longitude: 69.240562, addressText: "" };
+assert.deepEqual(normalizeBookingMapSelection({ ...coordinateOnly, address: " " }), coordinateOnly);
+for (const invalid of [null, undefined, "", " ", true, false, [], {}, NaN, Infinity, -Infinity]) {
+  assert.equal(normalizeBookingMapSelection({ latitude: invalid, longitude: 69.2 }), null);
+  assert.equal(normalizeBookingMapSelection({ latitude: 41.3, longitude: invalid }), null);
+}
+assert.equal(normalizeBookingMapSelection({ latitude: -91, longitude: 69.2 }), null);
+assert.equal(normalizeBookingMapSelection({ latitude: 41.3, longitude: 181 }), null);
+assert.equal(normalizeBookingMapSelection({ latitude: 41.3, longitude: -181 }), null);
+assert.deepEqual(normalizeBookingMapSelection({ latitude: 0, longitude: 0 }), { latitude: 0, longitude: 0, addressText: "" });
+assert.equal(orderLocationDisplayText(coordinateOnly), "Xaritada belgilangan joy");
+assert.equal(orderLocationDisplayText(mapLocation), mapLocation.addressText);
+assert.equal(orderLocationDisplayText(null), "Manzil ma'lumoti yo'q");
+
+// Exercise the production native timeout adapter with a provider that never settles.
+const adapterSource = fs.readFileSync("src/services/location/reverseGeocodeLocation.js", "utf8")
+  .replace(/^import[\s\S]*?from ["'][^"']+["'];\r?\n/gm, "")
+  .replace("export function reverseGeocodeLocation", "function reverseGeocodeLocation");
+const nativeTimeout = new Function("Location", "resolveReverseGeocode", `${adapterSource}; return reverseGeocodeLocation;`)(
+  { reverseGeocodeAsync: () => new Promise(() => {}) }, resolveReverseGeocode
+);
+const outcomes = [
+  await resolveReverseGeocode({ ...coordinateOnly, locale: "uz" }, { nativeReverseGeocode: async () => [] }),
+  await resolveReverseGeocode({ ...coordinateOnly, locale: "uz" }, { nativeReverseGeocode: async () => { throw new Error("provider error"); } }),
+  await nativeTimeout({ ...coordinateOnly, locale: "uz" })
+];
+for (const result of outcomes) {
+  assert.equal(result.ok, false);
+  const selected = normalizeBookingMapSelection(result.coordinate);
+  assert.deepEqual(selected, coordinateOnly);
+  assert.equal(bookingLocationDraft(null, selected).location.addressText, "", "display fallback must not become address data");
+}
+
+let finishOld;
+const controller = createLatestReverseGeocodeController((request) => request.latitude === 41.3
+  ? new Promise((resolve) => { finishOld = resolve; })
+  : resolveReverseGeocode({ ...request, locale: "uz" }, { nativeReverseGeocode: async () => [] }));
+const old = controller.resolve({ latitude: 41.3, longitude: 69.2 });
+const latest = await controller.resolve(coordinateOnly);
+finishOld({ ok: true, coordinate: { latitude: 41.3, longitude: 69.2 }, location: { address: "Old address" } });
+assert.equal((await old).stale, true);
+assert.equal(latest.stale, false);
+assert.deepEqual(normalizeBookingMapSelection(latest.coordinate), coordinateOnly);
+
+// Run the production API mapping with controlled transports, including server/network failure.
+const serviceSource = fs.readFileSync("src/services/orders/orderService.js", "utf8")
+  .replace(/^import .*;\r?\n/gm, "").replace(/export (async )?function /g, "$1function ");
+let sentBody;
+let transportFailure;
+const { createOrderApi } = new Function("TRACKING_STATUSES", "apiRequest", "httpAuthRequest", "orderLocationDisplayText",
+  `${serviceSource}; return { createOrderApi };`)(
+  {}, async (handler) => { try { return await handler(); } catch { return { ok: false }; } },
+  async (_path, options) => {
+    sentBody = options.body;
+    if (transportFailure) throw new Error(transportFailure);
+    return { order: { id: "confirmed-order", location: options.body.location, createdAt: "2026-09-19T00:00:00Z" } };
+  }, orderLocationDisplayText
+);
+const created = await createOrderApi("fixture", bookingLocationDraft(null, coordinateOnly), { id: "category" }, { id: "worker" });
+assert.equal(created.ok, true);
+assert.deepEqual(sentBody.location, coordinateOnly);
+assert.deepEqual(created.order.location, coordinateOnly);
+assert.equal(created.order.address, "Xaritada belgilangan joy");
+assert.equal(JSON.stringify(sentBody).includes("Xaritada"), false);
+for (transportFailure of ["HTTP 500", "network unavailable"]) {
+  assert.equal((await createOrderApi("fixture", bookingLocationDraft(null, coordinateOnly), {}, { id: "worker" })).ok, false);
+}
+
+for (const locale of ["uz", "ru", "en"]) {
+  const copy = JSON.parse(fs.readFileSync(`src/i18n/locales/${locale}.json`, "utf8"));
+  assert.ok(copy["Xaritada belgilangan joy"]);
+  assert.ok(copy["Xaritadan yaroqli nuqta tanlang."]);
+}
 
 const addresses = [
   { id: "second", isDefault: false },

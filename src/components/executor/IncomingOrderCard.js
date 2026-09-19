@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { Check, X } from "lucide-react-native";
 import { colors, iconSizes, radius, shadow } from "../../theme";
 import { OrderResponseTimer } from "./OrderResponseTimer";
@@ -8,7 +8,7 @@ import { Text } from "../../i18n/native";
 const avatarColors = ["#EFE0FF", "#FFD8EB", "#DDEBFF"];
 const textColors = ["#7C3DFF", "#D81B71", "#2868D8"];
 
-export function IncomingOrderCard({ request, disabled, onAccept, onReject, index = 0 }) {
+export function IncomingOrderCard({ request, disabled, busy = false, onAccept, onReject, index = 0 }) {
   const initials = request.clientName
     .split(" ")
     .filter(Boolean)
@@ -35,6 +35,8 @@ export function IncomingOrderCard({ request, disabled, onAccept, onReject, index
         <OrderResponseTimer deadlineAt={request.responseDeadlineAt} compact />
         <View style={styles.actions}>
           <Pressable
+            accessibilityLabel="Bekor qilish"
+            disabled={busy}
             onPress={onReject}
             style={({ pressed }) => [styles.actionButton, styles.rejectButton, pressed && styles.pressed]}
           >
@@ -42,8 +44,9 @@ export function IncomingOrderCard({ request, disabled, onAccept, onReject, index
             <Text style={[styles.actionText, styles.rejectText]}>Bekor</Text>
           </Pressable>
           <Pressable
-            disabled={disabled}
-            onPress={disabled ? undefined : onAccept}
+            accessibilityLabel="Qabul qilish"
+            disabled={disabled || busy}
+            onPress={disabled || busy ? undefined : onAccept}
             style={({ pressed }) => [
               styles.actionButton,
               styles.acceptButton,
@@ -51,7 +54,7 @@ export function IncomingOrderCard({ request, disabled, onAccept, onReject, index
               pressed && styles.pressed
             ]}
           >
-            <Check size={iconSizes.sm} color={colors.white} strokeWidth={2.8} />
+            {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Check size={iconSizes.sm} color={colors.white} strokeWidth={2.8} />}
             <Text style={[styles.actionText, styles.acceptText]}>Qabul</Text>
           </Pressable>
         </View>
@@ -74,6 +77,7 @@ const styles = StyleSheet.create({
   },
   topRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 11
   },
@@ -89,7 +93,8 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   titleBlock: {
-    flex: 1
+    flex: 1,
+    minWidth: 100
   },
   client: {
     color: colors.text,
@@ -105,24 +110,28 @@ const styles = StyleSheet.create({
     fontWeight: "600"
   },
   payment: {
+    flexShrink: 1,
+    maxWidth: "100%",
     color: colors.text,
     fontSize: 17,
     lineHeight: 21,
     fontWeight: "900"
   },
   bottomRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    alignItems: "stretch",
     gap: 10
   },
   actions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 8
   },
   actionButton: {
-    minHeight: 31,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 100,
+    minHeight: 44,
     borderRadius: radius.pill,
     paddingHorizontal: 11,
     flexDirection: "row",
@@ -142,6 +151,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.subtle
   },
   actionText: {
+    flexShrink: 1,
     fontSize: 11,
     lineHeight: 14,
     fontWeight: "900"

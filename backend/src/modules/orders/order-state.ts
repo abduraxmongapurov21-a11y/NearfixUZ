@@ -43,12 +43,14 @@ export async function transitionOrderStatus(
     toStatus: OrderStatus;
     data?: Prisma.OrderUpdateManyMutationInput;
     conflictCode?: string;
+    where?: Prisma.OrderWhereInput;
   }
 ) {
   assertTransitionAllowed(input.fromStatus, input.toStatus);
 
   const result = await tx.order.updateMany({
     where: {
+      ...input.where,
       id: input.orderId,
       status: input.fromStatus
     },

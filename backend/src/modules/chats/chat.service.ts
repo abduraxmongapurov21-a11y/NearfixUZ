@@ -8,10 +8,19 @@ import {
   UserRole,
   WorkerProfileStatus
 } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import type { AuthUser } from "../auth/auth-context.js";
 import { assertUsersNotBlocked } from "../blocks/block.service.js";
 import { createNotifications } from "../notifications/notification.service.js";
+
+// Chat participants/senders are public identities, never authentication records.
+// Explicit selection also keeps future User fields out of every chat response.
+const chatUserSelect = {
+  id: true,
+  name: true,
+  phone: true
+} satisfies Prisma.UserSelect;
 
 type CreateWorkerGroupRoomInput = {
   title: string;
@@ -81,7 +90,13 @@ function assertOrderChatAccess(user: AuthUser, order: { clientId: string; worker
 export async function ensureOrderChatRoom(user: AuthUser, orderId: string) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { client: true, worker: { include: { user: true } } }
+    select: {
+      id: true,
+      clientId: true,
+      cityId: true,
+      serviceType: true,
+      worker: { select: { userId: true } }
+    }
   });
 
   if (!order) {
@@ -100,7 +115,7 @@ export async function ensureOrderChatRoom(user: AuthUser, orderId: string) {
         orderId
       },
       include: {
-        participants: { include: { user: true } }
+        participants: { include: { user: { select: chatUserSelect } } }
       }
     });
 
@@ -131,7 +146,7 @@ export async function ensureOrderChatRoom(user: AuthUser, orderId: string) {
         }
       },
       include: {
-        participants: { include: { user: true } }
+        participants: { include: { user: { select: chatUserSelect } } }
       }
     });
 
@@ -152,7 +167,12 @@ export async function ensureOrderChatRoom(user: AuthUser, orderId: string) {
 export async function ensureWorkerDirectChatRoom(user: AuthUser, workerId: string) {
   const worker = await prisma.workerProfile.findUnique({
     where: { id: workerId },
-    include: { user: true }
+    select: {
+      userId: true,
+      status: true,
+      profession: true,
+      user: { select: { name: true, cityId: true } }
+    }
   });
 
   if (!worker || worker.status !== WorkerProfileStatus.APPROVED) {
@@ -189,11 +209,11 @@ export async function ensureWorkerDirectChatRoom(user: AuthUser, workerId: strin
         ]
       },
       include: {
-        participants: { include: { user: true } },
+        participants: { include: { user: { select: chatUserSelect } } },
         messages: {
           take: 1,
           orderBy: { createdAt: "desc" },
-          include: { sender: true, media: true }
+          include: { sender: { select: chatUserSelect }, media: true }
         }
       },
       orderBy: { updatedAt: "desc" }
@@ -228,7 +248,7 @@ export async function ensureWorkerDirectChatRoom(user: AuthUser, workerId: strin
         }
       },
       include: {
-        participants: { include: { user: true } }
+        participants: { include: { user: { select: chatUserSelect } } }
       }
     });
   });
@@ -251,11 +271,11 @@ export async function listChatRooms(user: AuthUser, type?: ChatRoomType) {
     where,
     include: {
       order: true,
-      participants: { include: { user: true } },
+      participants: { include: { user: { select: chatUserSelect } } },
       messages: {
         take: 1,
         orderBy: { createdAt: "desc" },
-        include: { sender: true, media: true }
+        include: { sender: { select: chatUserSelect }, media: true }
       }
     },
     orderBy: { updatedAt: "desc" }
@@ -308,7 +328,7 @@ export async function createWorkerGroupRoom(user: AuthUser, input: CreateWorkerG
       }
     },
     include: {
-      participants: { include: { user: true } }
+      participants: { include: { user: { select: chatUserSelect } } }
     }
   });
 }
@@ -320,7 +340,7 @@ export async function listMessages(user: AuthUser, roomId: string) {
     prisma.chatMessage.findMany({
     where: { roomId },
     include: {
-      sender: true,
+      sender: { select: chatUserSelect },
       media: true
     },
     orderBy: { createdAt: "asc" }
@@ -365,17 +385,31 @@ export async function createMessage(user: AuthUser, roomId: string, input: Creat
   const messageType = input.mediaId ? resolveMessageType(input.type, attachedMediaMimeType) : ChatMessageType.TEXT;
 
   const message = await prisma.$transaction(async (tx) => {
+    // lastReadAt is the existing per-user/room cursor. Serialize writers in this
+    // room and assign strictly increasing milliseconds, including transactions
+    // that started before another message committed. A read boundary can never
+    // consume a later, unseen message with an equal/older timestamp.
+    await tx.$queryRaw`SELECT id FROM "ChatRoom" WHERE id = ${roomId} FOR UPDATE`;
+    const previous = await tx.chatMessage.findFirst({
+      where: { roomId }, orderBy: { createdAt: "desc" }, select: { createdAt: true }
+    });
+    // Legacy reads can advance the cursor in an empty/quiet room. A writer
+    // taking the same room lock must also start beyond that reserved boundary.
+    const readCursor = await tx.chatParticipant.aggregate({ where: { roomId }, _max: { lastReadAt: true } });
+    const createdAt = new Date(Math.max(Date.now(), (previous?.createdAt.getTime() || 0) + 1,
+      (readCursor._max.lastReadAt?.getTime() || 0) + 1));
     const message = await tx.chatMessage.create({
       data: {
         roomId,
         orderId: room.orderId,
         senderId: user.id,
+        createdAt,
         type: messageType,
         body: input.body?.trim(),
         mediaId: input.mediaId
       },
       include: {
-        sender: true,
+        sender: { select: chatUserSelect },
         media: true
       }
     });
@@ -426,19 +460,52 @@ export async function createMessage(user: AuthUser, roomId: string, input: Creat
   return message;
 }
 
+// Compatibility for clients that send PATCH /read without a message boundary.
+// This acknowledges the room snapshot at lock acquisition, not UI visibility.
 export async function markRoomRead(user: AuthUser, roomId: string) {
   await assertRoomAccess(user, roomId);
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "ChatRoom" WHERE id = ${roomId} FOR UPDATE`;
+    const latest = await tx.chatMessage.findFirst({
+      where: { roomId }, orderBy: { createdAt: "desc" }, select: { createdAt: true }
+    });
+    const boundary = new Date(Math.max(Date.now(), latest?.createdAt.getTime() || 0));
+    await tx.chatParticipant.updateMany({
+      where: { roomId, userId: user.id, OR: [
+        { lastReadAt: null }, { lastReadAt: { lt: boundary } }
+      ] },
+      data: { lastReadAt: boundary }
+    });
+    return tx.chatParticipant.findUniqueOrThrow({
+      where: { roomId_userId: { roomId, userId: user.id } }
+    });
+  });
+}
 
-  return prisma.chatParticipant.update({
-    where: {
-      roomId_userId: {
-        roomId,
-        userId: user.id
-      }
-    },
-    data: {
-      lastReadAt: new Date()
-    }
+export async function markRoomReadThrough(user: AuthUser, roomId: string, throughMessageId: string) {
+  await assertRoomAccess(user, roomId);
+  if (!throughMessageId) {
+    throw Object.assign(new Error("A displayed message boundary is required"), {
+      status: 400, code: "CHAT_READ_BOUNDARY_REQUIRED"
+    });
+  }
+  const boundary = await prisma.chatMessage.findFirst({
+    where: { id: throughMessageId, roomId }, select: { createdAt: true }
+  });
+  if (!boundary) {
+    throw Object.assign(new Error("Message does not belong to this room"), {
+      status: 400, code: "CHAT_READ_BOUNDARY_INVALID"
+    });
+  }
+  // Conditional update prevents reordered read requests from moving backwards.
+  await prisma.chatParticipant.updateMany({
+    where: { roomId, userId: user.id, OR: [
+      { lastReadAt: null }, { lastReadAt: { lt: boundary.createdAt } }
+    ] },
+    data: { lastReadAt: boundary.createdAt }
+  });
+  return prisma.chatParticipant.findUniqueOrThrow({
+    where: { roomId_userId: { roomId, userId: user.id } }
   });
 }
 

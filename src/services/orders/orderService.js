@@ -1,6 +1,7 @@
 import { TRACKING_STATUSES } from "../../constants/orderTracking";
 import { apiRequest } from "../api/client";
 import { httpAuthRequest } from "../api/authenticatedClient";
+import { orderLocationDisplayText } from "./bookingLocation.mjs";
 
 const apiToTrackingStatus = {
   WAITING_RESPONSE: TRACKING_STATUSES.REQUEST_SENT,
@@ -34,7 +35,7 @@ export function mapApiOrder(order) {
     provider: workerName,
     date: new Date(order.createdAt).toLocaleDateString("uz-UZ"),
     district: order.location?.district || order.cityId,
-    address: order.location?.addressText || "Manzil ma'lumoti yo'q",
+    address: orderLocationDisplayText(order.location),
     location: order.location || null,
     price: amount ? `${Number(amount).toLocaleString("uz-UZ")} so'm` : "Kelishiladi",
     amount: amount ? `${Number(amount).toLocaleString("uz-UZ")} so'm` : "Kelishiladi",

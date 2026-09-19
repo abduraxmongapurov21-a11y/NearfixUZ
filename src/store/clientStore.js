@@ -258,14 +258,14 @@ export const useClientStore = create((set, get) => ({
 
     return result;
   },
-  syncOrdersFromApi: async () => {
+  syncOrdersFromApi: async ({ isCurrent = () => true } = {}) => {
     const session = clientStoreDependencies.getSession();
     const token = session?.token;
     if (!token) return { ok: false, message: "No API session token" };
     const ticket = clientRequestGuard.begin("orders", session.userId);
 
     const result = await clientStoreDependencies.fetchOrdersApi(token);
-    if (!clientRequestGuard.isCurrent(ticket, currentAccountId())) return { ...result, ok: false, stale: true };
+    if (!isCurrent() || !clientRequestGuard.isCurrent(ticket, currentAccountId())) return { ...result, ok: false, stale: true };
     if (result.ok) {
       const active = result.orders.find((order) =>
         [TRACKING_STATUSES.REQUEST_SENT, TRACKING_STATUSES.ACCEPTED, TRACKING_STATUSES.ON_THE_WAY, TRACKING_STATUSES.IN_PROGRESS].includes(
@@ -669,8 +669,10 @@ export const useClientStore = create((set, get) => ({
     if (!token || !state.activeOrder?.id) return { ok: false, message: "Faol buyurtma topilmadi." };
 
     const ticket = clientRequestGuard.begin("order-cancel", session.userId);
+    clientRequestGuard.begin("orders", session.userId);
     const result = await clientStoreDependencies.cancelOrderApi(token, state.activeOrder.id, reason);
     if (!clientRequestGuard.isCurrent(ticket, currentAccountId())) return { ...result, ok: false, stale: true };
+    clientRequestGuard.begin("orders", session.userId);
     if (result.ok) {
       set((current) => ({
         activeOrder: result.order,

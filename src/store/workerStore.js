@@ -32,7 +32,9 @@ const defaultWorkerStoreDependencies = {
   fetchWorkerTransactionsApi,
   cancelWorkerOrderApi,
   createWorkerOrderApi,
-  updateWorkerServiceLocationApi
+  updateWorkerServiceLocationApi,
+  acceptOrderApi,
+  rejectOrderApi
 };
 const workerStoreDependencies = { ...defaultWorkerStoreDependencies };
 
@@ -99,6 +101,7 @@ function shouldRemoveIncomingRequest(result) {
 export const useWorkerStore = create((set, get) => ({
   workerProfile: null,
   incomingRequests: [],
+  pendingIncomingRequestId: null,
   activeJob: null,
   operationalStatus: WORKER_STATUS.OFFLINE,
   earnings: {
@@ -133,6 +136,7 @@ export const useWorkerStore = create((set, get) => ({
     set({
       workerProfile: null,
       incomingRequests: [],
+      pendingIncomingRequestId: null,
       activeJob: null,
       operationalStatus: WORKER_STATUS.OFFLINE,
       earnings: {
@@ -164,7 +168,7 @@ export const useWorkerStore = create((set, get) => ({
       }
     });
   },
-  syncWorkerFromApi: async () => {
+  syncWorkerFromApi: async ({ ordersOnly = false, isCurrent = () => true } = {}) => {
     const session = workerStoreDependencies.getSession();
     const token = session?.token;
     if (!token) return { ok: false, message: "API sessiya tokeni topilmadi." };
@@ -178,11 +182,11 @@ export const useWorkerStore = create((set, get) => ({
       workerStoreDependencies.fetchWorkerMeApi(token),
       workerStoreDependencies.fetchIncomingOrdersApi(token),
       workerStoreDependencies.fetchWorkerOrdersApi(token),
-      workerStoreDependencies.fetchWorkerEarningsApi(token),
-      workerStoreDependencies.fetchWorkerTransactionsApi(token)
+      ordersOnly ? { ok: false } : workerStoreDependencies.fetchWorkerEarningsApi(token),
+      ordersOnly ? { ok: false } : workerStoreDependencies.fetchWorkerTransactionsApi(token)
     ]);
 
-    if (!workerRequestGuard.isCurrent(requestTicket, currentAccountId())) {
+    if (!isCurrent() || !workerRequestGuard.isCurrent(requestTicket, currentAccountId())) {
       return { ok: false, stale: true };
     }
 
@@ -332,13 +336,21 @@ export const useWorkerStore = create((set, get) => ({
     };
   },
   acceptIncomingRequest: async (requestId) => {
-    const token = useAuthStore.getState().session?.token;
+    const session = workerStoreDependencies.getSession();
+    const token = session?.token;
 
     if (!token) {
       return { ok: false, message: "Buyurtmani qabul qilish uchun tizimga kiring." };
     }
 
-    const result = await acceptOrderApi(token, requestId);
+    if (get().pendingIncomingRequestId) return { ok: false, pending: true };
+    const ticket = workerRequestGuard.begin("incoming-action", session.userId);
+    workerRequestGuard.begin("worker-sync", session.userId);
+    set({ pendingIncomingRequestId: requestId });
+    const result = await workerStoreDependencies.acceptOrderApi(token, requestId);
+    if (!workerRequestGuard.isCurrent(ticket, currentAccountId())) return { ok: false, stale: true };
+    workerRequestGuard.begin("worker-sync", session.userId);
+    set({ pendingIncomingRequestId: null });
     if (result.ok) {
       set((state) => ({
         incomingRequests: state.incomingRequests.filter((item) => item.id !== requestId),
@@ -369,19 +381,29 @@ export const useWorkerStore = create((set, get) => ({
       }));
     }
 
+    await get().syncWorkerFromApi({ ordersOnly: true });
+
     return {
       ...result,
       message: workerOrderErrorMessage(result, "Buyurtmani qabul qilib bo'lmadi. Qayta urinib ko'ring.")
     };
   },
   rejectIncomingRequest: async (requestId, reason) => {
-    const token = useAuthStore.getState().session?.token;
+    const session = workerStoreDependencies.getSession();
+    const token = session?.token;
 
     if (!token) {
       return { ok: false, message: "Buyurtmani bekor qilish uchun tizimga kiring." };
     }
 
-    const result = await rejectOrderApi(token, requestId, reason);
+    if (get().pendingIncomingRequestId) return { ok: false, pending: true };
+    const ticket = workerRequestGuard.begin("incoming-action", session.userId);
+    workerRequestGuard.begin("worker-sync", session.userId);
+    set({ pendingIncomingRequestId: requestId });
+    const result = await workerStoreDependencies.rejectOrderApi(token, requestId, reason);
+    if (!workerRequestGuard.isCurrent(ticket, currentAccountId())) return { ok: false, stale: true };
+    workerRequestGuard.begin("worker-sync", session.userId);
+    set({ pendingIncomingRequestId: null });
     if (result.ok) {
       set((state) => ({
         incomingRequests: state.incomingRequests.filter((item) => item.id !== requestId)
@@ -394,6 +416,8 @@ export const useWorkerStore = create((set, get) => ({
         incomingRequests: state.incomingRequests.filter((item) => item.id !== requestId)
       }));
     }
+
+    await get().syncWorkerFromApi({ ordersOnly: true });
 
     return {
       ...result,
@@ -413,12 +437,14 @@ export const useWorkerStore = create((set, get) => ({
     }
 
     const requestTicket = workerRequestGuard.begin(`worker-cancel:${activeJob.id}`, session.userId);
+    workerRequestGuard.begin("worker-sync", session.userId);
     const result = await workerStoreDependencies.cancelWorkerOrderApi(session.token, activeJob.id, cleanReason);
 
     if (!workerRequestGuard.isCurrent(requestTicket, currentAccountId())) {
       return { ok: false, stale: true };
     }
 
+    workerRequestGuard.begin("worker-sync", session.userId);
     if (result.ok) {
       set((state) => ({
         activeJob: null,

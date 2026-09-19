@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useOrderRefresh } from "../../hooks/useOrderRefresh";
 import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { ArrowUpRight, CheckCircle2, Clock3 } from "lucide-react-native";
 import { ActiveJobCard } from "../../components/executor/ActiveJobCard";
@@ -27,9 +29,11 @@ const REJECTION_REASONS = [
 ];
 
 export function WorkerDashboardScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const session = useAuthStore((state) => state.session);
   const worker = useWorkerStore((state) => state.workerProfile);
   const incomingRequests = useWorkerStore((state) => state.incomingRequests);
+  const pendingIncomingRequestId = useWorkerStore((state) => state.pendingIncomingRequestId);
   const activeJob = useWorkerStore((state) => state.activeJob);
   const status = useWorkerStore((state) => state.operationalStatus);
   const earnings = useWorkerStore((state) => state.earnings);
@@ -47,12 +51,14 @@ export function WorkerDashboardScreen({ navigation }) {
   const [rejecting, setRejecting] = useState(false);
   const [cancellingActiveJob, setCancellingActiveJob] = useState(false);
 
-  useEffect(() => {
-    syncWorkerFromApi();
+  const refreshOrders = useCallback((context) => {
+    return syncWorkerFromApi({ ...context, ordersOnly: Boolean(useWorkerStore.getState().workerProfile) });
   }, [syncWorkerFromApi]);
+  useOrderRefresh(refreshOrders, "worker");
 
   async function handleAccept(requestId) {
     const result = await acceptIncomingRequest(requestId);
+    if (result?.pending || result?.stale) return;
     if (result?.ok) {
       Alert.alert("Buyurtma qabul qilindi", "Siz band holatiga o'tdingiz. Yangi buyurtmalar vaqtincha to'xtatildi.");
       return;
@@ -67,6 +73,7 @@ export function WorkerDashboardScreen({ navigation }) {
     setRejecting(true);
     const result = await rejectIncomingRequest(rejectTarget.id, reason);
     setRejecting(false);
+    if (result?.pending || result?.stale) return;
 
     if (result?.ok) {
       setRejectTarget(null);
@@ -133,7 +140,7 @@ export function WorkerDashboardScreen({ navigation }) {
   return (
     <>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: Math.max(112, insets.bottom + 96) }]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#0F80B7" colors={["#0F80B7"]} />
         }
@@ -177,7 +184,8 @@ export function WorkerDashboardScreen({ navigation }) {
                   <IncomingOrderCard
                     key={request.id}
                     request={request}
-                    disabled={!canAccept}
+                    disabled={!canAccept || Boolean(pendingIncomingRequestId)}
+                    busy={Boolean(pendingIncomingRequestId)}
                     index={index}
                     onAccept={() => handleAccept(request.id)}
                     onReject={() => setRejectTarget(request)}

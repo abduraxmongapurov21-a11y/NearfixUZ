@@ -1,4 +1,5 @@
 function finiteCoordinate(value, minimum, maximum) {
+  if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= minimum && number <= maximum ? number : null;
 }
@@ -31,7 +32,7 @@ export function normalizeBookingMapSelection(value) {
   const latitude = finiteCoordinate(value?.latitude, -90, 90);
   const longitude = finiteCoordinate(value?.longitude, -180, 180);
   const addressText = typeof value?.address === "string" ? value.address.trim() : "";
-  if (latitude === null || longitude === null || addressText.length < 4) return null;
+  if (latitude === null || longitude === null) return null;
 
   return {
     latitude,
@@ -43,6 +44,15 @@ export function normalizeBookingMapSelection(value) {
       ? { district: value.district.trim() }
       : {})
   };
+}
+
+// Presentation only: never copy this fallback into the location snapshot.
+export function orderLocationDisplayText(location) {
+  if (location?.addressText?.trim()) return location.addressText;
+  return finiteCoordinate(location?.latitude, -90, 90) !== null &&
+    finiteCoordinate(location?.longitude, -180, 180) !== null
+    ? "Xaritada belgilangan joy"
+    : "Manzil ma'lumoti yo'q";
 }
 
 export function sortBookingAddresses(addresses) {

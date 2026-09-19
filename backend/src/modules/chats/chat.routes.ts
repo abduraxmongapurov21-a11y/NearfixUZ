@@ -4,7 +4,8 @@ import { authenticate } from "../auth/middleware/auth.middleware.js";
 import {
   chatRoomTypeSchema,
   createMessageSchema,
-  createWorkerGroupRoomSchema
+  createWorkerGroupRoomSchema,
+  readRoomSchema
 } from "./chat.contracts.js";
 import {
   createMessage,
@@ -13,7 +14,8 @@ import {
   ensureWorkerDirectChatRoom,
   listChatRooms,
   listMessages,
-  markRoomRead
+  markRoomRead,
+  markRoomReadThrough
 } from "./chat.service.js";
 
 export const chatRouter = Router();
@@ -88,6 +90,17 @@ chatRouter.post("/rooms/:roomId/messages", async (request, response, next) => {
 chatRouter.patch("/rooms/:roomId/read", async (request, response, next) => {
   try {
     const participant = await markRoomRead(request.user!, request.params.roomId);
+
+    response.json({ ok: true, participant });
+  } catch (error) {
+    next(error);
+  }
+});
+
+chatRouter.patch("/rooms/:roomId/read-through", async (request, response, next) => {
+  try {
+    const input = readRoomSchema.parse(request.body || {});
+    const participant = await markRoomReadThrough(request.user!, request.params.roomId, input.throughMessageId);
 
     response.json({ ok: true, participant });
   } catch (error) {

@@ -15,6 +15,8 @@ import { SupportRequestModal } from "../../components/support/SupportRequestModa
 import { Alert, Text } from "../../i18n/native";
 import { OrderRatingCard } from "../../components/orders/OrderRatingCard";
 import { submitOrderReviewApi } from "../../services/orders/orderService";
+import { useOrderRefresh } from "../../hooks/useOrderRefresh";
+import { resolveOrderDetail } from "../../services/orders/orderRefreshLoop.mjs";
 
 const font = {
   medium: "Inter_500Medium",
@@ -48,7 +50,7 @@ export function OrdersScreen({ navigation, route }) {
   const session = useAuthStore((state) => state.session);
   const [tab, setTab] = useState("active");
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [detailOrder, setDetailOrder] = useState(null);
+  const [detailOrderId, setDetailOrderId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [reportOrderId, setReportOrderId] = useState(null);
   const [supportOrderId, setSupportOrderId] = useState(null);
@@ -60,16 +62,14 @@ export function OrdersScreen({ navigation, route }) {
   const syncOrdersFromApi = useClientStore((state) => state.syncOrdersFromApi);
   const syncCatalogFromApi = useClientStore((state) => state.syncCatalogFromApi);
 
-  useEffect(() => {
-    syncOrdersFromApi();
-  }, [syncOrdersFromApi]);
+  useOrderRefresh(syncOrdersFromApi, "client");
+  const detailOrder = resolveOrderDetail(orders, activeOrder, detailOrderId);
 
   useEffect(() => {
     const targetOrderId = route?.params?.orderId;
     if (!targetOrderId) return;
-    const targetOrder = orders.find((order) => order.id === targetOrderId);
-    if (targetOrder) setDetailOrder(targetOrder);
-  }, [orders, route?.params?.orderId]);
+    setDetailOrderId(targetOrderId);
+  }, [route?.params?.orderId]);
 
   const activeOrders = useMemo(
     () =>
@@ -109,9 +109,14 @@ export function OrdersScreen({ navigation, route }) {
   }
 
   async function handleCancel(reason) {
-    await cancelActiveOrder(reason);
+    const result = await cancelActiveOrder(reason);
+    if (!result.ok) {
+      await syncOrdersFromApi();
+      if (!result.stale) Alert.alert("Buyurtma bekor qilinmadi", result.message || "Qayta urinib ko'ring.");
+      return;
+    }
     setCancelOpen(false);
-    setDetailOrder(null);
+    setDetailOrderId(null);
     Alert.alert("Buyurtma bekor qilindi", "NearFIX support kerak bo'lsa yordam beradi.");
   }
 
@@ -137,7 +142,6 @@ export function OrdersScreen({ navigation, route }) {
       return;
     }
 
-    setDetailOrder((current) => current?.id === detailOrder.id ? { ...current, review: result.review } : current);
     await Promise.all([syncOrdersFromApi(), syncCatalogFromApi()]);
     Alert.alert("Rahmat!", "Bahoyingiz usta reytingiga qo‘shildi.");
   }
@@ -159,7 +163,7 @@ export function OrdersScreen({ navigation, route }) {
           }
         >
           <View style={styles.detailHeader}>
-            <Pressable onPress={() => setDetailOrder(null)} style={styles.backButton}>
+            <Pressable onPress={() => setDetailOrderId(null)} style={styles.backButton}>
               <ArrowLeft size={23} color="#2D3748" strokeWidth={2.8} />
             </Pressable>
             <Text style={styles.detailTitle}>Buyurtma holati</Text>
@@ -239,7 +243,7 @@ export function OrdersScreen({ navigation, route }) {
                 order={order}
                 worker={workers.find((worker) => worker.id === order.workerId)}
                 onChat={() => handleOpenChat(order)}
-                onDetail={() => setDetailOrder(order)}
+                onDetail={() => setDetailOrderId(order.id)}
               />
             ))
           ) : (

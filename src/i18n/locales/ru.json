@@ -1,4 +1,6 @@
 {
+  "Xaritada belgilangan joy": "Место, отмеченное на карте",
+  "Xaritadan yaroqli nuqta tanlang.": "Выберите допустимую точку на карте.",
   "/workers/me/service-location": "/workers/me/service-location",
   "Usta profili yuklanmadi.": "Не удалось загрузить профиль специалиста.",
   "Profil serverdan yangilanmadi. Ko'rsatilgan lokatsiya eski bo'lishi mumkin.": "Профиль не обновлён с сервера. Показанное местоположение может быть устаревшим.",

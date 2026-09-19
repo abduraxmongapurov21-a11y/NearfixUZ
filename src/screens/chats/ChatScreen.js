@@ -3,7 +3,9 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-n
 import { MoreVertical, Search } from "lucide-react-native";
 import { ROUTES } from "../../constants/routes";
 import { useAuthStore } from "../../store/authStore";
-import { fetchChatRoomsApi } from "../../services/chats/chatService";
+import { useChatRefresh } from "../../hooks/useChatRefresh";
+import { refreshChatRooms, useChatStore } from "../../store/chatStore";
+import { chatUnreadCount } from "../../services/chats/chatSync.mjs";
 import { Text, TextInput } from "../../i18n/native";
 
 const font = {
@@ -40,78 +42,29 @@ function resolvePrivateRoom(room, currentUserId, index) {
   };
 }
 
-function uniqueRoomsByCounterpart(rooms, currentUserId) {
-  const seen = new Set();
-
-  return rooms.filter((room) => {
-    const otherParticipant = room.participants?.find((participant) => participant.userId !== currentUserId);
-    const key = otherParticipant?.userId || room.id;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function preparePrivateRooms(rooms, currentUserId, targetRoomId) {
-  const privateRooms = rooms.filter((room) => ["direct", "order"].includes(room.type));
-  const targetRoom = targetRoomId ? privateRooms.find((room) => room.id === targetRoomId) : null;
-  const ordered = targetRoom ? [targetRoom, ...privateRooms.filter((room) => room.id !== targetRoomId)] : privateRooms;
-  return uniqueRoomsByCounterpart(ordered, currentUserId).map((room, index) =>
-    resolvePrivateRoom(room, currentUserId, index)
-  );
-}
-
 export function ChatScreen({ navigation, route }) {
   const session = useAuthStore((state) => state.session);
-  const [apiRooms, setApiRooms] = useState([]);
+  const rooms = useChatStore((state) => state.rooms);
+  const apiRooms = useMemo(() => rooms.map((room, index) => resolvePrivateRoom(room, session?.userId, index)), [rooms, session?.userId]);
+  const refreshRooms = useChatRefresh(refreshChatRooms);
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const openedRoomId = useRef(null);
 
-  async function loadRooms() {
-    if (!session?.token) {
-      return;
-    }
-
-    const result = await fetchChatRoomsApi(session.token, undefined, session.userId);
-    if (result.ok) {
-      setApiRooms(preparePrivateRooms(result.rooms, session.userId, route?.params?.roomId));
-    }
-  }
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadMountedRooms() {
-      if (!session?.token) {
-        return;
-      }
-
-      const result = await fetchChatRoomsApi(session.token, undefined, session.userId);
-      if (mounted && result.ok) {
-        setApiRooms(preparePrivateRooms(result.rooms, session.userId, route?.params?.roomId));
-      }
-    }
-
-    loadMountedRooms();
-
-    return () => {
-      mounted = false;
-    };
-  }, [route?.params?.roomId, session?.token, session?.userId]);
-
   useEffect(() => {
     const targetRoomId = route?.params?.roomId;
-    if (!targetRoomId || openedRoomId.current === targetRoomId) return;
+    if (!targetRoomId) { openedRoomId.current = null; return; }
+    if (openedRoomId.current === targetRoomId) return;
     const targetRoom = apiRooms.find((room) => room.id === targetRoomId);
     if (!targetRoom) return;
     openedRoomId.current = targetRoomId;
+    navigation.setParams({ roomId: undefined });
     navigation.navigate(ROUTES.CHAT_THREAD, { room: targetRoom });
   }, [apiRooms, navigation, route?.params?.roomId]);
 
   async function handleRefresh() {
     setRefreshing(true);
-    await loadRooms();
+    await refreshRooms();
     setRefreshing(false);
   }
 
@@ -125,7 +78,7 @@ export function ChatScreen({ navigation, route }) {
     ? visibleRooms.filter((room) => room.title?.toLowerCase().includes(normalizedQuery))
     : visibleRooms;
   const unreadCount = useMemo(
-    () => visibleRooms.reduce((sum, room) => sum + (Number(room.unread) || 0), 0),
+    () => chatUnreadCount(visibleRooms),
     [visibleRooms]
   );
 
@@ -134,7 +87,7 @@ export function ChatScreen({ navigation, route }) {
       <View style={styles.contentHeader}>
         <View>
           <Text style={styles.title}>Xabarlar</Text>
-          <Text style={styles.subtitle}>{unreadCount} ta o'qilmagan suhbat</Text>
+          <Text style={styles.subtitle}>{unreadCount} ta o'qilmagan xabar</Text>
         </View>
         <Pressable style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}>
           <MoreVertical size={20} color="#1F385E" strokeWidth={2.3} />
@@ -192,6 +145,7 @@ function ChatRow({ room, index, onPress }) {
           </Text>
           <Text style={styles.roomTime}>{room.time}</Text>
         </View>
+        {room.orderId ? <Text style={styles.roomSubtitle} numberOfLines={1}>Buyurtma · {room.orderCode || room.orderId.slice(-6)}</Text> : null}
         <View style={styles.roomBottom}>
           <Text style={styles.roomSubtitle} numberOfLines={1}>
             {room.subtitle}

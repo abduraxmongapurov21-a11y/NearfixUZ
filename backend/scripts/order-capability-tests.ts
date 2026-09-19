@@ -1,3 +1,4 @@
+import "./test-isolation-preload.js";
 import assert from "node:assert/strict";
 import { WorkerProfileStatus } from "@prisma/client";
 import type { AuthUser } from "../src/modules/auth/auth-context.js";

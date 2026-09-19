@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ClipboardList, Home, MessageCircle, UserRound } from "lucide-react-native";
 import { colors, strongShadow } from "../../theme";
 import { ROUTES } from "../../constants/routes";
 import { translate } from "../../i18n/translations";
-import { fetchChatRoomsApi } from "../../services/chats/chatService";
+import { useChatRefresh } from "../../hooks/useChatRefresh";
+import { refreshChatRooms, useChatStore } from "../../store/chatStore";
+import { chatUnreadCount } from "../../services/chats/chatSync.mjs";
 import { useAuthStore } from "../../store/authStore";
 import { useUiStore } from "../../store/uiStore";
 import { Text } from "../../i18n/native";
@@ -20,33 +22,10 @@ const tabMeta = {
 export function BottomTabBar({ state, descriptors, navigation }) {
   const locale = useUiStore((store) => store.locale);
   const session = useAuthStore((store) => store.session);
-  const [unreadChats, setUnreadChats] = useState(0);
+  const unreadChats = useChatStore((store) => chatUnreadCount(store.rooms));
+  useChatRefresh(refreshChatRooms);
   const leftRoutes = state.routes.slice(0, 2);
   const rightRoutes = state.routes.slice(2);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadUnreadChats() {
-      if (!session?.token) {
-        if (mounted) setUnreadChats(0);
-        return;
-      }
-
-      const result = await fetchChatRoomsApi(session.token, undefined, session.userId);
-      if (mounted && result.ok) {
-        setUnreadChats(result.rooms.reduce((sum, room) => sum + (room.unread || 0), 0));
-      }
-    }
-
-    loadUnreadChats();
-    const timer = setInterval(loadUnreadChats, 10000);
-
-    return () => {
-      mounted = false;
-      clearInterval(timer);
-    };
-  }, [session?.token, session?.userId, state.index]);
 
   function renderTab(route, index) {
     const focused = state.index === index;

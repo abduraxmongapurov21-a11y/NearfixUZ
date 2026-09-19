@@ -20,6 +20,7 @@ import {
   createBookingSubmissionLock,
   createOrderThenOptionallySave,
   normalizeBookingMapSelection,
+  orderLocationDisplayText,
   sortBookingAddresses
 } from "../../services/orders/bookingLocation.mjs";
 import { Alert, Text, TextInput } from "../../i18n/native";
@@ -94,7 +95,7 @@ export function BookingScreen({ navigation, route }) {
     const normalized = normalizeBookingMapSelection(selectedLocation);
     navigation.setParams({ selectedBookingLocation: undefined });
     if (!normalized) {
-      Alert.alert("Manzil aniqlanmadi", "Xaritadan o'qiladigan manzilni qayta tanlang.");
+      Alert.alert("Manzil kerak", "Xaritadan yaroqli nuqta tanlang.");
       return;
     }
     setOneTimeLocation(normalized);
@@ -171,7 +172,7 @@ export function BookingScreen({ navigation, route }) {
 
       const { orderResult: result, saveResult } = await createOrderThenOptionallySave({
         createOrder: createOrderFromDraft,
-        shouldSave: Boolean(oneTimeLocation && saveOneTimeLocation),
+        shouldSave: Boolean(oneTimeLocation?.addressText.length >= 4 && saveOneTimeLocation),
         saveAddress: () =>
           createAddress({
             title: `Manzil ${savedAddresses.length + 1}`,
@@ -272,12 +273,14 @@ export function BookingScreen({ navigation, route }) {
             <View style={styles.addressTextWrap}>
               <Text style={styles.addressTitle}>{oneTimeLocation ? "Bir martalik manzil" : selectedSavedAddress?.label || "Manzil"}</Text>
               <Text style={styles.addressText} numberOfLines={1}>
-                {oneTimeLocation?.addressText || selectedSavedAddress?.addressText || selectedSavedAddress?.address || "Xaritadan manzil tanlang"}
+                {oneTimeLocation
+                  ? orderLocationDisplayText(oneTimeLocation)
+                  : selectedSavedAddress?.addressText || selectedSavedAddress?.address || "Xaritadan manzil tanlang"}
               </Text>
             </View>
             <ChevronRight size={22} color="#A3ABB8" strokeWidth={2.6} />
           </Pressable>
-          {oneTimeLocation ? (
+          {oneTimeLocation?.addressText.length >= 4 ? (
             <Pressable
               accessibilityRole="checkbox"
               accessibilityState={{ checked: saveOneTimeLocation }}

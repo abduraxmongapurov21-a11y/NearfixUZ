@@ -75,11 +75,12 @@ function decimalToNumber(value: Prisma.Decimal | number | null | undefined) {
 }
 
 function locationForOrder(order: OrderRecord) {
-  const hasSnapshot = Boolean(order.locationAddressText?.trim());
+  const hasSnapshot = Boolean(order.locationAddressText?.trim()) ||
+    (order.locationLat != null && order.locationLng != null);
   const source = hasSnapshot
     ? {
         label: order.locationLabel,
-        addressText: order.locationAddressText,
+        addressText: order.locationAddressText || "",
         district: order.locationDistrict,
         latitude: decimalToNumber(order.locationLat),
         longitude: decimalToNumber(order.locationLng)
@@ -94,7 +95,6 @@ function locationForOrder(order: OrderRecord) {
         }
       : null;
 
-  if (!source?.addressText) return null;
   return source;
 }
 

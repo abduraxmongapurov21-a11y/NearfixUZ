@@ -1,4 +1,6 @@
 {
+  "Xaritada belgilangan joy": "Location selected on the map",
+  "Xaritadan yaroqli nuqta tanlang.": "Select a valid point on the map.",
   "/workers/me/service-location": "/workers/me/service-location",
   "Usta profili yuklanmadi.": "Could not load the professional profile.",
   "Profil serverdan yangilanmadi. Ko'rsatilgan lokatsiya eski bo'lishi mumkin.": "The profile was not refreshed from the server. The shown location may be stale.",

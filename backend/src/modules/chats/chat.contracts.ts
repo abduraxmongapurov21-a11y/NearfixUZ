@@ -17,3 +17,5 @@ export const createMessageSchema = z.object({
 });
 
 export const chatRoomTypeSchema = z.nativeEnum(ChatRoomType).optional();
+
+export const readRoomSchema = z.object({ throughMessageId: z.string().min(1) });
