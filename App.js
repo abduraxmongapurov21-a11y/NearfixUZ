@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef } from "react";
 import { StatusBar, StyleSheet, View } from "react-native";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
+import * as SplashScreen from "expo-splash-screen";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { enableScreens } from "react-native-screens";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold } from "@expo-google-fonts/inter";
@@ -11,6 +12,8 @@ import "./src/i18n";
 import { Text } from "./src/i18n/native";
 import { useAuthStore } from "./src/store/authStore";
 import { processNotificationResponse } from "./src/services/notifications/notificationNavigation.mjs";
+
+SplashScreen.preventAutoHideAsync().catch(() => null);
 
 enableScreens();
 
@@ -54,7 +57,7 @@ export default function App() {
   const processingNotificationId = useRef(null);
   const pendingNotificationResponse = useRef(null);
   const session = useAuthStore((state) => state.session);
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
@@ -100,8 +103,12 @@ export default function App() {
     if (pendingNotificationResponse.current) handleNotificationResponse(pendingNotificationResponse.current);
   }, [handleNotificationResponse, session?.experienceMode, session?.role, session?.userId]);
 
-  if (!fontsLoaded) {
-    return <View style={styles.app} />;
+  useEffect(() => {
+    if (fontsLoaded || fontError) SplashScreen.hideAsync().catch(() => null);
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
   }
 
   return (
