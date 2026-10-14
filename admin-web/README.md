@@ -29,8 +29,10 @@ For DigitalOcean App Platform, configure:
 Root directory: admin-web
 Build command: npm run build
 Run command: npm start
-Production hostname: https://admin.nearfix.uz
+Production hostname: https://nearfix-admin-k8mxo.ondigitalocean.app
+NEXT_PUBLIC_API_URL: https://nearfix-production-backend-wvd6v.ondigitalocean.app
 ```
 
 Set `NEXT_PUBLIC_API_URL` at build time to the canonical production API hostname. The API target must remain
-environment-driven; do not hardcode a temporary App Platform domain in application code.
+environment-driven; application code reads `NEXT_PUBLIC_API_URL`. The DigitalOcean starter URLs above
+are the canonical production URLs selected by the owner; no purchased custom domain is required.

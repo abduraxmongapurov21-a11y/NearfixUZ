@@ -7,9 +7,12 @@
 - Existing EAS project: `@oybekdev/nearfix-mobile`, `cb752bd0-f6d9-4240-9215-7193ac16755a`.
 - App Store Connect app ID: `6782775201`.
 - Production API: `https://nearfix-production-backend-wvd6v.ondigitalocean.app`.
+- Production admin: `https://nearfix-admin-k8mxo.ondigitalocean.app`.
 - Public pages on that origin: `/legal/privacy`, `/legal/terms`, `/legal/account-deletion`.
 
-This checkout contains uncommitted application fixes. The store preparation report and archive manifest are in `artifacts/store-prep-2026-10-14/`. A passing JavaScript export is not a signed native AAB/IPA or a device test.
+The owner confirmed on 2026-10-14 that no custom domain was purchased. Use the DigitalOcean URLs above for production, admin access and store legal links. Historical audit references to custom domains do not define the current configuration.
+
+Application fixes have been committed and pushed. The exact source commit, server deployments and verification results are recorded in the ZIP's `HANDOFF_RECORD.md` / `SOURCE_HANDOFF.json`. Earlier store preparation evidence is in `artifacts/store-prep-2026-10-14/`. A passing JavaScript export is not a signed native AAB/IPA or a device test.
 
 ## Environment and credentials
 
