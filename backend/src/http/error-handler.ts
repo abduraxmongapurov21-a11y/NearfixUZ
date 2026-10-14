@@ -17,10 +17,12 @@ export const errorHandler: ErrorRequestHandler = (error, request, response, next
   const status = typeof error?.status === "number" ? error.status : 500;
   const isUnexpectedError = status >= 500;
   if (status >= 400) {
+    // Device coordinates are transient catalog input; keep them out of error logs.
+    const loggedUrl = request.originalUrl.split("?", 1)[0] === "/workers/catalog" ? "/workers/catalog" : request.originalUrl;
     const log = status >= 500 ? console.error : console.warn;
     const level = status >= 500 ? "error" : "warning";
     log(
-      `[api-${level}] ${request.method} ${request.originalUrl} ${status} ${error?.code || "INTERNAL_ERROR"}: ${
+      `[api-${level}] ${request.method} ${loggedUrl} ${status} ${error?.code || "INTERNAL_ERROR"}: ${
         error?.message || "Unexpected server error"
       }`
     );

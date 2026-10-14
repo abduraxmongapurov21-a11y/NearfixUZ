@@ -1,5 +1,6 @@
 {
   "cli": {
+    "version": "24.13.0",
     "appVersionSource": "remote"
   },
   "build": {
@@ -15,12 +16,28 @@
         "EXPO_PUBLIC_TERMS_URL": "http://10.0.2.2:4000/legal/terms"
       }
     },
+    "development-ios": {
+      "extends": "development",
+      "environment": "production",
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.0.102:4000",
+        "EXPO_PUBLIC_PRIVACY_POLICY_URL": "http://192.168.0.102:4000/legal/privacy",
+        "EXPO_PUBLIC_TERMS_URL": "http://192.168.0.102:4000/legal/terms"
+      }
+    },
     "production": {
       "distribution": "store",
       "environment": "production",
       "autoIncrement": true,
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
+      },
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.0"
       },
       "env": {
         "EXPO_PUBLIC_APP_ENV": "production",

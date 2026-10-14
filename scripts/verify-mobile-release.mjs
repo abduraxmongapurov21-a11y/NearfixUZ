@@ -1,7 +1,9 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { verifyProductionMapConfig } from "./verify-native-map-config.mjs";
 
 const projectRoot = process.cwd();
+verifyProductionMapConfig(projectRoot);
 const exportDirectory = path.resolve("dist-test-store");
 const easConfig = JSON.parse(await readFile(path.join(projectRoot, "eas.json"), "utf8"));
 const expectedApiUrl =

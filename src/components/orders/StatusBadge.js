@@ -1,24 +1,24 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import { trackingStatusCopy, TRACKING_STATUSES } from "../../constants/orderTracking";
-import { colors, radius } from "../../theme";
+import { colors, font, radius } from "../../theme/clientTheme";
 import { Text } from "../../i18n/native";
 
 const toneStyles = {
   warning: {
-    backgroundColor: "rgba(255,176,32,0.16)",
+    backgroundColor: "#FFF5E7",
     color: colors.warning
   },
   success: {
-    backgroundColor: "rgba(44,216,165,0.16)",
+    backgroundColor: colors.mintSoft,
     color: colors.success
   },
   primary: {
-    backgroundColor: "#E6F4F8",
+    backgroundColor: colors.primarySoft,
     color: colors.primary
   },
   danger: {
-    backgroundColor: "rgba(239,68,68,0.12)",
+    backgroundColor: "#FFF0F1",
     color: colors.danger
   }
 };
@@ -43,6 +43,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 11,
-    fontWeight: "900"
+    fontFamily: font.semi,
+    lineHeight: 16
   }
 });

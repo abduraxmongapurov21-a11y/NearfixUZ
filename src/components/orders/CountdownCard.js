@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Clock3 } from "lucide-react-native";
-import { colors, iconSizes, radius } from "../../theme";
+import { colors, font, iconSizes, radius } from "../../theme/clientTheme";
 import { Text } from "../../i18n/native";
 
 function formatRemaining(ms) {
@@ -21,10 +21,12 @@ export function CountdownCard({ deadlineAt }) {
     return () => clearInterval(timer);
   }, []);
 
+  if (!Number.isFinite(deadlineAt) || deadlineAt <= 0) return null;
+
   return (
     <View style={styles.card}>
       <View style={styles.iconWrap}>
-        <Clock3 size={iconSizes.md} color={colors.warning} strokeWidth={2.6} />
+        <Clock3 size={iconSizes.md} color={colors.warning} strokeWidth={1.8} />
       </View>
       <View style={styles.body}>
         <Text style={styles.title}>Usta javobi uchun vaqt</Text>
@@ -39,9 +41,9 @@ const styles = StyleSheet.create({
   card: {
     minHeight: 84,
     borderRadius: radius.xl,
-    backgroundColor: "rgba(255,176,32,0.12)",
+    backgroundColor: "#FFF8EE",
     borderWidth: 1,
-    borderColor: "rgba(255,176,32,0.22)",
+    borderColor: "#F0E3CA",
     padding: 12,
     flexDirection: "row",
     alignItems: "center",
@@ -60,18 +62,21 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontWeight: "900"
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: font.semi
   },
   text: {
     marginTop: 3,
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     lineHeight: 17,
-    fontWeight: "700"
+    fontFamily: font.regular
   },
   time: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: "900"
+    fontSize: 17,
+    fontFamily: font.bold,
+    fontVariant: ["tabular-nums"]
   }
 });

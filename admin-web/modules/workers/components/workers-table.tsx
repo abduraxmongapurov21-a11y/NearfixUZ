@@ -6,7 +6,11 @@ import { CheckCircle2, Trash2, X, ZoomIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/shared/components/data-table";
-import { FilterBar } from "@/shared/components/filter-bar";
+import { FilterBar, FilterSelect, TableLoadState } from "@/shared/components/filter-bar";
+import { getFilterOptions, matchesTableSearch } from "@/shared/utils/table-filters";
+import { useAdminUiStore } from "@/stores/ui-store";
+import { useAdminSessionStore } from "@/stores/admin-session-store";
+import { hasPermission } from "@/shared/auth/permissions";
 import { useWorkers } from "../hooks/use-workers";
 import { ApiClientError } from "@/services/api-client";
 import { adminLabel } from "@/lib/admin-labels";
@@ -30,15 +34,26 @@ function workerActionError(error: unknown) {
 }
 
 export function WorkersTable() {
-  const { data = [] } = useWorkers();
+  const { data = [], error: loadError, isPending: isLoading, refetch } = useWorkers();
   const queryClient = useQueryClient();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{ workerId: string; action: WorkerModerationAction } | null>(null);
-  const pendingWorkers = data.filter((worker) => worker.status === "draft" && worker.submittedAt);
-  const approvedWorkers = data.filter((worker) => worker.status === "approved");
-  const suspendedWorkers = data.filter((worker) => worker.status === "suspended");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [city, setCity] = useState("");
+  const [profession, setProfession] = useState("");
+  const globalSearch = useAdminUiStore((state) => state.globalSearch);
+  const canManage = useAdminSessionStore((state) => hasPermission(state.session, "workers.manage"));
+  const filteredWorkers = data.filter((worker) =>
+    (!status || worker.status === status) && (!city || worker.city === city) &&
+    (!profession || worker.profession === profession || worker.professions.includes(profession)) &&
+    matchesTableSearch([worker.name, worker.phone, worker.profession, ...worker.professions, worker.city, adminLabel(worker.city)], [search, globalSearch])
+  );
+  const pendingWorkers = filteredWorkers.filter((worker) => worker.status === "draft" && worker.submittedAt);
+  const approvedWorkers = filteredWorkers.filter((worker) => worker.status === "approved");
+  const suspendedWorkers = filteredWorkers.filter((worker) => worker.status === "suspended");
   const moderationMutation = useMutation({
     mutationFn: async ({ worker, action }: { worker: AdminWorker; action: WorkerModerationAction }) => {
       if (action === "approve") await approveWorker(worker);
@@ -69,15 +84,15 @@ export function WorkersTable() {
   }
 
   function runAction(worker: AdminWorker, action: WorkerModerationAction) {
-    if (moderationMutation.isPending) return;
+    if (!canManage || moderationMutation.isPending) return;
     if (action === "delete" && !window.confirm(`“${worker.name}” usta profili o'chirilsinmi?`)) return;
     moderationMutation.mutate({ worker, action });
   }
 
-  function DeleteWorkerButton({ worker }: { worker: AdminWorker }) {
+  function renderDeleteWorkerButton(worker: AdminWorker) {
     return (
       <Button
-        disabled={moderationMutation.isPending}
+        disabled={!canManage || moderationMutation.isPending}
         onClick={() => runAction(worker, "delete")}
         size="sm"
         variant="outline"
@@ -100,6 +115,18 @@ export function WorkersTable() {
           {errorMessage}
         </div>
       ) : null}
+      <FilterBar
+        controls={<>
+          <FilterSelect label="Holat" onChange={setStatus} options={getFilterOptions(["draft", "approved", "suspended"], adminLabel)} value={status} />
+          <FilterSelect label="Shahar" onChange={setCity} options={getFilterOptions(data.map((worker) => worker.city), adminLabel)} value={city} />
+          <FilterSelect label="Kasb" onChange={setProfession} options={getFilterOptions(data.flatMap((worker) => [worker.profession, ...worker.professions]))} value={profession} />
+        </>}
+        onSearchChange={setSearch}
+        searchPlaceholder="Usta yoki kasbni qidirish"
+        searchValue={search}
+      />
+      <TableLoadState error={loadError} isPending={isLoading} onRetry={() => { void refetch(); }} />
+      {!isLoading && (!loadError || data.length > 0) ? <>
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
@@ -151,7 +178,7 @@ export function WorkersTable() {
                       </div>
                     </div>
                     <Button
-                      disabled={moderationMutation.isPending || missingFields.length > 0}
+                      disabled={!canManage || moderationMutation.isPending || missingFields.length > 0}
                       onClick={() => runAction(worker, "approve")}
                       size="sm"
                     >
@@ -173,14 +200,14 @@ export function WorkersTable() {
                   ) : null}
                   <div className="mt-3 flex justify-end gap-2">
                     <Button
-                      disabled={moderationMutation.isPending}
+                      disabled={!canManage || moderationMutation.isPending}
                       onClick={() => runAction(worker, "reject")}
                       size="sm"
                       variant="outline"
                     >
                       {isPending(worker.id, "reject") ? "Rad etilmoqda..." : "Rad etish"}
                     </Button>
-                    <DeleteWorkerButton worker={worker} />
+                    {renderDeleteWorkerButton(worker)}
                   </div>
                       </>
                     );
@@ -195,7 +222,6 @@ export function WorkersTable() {
           )}
         </CardContent>
       </Card>
-      <FilterBar filters={["Holat", "Shahar", "Kasb"]} searchPlaceholder="Usta yoki kasbni qidirish" />
       <Card>
         <CardHeader className="pb-3">
           <CardTitle>Tasdiqlangan ustalar</CardTitle>
@@ -210,14 +236,14 @@ export function WorkersTable() {
                 cell: ({ row }) => (
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      disabled={moderationMutation.isPending}
+                      disabled={!canManage || moderationMutation.isPending}
                       onClick={() => runAction(row.original, "suspend")}
                       size="sm"
                       variant="outline"
                     >
                       {isPending(row.original.id, "suspend") ? "To'xtatilmoqda..." : "To'xtatish"}
                     </Button>
-                    <DeleteWorkerButton worker={row.original} />
+                    {renderDeleteWorkerButton(row.original)}
                   </div>
                 )
               }
@@ -240,13 +266,13 @@ export function WorkersTable() {
                 cell: ({ row }) => (
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      disabled={moderationMutation.isPending}
+                      disabled={!canManage || moderationMutation.isPending}
                       onClick={() => runAction(row.original, "unsuspend")}
                       size="sm"
                     >
                       {isPending(row.original.id, "unsuspend") ? "Faollashtirilmoqda..." : "Faollashtirish"}
                     </Button>
-                    <DeleteWorkerButton worker={row.original} />
+                    {renderDeleteWorkerButton(row.original)}
                   </div>
                 )
               }
@@ -255,6 +281,7 @@ export function WorkersTable() {
           />
         </CardContent>
       </Card>
+      </> : null}
       {previewImage ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6" onClick={() => setPreviewImage(null)}>
           <div className="relative h-[min(82vh,760px)] w-[min(92vw,760px)] rounded-lg bg-background p-3 shadow-xl" onClick={(event) => event.stopPropagation()}>
@@ -297,7 +324,7 @@ function getMissingFields(worker: {
   if (!worker.name || worker.name === "Kiritilmagan") missing.push("Ism");
   if (!worker.city || worker.city === "Kiritilmagan") missing.push("Shahar");
   if (!worker.profession && !worker.professions.length) missing.push("Soha");
-  if (!worker.experienceYears) missing.push("Tajriba");
+  if (typeof worker.experienceYears !== "number") missing.push("Tajriba");
   if (!worker.profileImageUrl) missing.push("Rasm");
   if (!worker.basePrice) missing.push("Narx");
   if (!worker.bio?.trim()) missing.push("Bio");

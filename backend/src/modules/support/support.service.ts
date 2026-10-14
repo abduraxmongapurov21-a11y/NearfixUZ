@@ -80,7 +80,7 @@ export async function getAdminSupportTicket(ticketId: string) {
 
 export async function updateAdminSupportTicket(
   ticketId: string,
-  adminId: string,
+  adminId: string | null,
   input: { status: SupportTicketStatus; adminNote?: string }
 ) {
   const existing = await prisma.supportTicket.findUnique({ where: { id: ticketId }, select: { id: true } });

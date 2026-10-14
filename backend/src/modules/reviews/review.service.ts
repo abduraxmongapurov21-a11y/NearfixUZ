@@ -5,6 +5,7 @@ import {
   Prisma,
   ReviewStatus,
   UserRole,
+  UserStatus,
   WorkerProfileStatus
 } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
@@ -181,7 +182,7 @@ export async function createOrderReview(user: AuthUser, orderId: string, input: 
 
 export async function listWorkerReviews(workerId: string) {
   const publicWorker = await prisma.workerProfile.findFirst({
-    where: { id: workerId, status: WorkerProfileStatus.APPROVED },
+    where: { id: workerId, status: WorkerProfileStatus.APPROVED, user: { status: UserStatus.ACTIVE } },
     select: { id: true }
   });
   if (!publicWorker) {
@@ -218,7 +219,7 @@ export async function listWorkerReviews(workerId: string) {
 export async function getWorkerRating(workerId: string) {
   const [worker, reviewsCount] = await Promise.all([
     prisma.workerProfile.findFirst({
-      where: { id: workerId, status: WorkerProfileStatus.APPROVED },
+      where: { id: workerId, status: WorkerProfileStatus.APPROVED, user: { status: UserStatus.ACTIVE } },
       select: {
         id: true,
         ratingAvg: true

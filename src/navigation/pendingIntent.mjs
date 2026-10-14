@@ -12,17 +12,19 @@ export function sanitizePendingIntent(intent) {
   if (intent.kind === "BOOKING") {
     const workerId = stablePublicId(intent.workerId);
     if (!workerId) return null;
-    return { kind: "BOOKING", workerId };
+    const categoryId = stablePublicId(intent.categoryId);
+    return { kind: "BOOKING", workerId, ...(categoryId ? { categoryId } : {}) };
   }
   if (intent.kind === "PROTECTED_ROUTE") {
     const routeName = String(intent.routeName || "");
     if (!SAFE_PROTECTED_ROUTES.has(routeName)) return null;
     const workerId = stablePublicId(intent.workerId);
+    const categoryId = stablePublicId(intent.categoryId);
     if (routeName === "WorkerProfile" && !workerId) return null;
     return {
       kind: "PROTECTED_ROUTE",
       routeName,
-      ...(routeName === "WorkerProfile" ? { workerId } : {})
+      ...(routeName === "WorkerProfile" ? { workerId, ...(categoryId ? { categoryId } : {}) } : {})
     };
   }
   return { kind: "BECOME_WORKER" };

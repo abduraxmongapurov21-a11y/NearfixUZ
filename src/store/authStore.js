@@ -18,7 +18,7 @@ import { resetRoleStores } from "./sessionReset";
 import { createAccountRequestGuard, createOperationGuard } from "./requestGeneration.mjs";
 import { sanitizePendingIntent } from "../navigation/pendingIntent.mjs";
 import { defaultExperienceModeForRole, normalizeExperienceMode } from "../navigation/experienceMode.mjs";
-import { waitForPendingPushRegistration } from "../services/notifications/pushRegistrationQueue.mjs";
+import { enqueuePushRegistration, waitForPendingPushRegistration } from "../services/notifications/pushRegistrationQueue.mjs";
 
 const PUSH_TOKEN_STORAGE_KEY = "nearfix-push-token";
 const PUSH_DEVICE_ID_STORAGE_KEY = "nearfix-push-device-id";
@@ -285,22 +285,40 @@ export const useAuthStore = create(
   deleteAccount: async () => {
     const current = get().session;
     if (!current?.token) return { ok: false, message: "No API session token" };
+    const identity = captureAuthRequest(get, current.token);
+    const attempt = authAttemptGuard.begin();
+    const isCurrent = () => isAuthRequestCurrent(get, identity) && authAttemptGuard.isCurrent(attempt);
 
-    const result = await deleteCurrentUserApi(current.token);
-    if (!result.ok) return result;
+    try {
+      const result = await deleteCurrentUserApi(current.token);
+      if (!isCurrent()) return { ok: false, stale: true };
+      if (!result.ok && result.code === "ACTIVE_ORDERS_EXIST") {
+        return { ...result, message: "Akkauntni o'chirishdan oldin faol buyurtmalarni yakunlang yoki bekor qiling." };
+      }
+      if (!result.ok) return result;
 
-    await AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY);
-    authRequestGuard.invalidateSession();
-    authAttemptGuard.invalidate();
-    resetRoleStores();
-    set((state) => ({
-      session: null,
-      invalidation: null,
-      pendingIntent: null,
-      navigationGeneration: state.navigationGeneration + 1
-    }));
+      const cleanupCurrent = await enqueuePushRegistration(async () => {
+        if (!isCurrent()) return false;
+        await AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY);
+        return isCurrent();
+      });
+      if (!cleanupCurrent || !isCurrent()) return { ok: false, stale: true };
 
-    return result;
+      authRequestGuard.invalidateSession();
+      authAttemptGuard.invalidate();
+      resetRoleStores();
+      set((state) => ({
+        session: null,
+        invalidation: null,
+        pendingIntent: null,
+        navigationGeneration: state.navigationGeneration + 1
+      }));
+
+      return result;
+    } catch (error) {
+      if (!isCurrent()) return { ok: false, stale: true };
+      throw error;
+    }
   },
   invalidateSessionForRoleChange: (nextRole) => {
     const current = get().session;

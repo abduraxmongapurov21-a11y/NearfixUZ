@@ -1,3 +1,5 @@
+import { sanitizePendingIntent } from "./pendingIntent.mjs";
+
 const PRIVATE_ROUTES = new Set([
   "Booking",
   "OrdersTab",
@@ -15,9 +17,7 @@ export function isPrivateClientRoute(routeName) {
 export function pendingIntentForPrivateRoute(routeName, params = {}) {
   if (!isPrivateClientRoute(routeName)) return null;
   if (routeName === "Booking") {
-    return typeof params.workerId === "string" && params.workerId.trim()
-      ? { kind: "BOOKING", workerId: params.workerId.trim() }
-      : null;
+    return sanitizePendingIntent({ kind: "BOOKING", workerId: params.workerId, categoryId: params.categoryId });
   }
   if (routeName === "BecomeWorker") return { kind: "BECOME_WORKER" };
   if (routeName === "ChatThread") return { kind: "PROTECTED_ROUTE", routeName: "ChatsTab" };

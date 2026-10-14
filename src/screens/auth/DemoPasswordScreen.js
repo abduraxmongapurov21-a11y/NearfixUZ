@@ -36,7 +36,7 @@ export function DemoPasswordScreen({ navigation, route }) {
         Alert.alert("Kirish amalga oshmadi", authErrorMessage(result, "Parol yoki demo hisob noto'g'ri."));
       } else {
         const resumed = await resumeAfterAuthentication(navigation, result.role);
-        if (!resumed.ok) Alert.alert("Usta mavjud emas", "Usta hozir buyurtma qabul qilmayapti. Boshqa ustani tanlang.");
+        if (!resumed.ok && !resumed.stale) Alert.alert("Usta mavjud emas", "Usta hozir buyurtma qabul qilmayapti. Boshqa ustani tanlang.");
       }
     } finally {
       setLoading(false);

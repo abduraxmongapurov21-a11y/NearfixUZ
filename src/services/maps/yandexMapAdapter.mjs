@@ -1,29 +1,13 @@
-const DEFAULT_ZOOM = 16;
+import { normalizeCoordinate } from "../location/reverseGeocodeModel.mjs";
 
-function roundCoordinate(value) {
-  return Number(value.toFixed(7));
-}
+const DEFAULT_ZOOM = 16;
 
 export function toCanonicalCoordinate(value) {
   const source = value?.nativeEvent?.point || value?.point || value;
-  const latitude = Number(source?.latitude ?? source?.lat);
-  const longitude = Number(source?.longitude ?? source?.lon);
-
-  if (
-    !Number.isFinite(latitude) ||
-    !Number.isFinite(longitude) ||
-    latitude < -90 ||
-    latitude > 90 ||
-    longitude < -180 ||
-    longitude > 180
-  ) {
-    return null;
-  }
-
-  return {
-    latitude: roundCoordinate(latitude),
-    longitude: roundCoordinate(longitude)
-  };
+  return normalizeCoordinate({
+    latitude: source?.latitude ?? source?.lat,
+    longitude: source?.longitude ?? source?.lon
+  });
 }
 
 export function toYandexPoint(coordinate) {

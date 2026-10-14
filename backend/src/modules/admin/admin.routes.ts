@@ -22,12 +22,49 @@ import {
 } from "../support/support.service.js";
 import { setReviewVisibility } from "../reviews/review.service.js";
 import { listAdminAuditLogs, writeAdminAuditLog } from "../admin-auth/admin-audit.service.js";
+import { cancelOrderSchema, transitionOrderSchema } from "../orders/order.contracts.js";
+import { acceptOrder, cancelOrder, getOrderForUser, transitionOrder } from "../orders/order.service.js";
+import { toOrderDto } from "../orders/order.dto.js";
 
 export const adminRouter = Router();
 
 adminRouter.use(authenticate, requireRole("ADMIN"));
 
 const maxAdminOrdersLimit = 100;
+
+const adminUserSelect = {
+  id: true,
+  phone: true,
+  name: true,
+  role: true,
+  status: true,
+  cityId: true,
+  createdAt: true,
+  updatedAt: true
+} satisfies Prisma.UserSelect;
+
+type AdminUser = Prisma.UserGetPayload<{ select: typeof adminUserSelect }>;
+
+function toAdminUserDto(user: AdminUser) {
+  return {
+    id: user.id,
+    phone: user.phone,
+    name: user.name,
+    role: user.role,
+    status: user.status,
+    cityId: user.cityId,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
+}
+
+function toAdminWorkerDto<T extends { user: AdminUser }>(worker: T) {
+  return { ...worker, user: toAdminUserDto(worker.user) };
+}
+
+function toAdminReviewDto<T extends { client: AdminUser; worker: { user: AdminUser } }>(review: T) {
+  return { ...review, client: toAdminUserDto(review.client), worker: toAdminWorkerDto(review.worker) };
+}
 
 function toAdminOrderListDto(order: any) {
   return {
@@ -221,7 +258,7 @@ adminRouter.get("/audit-logs", requirePermission("audit.read"), async (request, 
 
 adminRouter.get("/users", requirePermission("users.read"), async (request, response, next) => {
   try {
-    const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" } });
+    const users = await prisma.user.findMany({ select: adminUserSelect, orderBy: { createdAt: "desc" } });
     response.json({ ok: true, users });
   } catch (error) {
     next(error);
@@ -231,7 +268,7 @@ adminRouter.get("/users", requirePermission("users.read"), async (request, respo
 adminRouter.get("/workers", requirePermission("workers.read"), async (request, response, next) => {
   try {
     const workers = await prisma.workerProfile.findMany({
-      include: { user: true, availability: true },
+      include: { user: { select: adminUserSelect }, availability: true },
       orderBy: { createdAt: "desc" }
     });
     response.json({ ok: true, workers });
@@ -322,12 +359,72 @@ adminRouter.get("/orders", requirePermission("orders.read"), async (request, res
   }
 });
 
+adminRouter.get("/orders/:orderId", requirePermission("orders.read"), async (request, response, next) => {
+  try {
+    // Admin permissions are enforced here; mobile ownership rules remain unchanged.
+    const order = await getOrderForUser({ ...request.user!, role: "admin" }, String(request.params.orderId));
+    response.json({ ok: true, order: toOrderDto(order) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/orders/:orderId/cancel", requirePermission("orders.manage"), async (request, response, next) => {
+  try {
+    const input = cancelOrderSchema.parse(request.body);
+    const orderId = String(request.params.orderId);
+    const order = await cancelOrder({ ...request.user!, role: "admin" }, orderId, input.reason, undefined, request.admin);
+    await auditAdminAction(request, {
+      action: "order.cancelled",
+      targetType: "Order",
+      targetId: orderId,
+      metadata: { status: order.status }
+    });
+    response.json({ ok: true, order: toOrderDto(order) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/orders/:orderId/accept", requirePermission("orders.manage"), async (request, response, next) => {
+  try {
+    const orderId = String(request.params.orderId);
+    const order = await acceptOrder({ ...request.user!, role: "admin" }, orderId, request.admin);
+    await auditAdminAction(request, {
+      action: "order.accepted",
+      targetType: "Order",
+      targetId: orderId,
+      metadata: { status: order.status }
+    });
+    response.json({ ok: true, order: toOrderDto(order) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/orders/:orderId/status", requirePermission("orders.manage"), async (request, response, next) => {
+  try {
+    const input = transitionOrderSchema.parse(request.body);
+    const orderId = String(request.params.orderId);
+    const order = await transitionOrder({ ...request.user!, role: "admin" }, orderId, input.status, request.admin);
+    await auditAdminAction(request, {
+      action: "order.status_updated",
+      targetType: "Order",
+      targetId: orderId,
+      metadata: { status: order.status }
+    });
+    response.json({ ok: true, order: toOrderDto(order) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 adminRouter.get("/reviews", requirePermission("reviews.read"), async (request, response, next) => {
   try {
     const reviews = await prisma.review.findMany({
       include: {
-        client: true,
-        worker: { include: { user: true } }
+        client: { select: adminUserSelect },
+        worker: { include: { user: { select: adminUserSelect } } }
       },
       orderBy: { createdAt: "desc" }
     });
@@ -347,7 +444,7 @@ adminRouter.patch("/reviews/:reviewId/hide", requirePermission("reviews.manage")
       targetId: reviewId,
       metadata: { status: ReviewStatus.HIDDEN }
     });
-    response.json({ ok: true, review });
+    response.json({ ok: true, review: toAdminReviewDto(review) });
   } catch (error) {
     next(error);
   }
@@ -363,7 +460,7 @@ adminRouter.patch("/reviews/:reviewId/restore", requirePermission("reviews.manag
       targetId: reviewId,
       metadata: { status: ReviewStatus.PUBLISHED }
     });
-    response.json({ ok: true, review });
+    response.json({ ok: true, review: toAdminReviewDto(review) });
   } catch (error) {
     next(error);
   }
@@ -389,7 +486,8 @@ adminRouter.patch("/reports/:reportId/status", requirePermission("reports.manage
   try {
     const input = updateReportStatusSchema.parse(request.body);
     const reportId = String(request.params.reportId);
-    const report = await updateAdminReport(reportId, request.user!.id, input);
+    // This legacy resolver FK targets User, while admin identities live in AdminAccount/audit logs.
+    const report = await updateAdminReport(reportId, request.admin ? null : request.user!.id, input);
     await auditAdminAction(request, {
       action: reportAuditAction(input.status),
       targetType: "Report",
@@ -422,7 +520,7 @@ adminRouter.patch("/support/tickets/:ticketId", requirePermission("support.manag
   try {
     const input = updateSupportTicketSchema.parse(request.body);
     const ticketId = String(request.params.ticketId);
-    const ticket = await updateAdminSupportTicket(ticketId, request.user!.id, input);
+    const ticket = await updateAdminSupportTicket(ticketId, request.admin ? null : request.user!.id, input);
     await auditAdminAction(request, {
       action: "support.status_updated",
       targetType: "SupportTicket",
@@ -469,7 +567,8 @@ adminRouter.post("/users/:userId/suspend", requirePermission("users.manage"), as
       }
       const updated = await tx.user.update({
         where: { id: userId },
-        data: { status: UserStatus.BLOCKED, sessionVersion: { increment: 1 } }
+        data: { status: UserStatus.BLOCKED, sessionVersion: { increment: 1 } },
+        select: adminUserSelect
       });
       await tx.session.updateMany({ where: { userId, revoked: false }, data: { revoked: true } });
       return updated;
@@ -515,7 +614,7 @@ adminRouter.post("/workers/:workerId/approve", requirePermission("workers.manage
     response.json({
       ok: true,
       actorId: request.user?.id,
-      worker
+      worker: toAdminWorkerDto(worker)
     });
   } catch (error) {
     next(error);
@@ -537,7 +636,7 @@ adminRouter.post("/workers/:workerId/reject", requirePermission("workers.manage"
     response.json({
       ok: true,
       actorId: request.user?.id,
-      worker
+      worker: toAdminWorkerDto(worker)
     });
   } catch (error) {
     next(error);
@@ -559,7 +658,7 @@ adminRouter.post("/workers/:workerId/suspend", requirePermission("workers.manage
     response.json({
       ok: true,
       actorId: request.user?.id,
-      worker
+      worker: toAdminWorkerDto(worker)
     });
   } catch (error) {
     next(error);
@@ -581,7 +680,7 @@ adminRouter.post("/workers/:workerId/unsuspend", requirePermission("workers.mana
     response.json({
       ok: true,
       actorId: request.user?.id,
-      worker
+      worker: toAdminWorkerDto(worker)
     });
   } catch (error) {
     next(error);

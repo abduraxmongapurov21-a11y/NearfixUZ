@@ -1,24 +1,23 @@
-import React, { useEffect, useState } from "react";
-import { Image, Linking, Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
+import { ActivityIndicator, Image, Linking, Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
 import {
   ArrowLeft,
   BadgeCheck,
   CalendarCheck,
   Ban,
-  ClipboardList,
+  ChevronRight,
   Flag,
   Heart,
-  Home,
   MapPin,
   MessageCircle,
   Phone,
   Share2,
-  Star,
-  UserRound
+  Star
 } from "lucide-react-native";
 import { ROUTES } from "../../constants/routes";
 import { WORKER_STATUS } from "../../constants/workerStatus";
-import { useSelectedWorker } from "../../hooks/useSelectedWorker";
+import { useWorkerById } from "../../hooks/useWorkerById";
 import { ensureWorkerChatRoomApi } from "../../services/chats/chatService";
 import { resolveWorkerImage } from "../../services/images/imageService";
 import { useAuthStore } from "../../store/authStore";
@@ -26,7 +25,6 @@ import { useClientStore } from "../../store/clientStore";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { WorkerAvatar } from "../../components/ui/WorkerAvatar";
 import { ReportModal } from "../../components/moderation/ReportModal";
-import { ReviewCard } from "../../components/profile/ReviewCard";
 import { blockUserApi } from "../../services/moderation/moderationService";
 import { fetchWorkerReviewsApi } from "../../services/workers/workerService";
 import { fetchPublicWorker } from "../../services/catalog/catalogService";
@@ -36,17 +34,18 @@ import { Alert, Text } from "../../i18n/native";
 import { useTranslation } from "react-i18next";
 import { workerCategoryLabel } from "../../services/content/categoryService";
 import { formatWorkerPhone, normalizeWorkerPhone } from "../../utils/workerPhone.mjs";
+import { workerExperienceLabel } from "../../utils/workerExperience.mjs";
 
-const font = {
-  medium: "Inter_500Medium",
-  semi: "Inter_600SemiBold",
-  bold: "Inter_700Bold",
-  extra: "Inter_800ExtraBold"
-};
+import { ClientDock } from "../../components/client/ClientDock";
+import { GlassSurface } from "../../components/client/GlassSurface";
+import { colors, font, radius, shadow } from "../../theme/clientTheme";
 
 export function WorkerProfileScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
-  const worker = useSelectedWorker();
+  const workerId = route.params?.workerId;
+  const focused = useIsFocused();
+  const worker = useWorkerById(workerId);
+  const requestGeneration = useRef(0);
   const session = useAuthStore((state) => state.session);
   const favoriteWorkerIds = useClientStore((state) => state.favoriteWorkerIds);
   const toggleFavoriteWorker = useClientStore((state) => state.toggleFavoriteWorker);
@@ -56,38 +55,68 @@ export function WorkerProfileScreen({ navigation, route }) {
   const [savingFavorite, setSavingFavorite] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewsFailed, setReviewsFailed] = useState(false);
+  const [reviewsReload, setReviewsReload] = useState(0);
   const [blocking, setBlocking] = useState(false);
   const [workerUnavailable, setWorkerUnavailable] = useState(false);
+  const [workerLoading, setWorkerLoading] = useState(Boolean(workerId));
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let active = true;
-    const workerId = route.params?.workerId || worker?.id;
+    requestGeneration.current += 1;
+    setOpeningChat(false);
+    setBlocking(false);
+    setWorkerUnavailable(false);
+    setWorkerLoading(Boolean(workerId));
     if (!workerId) return undefined;
     fetchPublicWorker(workerId).then((result) => {
       if (!active) return;
-      if (result.ok) {
+      if (result.ok && result.worker?.id === workerId) {
         upsertPublicWorker(result.worker);
         setWorkerUnavailable(false);
       } else {
         setWorkerUnavailable(true);
       }
+      setWorkerLoading(false);
     });
-    return () => { active = false; };
-  }, [route.params?.workerId, upsertPublicWorker, worker?.id]);
+    return () => {
+      active = false;
+      requestGeneration.current += 1;
+    };
+  }, [upsertPublicWorker, workerId]));
 
   useEffect(() => {
     let mounted = true;
-    if (!worker?.id) return undefined;
-    fetchWorkerReviewsApi(worker.id).then((result) => {
-      if (mounted && result.ok) setReviews(result.reviews);
+    if (!focused) return undefined;
+    setReviews([]);
+    setReviewsLoading(Boolean(workerId));
+    setReviewsFailed(false);
+    if (!workerId) return undefined;
+    fetchWorkerReviewsApi(workerId).then((result) => {
+      if (!mounted) return;
+      if (result.ok) setReviews(result.reviews);
+      else setReviewsFailed(true);
+      setReviewsLoading(false);
     });
     return () => {
       mounted = false;
     };
-  }, [worker?.id]);
+  }, [focused, reviewsReload, workerId]);
 
   function handleBack() {
     if (navigation.canGoBack()) navigation.goBack();
+  }
+
+  if (!worker && workerLoading) {
+    return (
+      <View style={styles.screen}>
+        <View style={styles.unavailableHeader}>
+          <WorkerProfileBackButton onPress={handleBack} />
+        </View>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
   }
 
   if (!worker || workerUnavailable) {
@@ -104,7 +133,22 @@ export function WorkerProfileScreen({ navigation, route }) {
   const isFavorite = favoriteWorkerIds.includes(worker.id);
   const heroImage = resolveWorkerImage(worker);
   const isBookable = worker.availability === WORKER_STATUS.AVAILABLE;
-  const reviewCount = reviews.length || Number(worker.reviews || 0);
+  const reviewCount = reviews.length;
+  const statusLabel = isBookable
+    ? "Hozir buyurtma qabul qilmoqda"
+    : worker.availability === WORKER_STATUS.BUSY
+      ? "Hozir band"
+      : "Hozir mavjud emas";
+  const statusColor = isBookable
+    ? colors.success
+    : worker.availability === WORKER_STATUS.BUSY
+      ? colors.warning
+      : colors.muted;
+  const basePrice = Number(worker.basePriceValue);
+  const displayedPrice =
+    Number.isFinite(basePrice) && basePrice > 0
+      ? `${basePrice.toLocaleString(i18n.language === "en" ? "en-US" : i18n.language === "ru" ? "ru-RU" : "uz-UZ")} ${t("so'm")}`
+      : t("Kelishiladi");
   const displayPhone = formatWorkerPhone(worker.phone);
 
   async function handleCall() {
@@ -126,14 +170,20 @@ export function WorkerProfileScreen({ navigation, route }) {
     if (openingChat) return;
 
     if (!session?.token) {
-      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id });
+      requireAuthentication(navigation, {
+        kind: "PROTECTED_ROUTE",
+        routeName: ROUTES.WORKER_PROFILE,
+        workerId: worker.id,
+        categoryId: route.params?.categoryId
+      });
       return;
     }
 
     const identity = useAuthStore.getState().captureAuthRequest(session.token);
+    const generation = requestGeneration.current;
     setOpeningChat(true);
     const result = await ensureWorkerChatRoomApi(session.token, worker.id, session.userId);
-    if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
+    if (!useAuthStore.getState().isAuthRequestCurrent(identity) || generation !== requestGeneration.current) return;
     setOpeningChat(false);
 
     if (result.ok) {
@@ -160,7 +210,12 @@ export function WorkerProfileScreen({ navigation, route }) {
   async function handleToggleFavorite() {
     if (savingFavorite) return;
     if (!session?.token) {
-      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id });
+      requireAuthentication(navigation, {
+        kind: "PROTECTED_ROUTE",
+        routeName: ROUTES.WORKER_PROFILE,
+        workerId: worker.id,
+        categoryId: route.params?.categoryId
+      });
       return;
     }
 
@@ -189,7 +244,12 @@ export function WorkerProfileScreen({ navigation, route }) {
   function confirmBlockWorker() {
     if (blocking) return;
     if (!session?.token) {
-      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id });
+      requireAuthentication(navigation, {
+        kind: "PROTECTED_ROUTE",
+        routeName: ROUTES.WORKER_PROFILE,
+        workerId: worker.id,
+        categoryId: route.params?.categoryId
+      });
       return;
     }
     Alert.alert(
@@ -202,12 +262,13 @@ export function WorkerProfileScreen({ navigation, route }) {
           style: "destructive",
           onPress: async () => {
             const identity = useAuthStore.getState().captureAuthRequest(session.token);
+            const generation = requestGeneration.current;
             setBlocking(true);
             const result = await blockUserApi(session.token, undefined, worker.id);
-            if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
+            if (!useAuthStore.getState().isAuthRequestCurrent(identity) || generation !== requestGeneration.current) return;
             if (result.ok) {
               await syncCatalogFromApi(route.params?.categoryId);
-              if (!useAuthStore.getState().isAuthRequestCurrent(identity)) return;
+              if (!useAuthStore.getState().isAuthRequestCurrent(identity) || generation !== requestGeneration.current) return;
             }
             setBlocking(false);
             Alert.alert(
@@ -231,76 +292,106 @@ export function WorkerProfileScreen({ navigation, route }) {
             <Image source={heroImage} style={styles.heroImage} />
           ) : (
             <View style={styles.heroFallback}>
-              <WorkerAvatar worker={worker} size={118} radius={42} />
+              <WorkerAvatar worker={worker} size={112} radius={38} />
             </View>
           )}
-          <View style={styles.heroScrim} />
+          <View pointerEvents="none" style={styles.heroScrim} />
           <View style={styles.topActions}>
             <WorkerProfileBackButton onPress={handleBack} />
             <View style={styles.rightActions}>
-              <Pressable onPress={handleToggleFavorite} disabled={savingFavorite} style={styles.roundButton}>
-                <Heart
-                  size={23}
-                  color={isFavorite ? "#EF4444" : "#273248"}
-                  fill={isFavorite ? "#EF4444" : "transparent"}
-                  strokeWidth={2.6}
-                />
-              </Pressable>
-              <Pressable onPress={handleShare} style={styles.roundButton}>
-                <Share2 size={22} color="#273248" strokeWidth={2.8} />
-              </Pressable>
+              <GlassSurface style={styles.roundButton}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t(isFavorite ? "Sevimlilardan olib tashlash" : "Sevimlilarga qo'shish")}
+                  accessibilityState={{ selected: isFavorite, disabled: savingFavorite, busy: savingFavorite }}
+                  onPress={handleToggleFavorite}
+                  disabled={savingFavorite}
+                  style={styles.roundButtonInner}
+                >
+                  {savingFavorite ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Heart
+                      size={21}
+                      color={isFavorite ? colors.danger : colors.text}
+                      fill={isFavorite ? colors.danger : "transparent"}
+                      strokeWidth={1.8}
+                    />
+                  )}
+                </Pressable>
+              </GlassSurface>
+              <GlassSurface style={styles.roundButton}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("Usta profilini ulashish")}
+                  onPress={handleShare}
+                  style={styles.roundButtonInner}
+                >
+                  <Share2 size={21} color={colors.text} strokeWidth={1.8} />
+                </Pressable>
+              </GlassSurface>
             </View>
-          </View>
-
-          <View style={styles.heroInfo}>
-            <View style={styles.badgeRow}>
-              <View style={styles.onlineBadge}>
-                <View style={styles.onlineDot} />
-                <Text style={styles.onlineText}>{isBookable ? "Onlayn" : "Mavjud emas"}</Text>
-              </View>
-            </View>
-            <Text style={styles.name}>{worker.name}</Text>
-            <Text style={styles.profession}>
-              <Text translate={false}>{workerCategoryLabel(worker, i18n.language).label}</Text> • {worker.experience || "Tajriba ko'rsatilmagan"}
-            </Text>
           </View>
         </View>
-
-        <View style={styles.statsCard}>
+        <View style={styles.identityCard}>
+          <View style={styles.statusBadge}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+          </View>
+          <Text translate={false} style={styles.name}>
+            {worker.name}
+          </Text>
+          <Text translate={false} style={styles.profession}>
+            {workerCategoryLabel(worker, i18n.language).label}
+          </Text>
+          {worker.experience && worker.experience !== "Tasdiqlangan" ? (
+            <Text translate={false} style={styles.experience}>{workerExperienceLabel(worker.experience, t)}</Text>
+          ) : null}
           <View style={styles.statsRow}>
             <StatItem
-              icon={<Star size={21} color="#FFB020" fill="#FFB020" />}
-              value={reviewCount ? worker.rating : "-"}
-              label={reviewCount ? `${reviewCount} ta sharh` : "Sharhlar hali yo'q"}
+              icon={<Star size={17} color={colors.warning} strokeWidth={1.8} />}
+              value={reviewCount ? worker.rating : "—"}
+              label={
+                reviewCount
+                  ? `${reviewCount} ta sharh`
+                  : reviewsLoading || reviewsFailed
+                    ? "Sharhlar"
+                    : "Sharhlar hali yo'q"
+              }
             />
             <View style={styles.divider} />
             <StatItem
-              icon={<BadgeCheck size={21} color="#0F80B7" fill="#0F80B7" />}
-              value={`${worker.completedOrders || 0}+`}
+              icon={<BadgeCheck size={18} color={colors.primary} strokeWidth={1.8} />}
+              value={String(worker.completedOrders || 0)}
               label="Bajarilgan ishlar"
             />
             <View style={styles.divider} />
             <StatItem
-              icon={<MapPin size={21} color="#2CD8A5" fill="#2CD8A5" />}
+              icon={<MapPin size={17} color={colors.primary} strokeWidth={1.8} />}
               value={formatDistanceMeters(worker.distanceMeters)}
               label="taxminiy masofa"
             />
           </View>
-
+        </View>
+        <View style={styles.detailCard}>
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabel}>Boshlang'ich narx</Text>
+            <Text translate={false} style={styles.priceValue}>
+              {displayedPrice}
+            </Text>
+          </View>
+          <Text style={styles.priceNote}>Yakuniy narx ish hajmiga qarab usta bilan kelishiladi.</Text>
           <View style={styles.availableCard}>
             <View style={styles.availableIcon}>
-              <CalendarCheck size={20} color="#0F80B7" strokeWidth={2.8} />
+              <CalendarCheck size={20} color={statusColor} strokeWidth={1.8} />
             </View>
-            <View>
-              <Text style={styles.availableTitle}>
-                {isBookable ? "Bugun bo'sh vaqtlari bor" : "Hozir buyurtma qabul qilmayapti"}
-              </Text>
+            <View style={styles.availableCopy}>
+              <Text style={styles.availableTitle}>{statusLabel}</Text>
               <Text style={styles.availableText}>
                 {isBookable ? "Buyurtma berish mumkin" : "Boshqa mavjud ustani tanlang"}
               </Text>
             </View>
           </View>
-
           <View style={styles.phoneRow}>
             <Text style={[styles.phoneText, !displayPhone && styles.phoneTextUnavailable]} translate={!displayPhone}>
               {displayPhone || "Telefon raqami mavjud emas"}
@@ -308,68 +399,130 @@ export function WorkerProfileScreen({ navigation, route }) {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("Ustaga qo'ng'iroq qilish")}
-              hitSlop={8}
               onPress={handleCall}
               style={styles.callButton}
             >
-              <Phone size={22} color="#FFFFFF" strokeWidth={2.7} />
+              <Phone size={20} color={colors.primary} strokeWidth={1.8} />
             </Pressable>
           </View>
         </View>
-
         <View style={styles.aboutSection}>
-          <Text style={styles.aboutTitle}>Men haqimda</Text>
-          <Text style={styles.aboutText}>{worker.about || "Usta hali o'zi haqida ma'lumot kiritmagan."}</Text>
+          <Text style={styles.sectionTitle}>Men haqimda</Text>
+          <Text translate={!worker.about} style={styles.aboutText}>
+            {worker.about || "Usta hali o'zi haqida ma'lumot kiritmagan."}
+          </Text>
         </View>
-
-        <View style={styles.safetySection}>
-          <Text style={styles.aboutTitle}>Xavfsizlik</Text>
-          <View style={styles.safetyActions}>
-            <Pressable
-              onPress={() => session?.token
-                ? setReportTarget({ targetType: "WORKER", targetId: worker.id, title: "Usta haqida shikoyat" })
-                : requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id })}
-              style={styles.safetyButton}
-            >
-              <Flag size={18} color="#EF4444" />
-              <Text style={styles.reportText}>Usta haqida shikoyat</Text>
-            </Pressable>
-            <Pressable onPress={confirmBlockWorker} disabled={blocking} style={styles.safetyButton}>
-              <Ban size={18} color="#EF4444" />
-              <Text style={styles.reportText}>{blocking ? "Bloklanmoqda..." : "Ustani bloklash"}</Text>
-            </Pressable>
+        <View style={styles.reviewsSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Sharhlar</Text>
+            {reviews.length ? (
+              <Text translate={false} style={styles.reviewCount}>
+                {reviews.length}
+              </Text>
+            ) : null}
           </View>
-        </View>
-
-        {reviews.length ? (
-          <View style={styles.reviewsSection}>
-            <Text style={styles.aboutTitle}>Sharhlar</Text>
-            {reviews.map((review) => (
-              <ReviewCard
+          {reviewsLoading ? (
+            <View style={styles.reviewState}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.reviewStateText}>Sharhlar yuklanmoqda...</Text>
+            </View>
+          ) : reviewsFailed ? (
+            <View style={styles.reviewState}>
+              <Text style={styles.reviewStateText}>Sharhlar yuklanmadi.</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setReviewsReload((value) => value + 1)}
+                style={styles.reviewRetry}
+              >
+                <Text style={styles.reviewRetryText}>Qayta urinish</Text>
+              </Pressable>
+            </View>
+          ) : reviews.length ? (
+            reviews.map((review) => (
+              <ClientReviewCard
                 key={review.id}
                 review={review}
-                onReport={() => session?.token
-                  ? setReportTarget({ targetType: "REVIEW", targetId: review.id, title: "Sharh haqida shikoyat" })
-                  : requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: ROUTES.WORKER_PROFILE, workerId: worker.id })}
+                onReport={() =>
+                  session?.token
+                    ? setReportTarget({ targetType: "REVIEW", targetId: review.id, title: "Sharh haqida shikoyat" })
+                    : requireAuthentication(navigation, {
+                        kind: "PROTECTED_ROUTE",
+                        routeName: ROUTES.WORKER_PROFILE,
+                        workerId: worker.id,
+                        categoryId: route.params?.categoryId
+                      })
+                }
               />
-            ))}
+            ))
+          ) : (
+            <Text style={styles.emptyReviews}>Sharhlar hali yo'q</Text>
+          )}
+        </View>
+        <View style={styles.safetySection}>
+          <Text style={styles.sectionTitle}>Xavfsizlik</Text>
+          <View style={styles.safetyActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                session?.token
+                  ? setReportTarget({ targetType: "WORKER", targetId: worker.id, title: "Usta haqida shikoyat" })
+                  : requireAuthentication(navigation, {
+                      kind: "PROTECTED_ROUTE",
+                      routeName: ROUTES.WORKER_PROFILE,
+                      workerId: worker.id,
+                      categoryId: route.params?.categoryId
+                    })
+              }
+              style={styles.safetyButton}
+            >
+              <Flag size={18} color={colors.danger} strokeWidth={1.8} />
+              <Text style={styles.reportText}>Usta haqida shikoyat</Text>
+              <ChevronRight size={16} color={colors.subtle} strokeWidth={1.8} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: blocking, busy: blocking }}
+              onPress={confirmBlockWorker}
+              disabled={blocking}
+              style={styles.safetyButton}
+            >
+              <Ban size={18} color={colors.danger} strokeWidth={1.8} />
+              <Text style={styles.reportText}>{blocking ? "Bloklanmoqda..." : "Ustani bloklash"}</Text>
+              <ChevronRight size={16} color={colors.subtle} strokeWidth={1.8} />
+            </Pressable>
           </View>
-        ) : null}
+        </View>
       </ScrollView>
-
       <View style={styles.ctaBar}>
+        <GlassSurface style={styles.chatSurface}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Ustaga yozish")}
+            accessibilityState={{ disabled: openingChat, busy: openingChat }}
+            onPress={handleChat}
+            disabled={openingChat}
+            style={[styles.chatButton, openingChat && styles.chatButtonMuted]}
+          >
+            {openingChat ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <MessageCircle size={23} color={colors.primary} strokeWidth={1.8} />
+            )}
+          </Pressable>
+        </GlassSurface>
         <Pressable
-          onPress={handleChat}
-          disabled={openingChat}
-          style={[styles.chatButton, openingChat && styles.chatButtonMuted]}
+          accessibilityRole="button"
+          onPress={handleBook}
+          style={({ pressed }) => [
+            styles.bookButton,
+            !isBookable && styles.bookButtonDisabled,
+            pressed && styles.pressed
+          ]}
         >
-          <MessageCircle size={24} color="#0F80B7" strokeWidth={2.7} />
-        </Pressable>
-        <Pressable onPress={handleBook} style={[styles.bookButton, !isBookable && styles.bookButtonDisabled]}>
-          <Text style={styles.bookButtonText}>Buyurtma berish</Text>
+          <Text style={styles.bookButtonText}>{isBookable ? "Buyurtma berish" : "Hozir mavjud emas"}</Text>
         </Pressable>
       </View>
-      <ScreenBottomNav navigation={navigation} />
+      <ClientDock navigation={navigation} activeRoute={ROUTES.HOME_TAB} />
       <ReportModal
         visible={Boolean(reportTarget)}
         targetType={reportTarget?.targetType}
@@ -383,10 +536,18 @@ export function WorkerProfileScreen({ navigation, route }) {
 }
 
 function WorkerProfileBackButton({ onPress }) {
+  const { t } = useTranslation();
   return (
-    <Pressable onPress={onPress} style={styles.roundButton}>
-      <ArrowLeft size={24} color="#273248" strokeWidth={2.7} />
-    </Pressable>
+    <GlassSurface style={styles.roundButton}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("Orqaga")}
+        onPress={onPress}
+        style={styles.roundButtonInner}
+      >
+        <ArrowLeft size={22} color={colors.text} strokeWidth={1.8} />
+      </Pressable>
+    </GlassSurface>
   );
 }
 
@@ -402,388 +563,276 @@ function StatItem({ icon, value, label }) {
   );
 }
 
-function ScreenBottomNav({ navigation }) {
-  const session = useAuthStore((state) => state.session);
-  function goTab(screen) {
-    if (!session && screen !== ROUTES.HOME_TAB) {
-      requireAuthentication(navigation, { kind: "PROTECTED_ROUTE", routeName: screen });
-      return;
-    }
-    navigation.navigate(ROUTES.CLIENT_TABS, { screen });
-  }
-
+function ClientReviewCard({ review, onReport }) {
   return (
-    <View style={styles.bottomNav}>
-      <Pressable style={styles.navItem} onPress={() => goTab(ROUTES.HOME_TAB)}>
-        <Home size={25} color="#0F80B7" fill="#0F80B7" />
-        <Text style={[styles.navLabel, styles.navLabelActive]}>Uy</Text>
-      </Pressable>
-      <Pressable style={styles.navItem} onPress={() => goTab(ROUTES.ORDERS_TAB)}>
-        <ClipboardList size={25} color="#A0A7B3" />
-        <Text style={styles.navLabel}>Buyurtmalar</Text>
-      </Pressable>
-      <Pressable style={styles.navItem} onPress={() => goTab(ROUTES.CHATS_TAB)}>
-        <View>
-          <MessageCircle size={25} color="#A0A7B3" />
+    <View style={styles.reviewCard}>
+      <View style={styles.reviewTop}>
+        <View style={styles.reviewAuthorCopy}>
+          <Text translate={false} style={styles.reviewAuthor}>
+            {review.author}
+          </Text>
+          <Text translate={false} style={styles.reviewDate}>
+            {review.date}
+          </Text>
         </View>
-        <Text style={styles.navLabel}>Chatlar</Text>
-      </Pressable>
-      <Pressable style={styles.navItem} onPress={() => goTab(ROUTES.PROFILE_TAB)}>
-        <UserRound size={25} color="#A0A7B3" />
-        <Text style={styles.navLabel}>Profil</Text>
+        <View style={styles.reviewRating}>
+          <Star size={15} color={colors.warning} strokeWidth={1.8} />
+          <Text translate={false} style={styles.reviewRatingText}>
+            {review.rating}
+          </Text>
+        </View>
+      </View>
+      <Text translate={review.text === "Izoh qoldirilmagan."} style={styles.reviewText}>
+        {review.text}
+      </Text>
+      <Pressable accessibilityRole="button" onPress={onReport} style={styles.reviewReport}>
+        <Flag size={15} color={colors.muted} strokeWidth={1.8} />
+        <Text style={styles.reviewReportText}>Sharh haqida shikoyat</Text>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#F0F9FB"
-  },
-  content: {
-    paddingBottom: 174,
-    backgroundColor: "#F0F9FB"
-  },
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { paddingBottom: 186, backgroundColor: colors.background },
   hero: {
-    height: 360,
-    borderBottomLeftRadius: 36,
-    borderBottomRightRadius: 36,
+    height: 250,
+    marginHorizontal: 14,
+    marginTop: 12,
+    borderRadius: radius.xxl,
     overflow: "hidden",
-    backgroundColor: "#BDE3ED"
+    backgroundColor: colors.primarySoft
   },
-  heroImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover"
-  },
+  heroImage: { width: "100%", height: "100%", resizeMode: "cover" },
   heroFallback: {
     width: "100%",
     height: "100%",
-    backgroundColor: "#DDF3F8",
+    backgroundColor: colors.primarySoft,
     alignItems: "center",
     justifyContent: "center"
   },
-  heroScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15,113,157,0.20)"
-  },
-  unavailableHeader: {
-    minHeight: 112,
-    paddingTop: 42,
-    paddingHorizontal: 24,
-    alignItems: "flex-start"
-  },
+  heroScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(23,44,56,0.03)" },
+  unavailableHeader: { minHeight: 86, paddingTop: 22, paddingHorizontal: 22, alignItems: "flex-start" },
   topActions: {
     position: "absolute",
-    top: 42,
-    left: 24,
-    right: 24,
+    top: 14,
+    left: 14,
+    right: 14,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center"
   },
-  rightActions: {
-    flexDirection: "row",
-    gap: 12
+  rightActions: { flexDirection: "row", gap: 9 },
+  roundButton: { width: 46, height: 46, borderRadius: 23, ...shadow },
+  roundButtonInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+  identityCard: {
+    marginTop: -20,
+    marginHorizontal: 22,
+    borderRadius: radius.xl,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+    ...shadow
   },
-  roundButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#0F719D",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 16,
-    elevation: 5
-  },
-  heroInfo: {
-    position: "absolute",
-    left: 24,
-    right: 24,
-    bottom: 58
-  },
-  badgeRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 14
-  },
-  topBadge: {
-    height: 29,
-    borderRadius: 9,
-    backgroundColor: "#2CD8A5",
-    paddingHorizontal: 12,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  topBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontFamily: font.extra
-  },
-  onlineBadge: {
-    height: 29,
-    borderRadius: 9,
-    backgroundColor: "rgba(45,55,72,0.55)",
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8
-  },
-  onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#2CD8A5"
-  },
-  onlineText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontFamily: font.bold
-  },
-  name: {
-    color: "#FFFFFF",
-    fontSize: 34,
-    lineHeight: 39,
-    fontFamily: font.extra
-  },
-  profession: {
-    marginTop: 7,
-    color: "rgba(255,255,255,0.86)",
-    fontSize: 18,
-    lineHeight: 23,
-    fontFamily: font.semi
-  },
-  statsCard: {
-    marginTop: -42,
-    marginHorizontal: 24,
-    borderRadius: 26,
-    backgroundColor: "#FFFFFF",
-    padding: 21,
-    gap: 22,
-    shadowColor: "#0F719D",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 16 },
-    shadowRadius: 26,
-    elevation: 8
-  },
+  statusBadge: { flexDirection: "row", alignItems: "center", gap: 7, alignSelf: "flex-start", marginBottom: 11 },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusText: { fontSize: 11, lineHeight: 17, fontFamily: font.semi, flexShrink: 1 },
+  name: { color: colors.text, fontSize: 28, lineHeight: 35, fontFamily: font.bold, letterSpacing: -0.8 },
+  profession: { marginTop: 4, color: colors.primary, fontSize: 15, lineHeight: 22, fontFamily: font.medium },
+  experience: { marginTop: 5, color: colors.muted, fontSize: 12, lineHeight: 18, fontFamily: font.regular },
   statsRow: {
+    marginTop: 21,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 18,
     flexDirection: "row",
     alignItems: "center"
   },
-  statItem: {
-    flex: 1,
-    alignItems: "center"
-  },
-  statTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8
-  },
-  statValue: {
-    color: "#273248",
-    fontSize: 16,
-    fontFamily: font.extra
-  },
+  statItem: { flex: 1, alignItems: "center", paddingHorizontal: 3 },
+  statTop: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, flexWrap: "wrap" },
+  statValue: { color: colors.text, fontSize: 14, lineHeight: 20, fontFamily: font.bold },
   statLabel: {
-    marginTop: 9,
-    color: "#6B7280",
-    fontSize: 11,
-    fontFamily: font.semi,
+    marginTop: 5,
+    color: colors.muted,
+    fontSize: 10,
+    lineHeight: 15,
+    fontFamily: font.regular,
     textAlign: "center"
   },
-  divider: {
-    width: 1,
-    height: 44,
-    backgroundColor: "#E5E7EB"
-  },
-  availableCard: {
-    minHeight: 72,
-    borderRadius: 18,
+  divider: { width: 1, height: 32, backgroundColor: colors.border },
+  detailCard: {
+    marginHorizontal: 22,
+    marginTop: 16,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: "#DCECF3",
-    backgroundColor: "#F8FCFE",
-    paddingHorizontal: 18,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 18,
+    gap: 11,
+    ...shadow
+  },
+  priceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  priceLabel: { color: colors.muted, fontSize: 13, fontFamily: font.medium, flex: 1 },
+  priceValue: { color: colors.text, fontSize: 19, lineHeight: 27, fontFamily: font.bold, flexShrink: 1 },
+  priceNote: { color: colors.muted, fontSize: 12, lineHeight: 18, fontFamily: font.regular, marginBottom: 4 },
+  availableCard: {
+    minHeight: 68,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    padding: 12,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14
+    gap: 11
   },
   availableIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "rgba(44,216,165,0.20)",
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: colors.white,
     alignItems: "center",
     justifyContent: "center"
   },
-  availableTitle: {
-    color: "#273248",
-    fontSize: 14,
-    fontFamily: font.extra
-  },
-  availableText: {
-    marginTop: 6,
-    color: "#6B7280",
-    fontSize: 13,
-    fontFamily: font.medium
-  },
+  availableCopy: { flex: 1, minWidth: 0 },
+  availableTitle: { color: colors.text, fontSize: 12, lineHeight: 18, fontFamily: font.semi },
+  availableText: { marginTop: 3, color: colors.muted, fontSize: 11, lineHeight: 17, fontFamily: font.regular },
   phoneRow: {
-    minHeight: 54,
-    borderRadius: 18,
+    minHeight: 58,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: "#DCECF3",
-    backgroundColor: "#F8FCFE",
-    paddingLeft: 18,
-    paddingRight: 7,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    paddingLeft: 13,
+    paddingRight: 6,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12
   },
-  phoneText: {
-    flex: 1,
-    color: "#273248",
-    fontSize: 15,
-    fontFamily: font.bold
-  },
-  phoneTextUnavailable: {
-    color: "#6B7280",
-    fontSize: 13
-  },
+  phoneText: { flex: 1, color: colors.text, fontSize: 14, fontFamily: font.semi },
+  phoneTextUnavailable: { color: colors.muted, fontSize: 12 },
   callButton: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     borderRadius: 15,
-    backgroundColor: "#0F80B7",
+    backgroundColor: colors.primarySoft,
     alignItems: "center",
     justifyContent: "center"
   },
   aboutSection: {
-    paddingHorizontal: 24,
-    paddingTop: 32
+    marginHorizontal: 22,
+    marginTop: 22,
+    padding: 18,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white
   },
-  safetySection: {
-    paddingHorizontal: 24,
-    paddingTop: 26
+  sectionTitle: { color: colors.text, fontSize: 19, lineHeight: 26, fontFamily: font.bold, letterSpacing: -0.4 },
+  aboutText: { marginTop: 11, color: colors.muted, fontSize: 14, lineHeight: 24, fontFamily: font.regular },
+  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  reviewCount: {
+    color: colors.primary,
+    backgroundColor: colors.primarySoft,
+    fontSize: 12,
+    fontFamily: font.semi,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10
   },
-  safetyActions: {
-    marginTop: 14,
+  reviewsSection: { marginHorizontal: 22, marginTop: 24, gap: 12 },
+  reviewState: {
+    minHeight: 80,
+    padding: 18,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10
   },
+  reviewStateText: { color: colors.muted, fontSize: 13, lineHeight: 20, fontFamily: font.regular, flex: 1 },
+  reviewRetry: { minHeight: 44, justifyContent: "center", paddingHorizontal: 5 },
+  reviewRetryText: { color: colors.primary, fontSize: 12, fontFamily: font.semi },
+  reviewCard: {
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 18,
+    gap: 11
+  },
+  reviewTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
+  reviewAuthorCopy: { flex: 1 },
+  reviewAuthor: { color: colors.text, fontFamily: font.semi, fontSize: 14, lineHeight: 21 },
+  reviewDate: { marginTop: 3, color: colors.muted, fontFamily: font.regular, fontSize: 11, lineHeight: 17 },
+  reviewRating: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: "#FFF8E9"
+  },
+  reviewRatingText: { color: colors.text, fontFamily: font.semi, fontSize: 12 },
+  reviewText: { color: colors.muted, fontFamily: font.regular, fontSize: 13, lineHeight: 22 },
+  reviewReport: { alignSelf: "flex-start", minHeight: 44, flexDirection: "row", alignItems: "center", gap: 7 },
+  reviewReportText: { color: colors.muted, fontFamily: font.medium, fontSize: 11, lineHeight: 17 },
+  emptyReviews: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: font.regular,
+    padding: 18,
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  safetySection: { marginHorizontal: 22, marginTop: 24 },
+  safetyActions: { marginTop: 12, gap: 9 },
   safetyButton: {
     minHeight: 48,
-    borderRadius: 16,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "#FECACA",
-    backgroundColor: "#FFF7F7",
+    borderColor: colors.border,
+    backgroundColor: colors.white,
     paddingHorizontal: 14,
+    paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
-    gap: 9
-  },
-  reportText: {
-    color: "#DC2626",
-    fontFamily: font.bold
-  },
-  reviewsSection: {
-    paddingHorizontal: 24,
-    paddingTop: 28,
     gap: 10
   },
-  aboutTitle: {
-    color: "#273248",
-    fontSize: 23,
-    fontFamily: font.extra
-  },
-  aboutText: {
-    marginTop: 18,
-    color: "#4B5563",
-    fontSize: 17,
-    lineHeight: 28,
-    fontFamily: font.medium
-  },
+  reportText: { color: colors.muted, fontFamily: font.medium, fontSize: 12, lineHeight: 18, flex: 1 },
   ctaBar: {
     position: "absolute",
-    left: 24,
-    right: 24,
-    bottom: 82,
-    height: 62,
+    left: 22,
+    right: 22,
+    bottom: 96,
+    minHeight: 56,
     flexDirection: "row",
-    gap: 13,
+    gap: 10,
     alignItems: "center"
   },
-  chatButton: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#0F719D",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 16,
-    elevation: 5
-  },
-  chatButtonMuted: {
-    opacity: 0.62
-  },
+  chatSurface: { width: 56, height: 56, borderRadius: radius.lg, borderColor: colors.border, ...shadow },
+  chatButton: { flex: 1, alignItems: "center", justifyContent: "center" },
+  chatButtonMuted: { opacity: 0.62 },
   bookButton: {
     flex: 1,
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: "#2CD8A5",
+    minHeight: 56,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2CD8A5",
-    shadowOpacity: 0.28,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 18,
-    elevation: 7
+    paddingHorizontal: 14,
+    paddingVertical: 12
   },
-  bookButtonDisabled: {
-    opacity: 0.58
-  },
-  bookButtonText: {
-    color: "#FFFFFF",
-    fontSize: 19,
-    fontFamily: font.extra
-  },
-  bottomNav: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    minHeight: 86,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    backgroundColor: "#FFFFFF",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    shadowColor: "#0F719D",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: -10 },
-    shadowRadius: 18,
-    elevation: 10
-  },
-  navItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5
-  },
-  navLabel: {
-    color: "#A0A7B3",
-    fontSize: 14,
-    fontFamily: font.bold
-  },
-  navLabelActive: {
-    color: "#0F80B7"
-  }
+  bookButtonDisabled: { backgroundColor: colors.muted },
+  bookButtonText: { color: colors.white, fontSize: 15, lineHeight: 22, fontFamily: font.semi },
+  pressed: { opacity: 0.78 }
 });

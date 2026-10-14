@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+export const notificationsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(100),
+  cursor: z.string().min(1).max(1024).optional()
+});
+
 export const pushTokenSchema = z.object({
   token: z.string().min(10).max(512),
   platform: z.string().min(2).max(40).optional(),

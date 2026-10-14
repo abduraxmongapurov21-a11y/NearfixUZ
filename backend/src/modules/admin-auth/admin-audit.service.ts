@@ -79,9 +79,11 @@ function readPositiveInteger(value: unknown, fallback: number, max: number) {
   return Math.min(parsed, max);
 }
 
-function parseDate(value: unknown) {
+function parseDate(value: unknown, endOfDay = false) {
   if (typeof value !== "string" || !value.trim()) return undefined;
-  const date = new Date(value);
+  const raw = value.trim();
+  const date = new Date(raw);
+  if (endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(raw)) date.setUTCHours(23, 59, 59, 999);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
@@ -89,7 +91,7 @@ export async function listAdminAuditLogs(query: ListAdminAuditLogsQuery) {
   const page = readPositiveInteger(query.page, 1, 10_000);
   const limit = readPositiveInteger(query.limit, 50, 100);
   const from = parseDate(query.from);
-  const to = parseDate(query.to);
+  const to = parseDate(query.to, true);
 
   const where: Prisma.AdminAuditLogWhereInput = {
     ...(query.action ? { action: query.action } : {}),

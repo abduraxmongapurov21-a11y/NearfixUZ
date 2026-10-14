@@ -7,10 +7,19 @@ import { createServer } from "node:net";
 import type { AddressInfo } from "node:net";
 import { PrismaClient } from "@prisma/client";
 import { isolationClaim, type IsolationClaim } from "./test-isolation.js";
+import { localAuditDatabaseSuites } from "./local-audit-suites.js";
 
 // Never run these fixtures against the developer's database or a remote host.
 // Only the newly created, uniquely named database may be initialized/dropped.
 const allowedTests = new Set([
+  ...localAuditDatabaseSuites,
+  "admin-credential-http-tests",
+  "admin-terminal-http-tests",
+  "admin-order-http-tests",
+  "worker-response-security-http-tests",
+  "admin-actions-http-tests",
+  "provider-client-cancel-http-tests",
+  "admin-audit-date-http-tests",
   "chat-read-compat-http-tests",
   "chat-sync-http-tests",
   "chat-mobile-state-tests",
@@ -72,6 +81,7 @@ async function run(args: string[], childEnv: NodeJS.ProcessEnv, label: string, e
     } });
   });
   let output = "";
+  let errorOutput = "";
   let liveLine = "";
   child.stdout!.on("data", (chunk) => {
     output += String(chunk);
@@ -83,7 +93,7 @@ async function run(args: string[], childEnv: NodeJS.ProcessEnv, label: string, e
     }
   });
   // Do not forward framework errors: they can contain SQL parameters or URLs.
-  child.stderr!.resume();
+  child.stderr!.on("data", (chunk) => { errorOutput += String(chunk); });
   const exitCode = await new Promise<number | null>((resolve, reject) => {
     child.once("error", reject);
     // pg_ctl's detached server can inherit pipe handles on Windows. Its exit,
@@ -95,6 +105,14 @@ async function run(args: string[], childEnv: NodeJS.ProcessEnv, label: string, e
     if (line.startsWith("[F4] ")) console.log(line);
     if (testName !== "chat-mobile-runtime" && line.startsWith("[F3] ")) console.log(line);
     if ((testName === "chat-privacy-http-tests" && line.startsWith("[F1] ")) || (testName !== "order-mobile-runtime" && line.startsWith("[F2] ")) || line.startsWith("[F2.1] ")) console.log(line);
+    if (nodeChild && !line.startsWith("[") && /\b(?:tests?|checks?|routes?)\b.*\bpassed\b/i.test(line)) console.log(`[AUDIT] ${line}`);
+  }
+  if (exitCode !== 0 && nodeChild) {
+    // Print only the error class/code. Full framework errors may contain secrets.
+    const errorType = errorOutput.match(/\b(?:AssertionError|TypeError|ReferenceError|ZodError|PrismaClientKnownRequestError)(?:\s*\[[A-Z_0-9]+\])?/);
+    if (errorType) console.log(`[AUDIT] ${label} failed with ${errorType[0]}; sensitive error details suppressed`);
+    const scriptLocation = errorOutput.match(/scripts[\\/]+([\w.-]+\.ts:\d+:\d+)/);
+    if (scriptLocation) console.log(`[AUDIT] Failure location: scripts/${scriptLocation[1]}`);
   }
   console.log(`[F1] ${label}: ${exitCode === 0 ? "PASS" : "FAIL"} (exit=${exitCode})`);
   return exitCode === 0;
@@ -173,8 +191,8 @@ async function main() {
     owned.oid = await verifyOwnedDatabase();
     console.log("[F1] Database: loopback, fresh disposable database; original database untouched");
     const initialized = await run([
-      "node_modules/prisma/build/index.js", "db", "push", "--skip-generate", "--schema", "prisma/schema.prisma"
-    ], childEnv, "initialize existing schema in disposable database");
+      "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema", "prisma/schema.prisma"
+    ], childEnv, "initialize migration history in disposable database");
     if (!initialized) { process.exitCode = 1; return; }
     if (testName === "worker-created-order-tests") {
       // This existing test expects an unrelated active catalog category.

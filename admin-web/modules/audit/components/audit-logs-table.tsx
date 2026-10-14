@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { adminLabel, auditActionLabel } from "@/lib/admin-labels";
+import { TableLoadState } from "@/shared/components/filter-bar";
 import { getAdminAuditLogs } from "../services/audit-log-service";
 import type { AdminAuditLogsQuery } from "../types/audit-log";
 
@@ -94,6 +95,8 @@ export function AuditLogsTable() {
         </CardContent>
       </Card>
 
+      <TableLoadState error={query.error} isPending={query.isPending} onRetry={() => void query.refetch()} />
+
       <div className="overflow-hidden rounded-lg border bg-card">
         <table className="w-full text-left text-sm">
           <thead className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
@@ -138,7 +141,7 @@ export function AuditLogsTable() {
                 <td className="px-4 py-3 text-muted-foreground">{log.ipAddress || "-"}</td>
               </tr>
             ))}
-            {!query.isLoading && !result?.logs.length ? (
+            {!query.isPending && !query.error && !result?.logs.length ? (
               <tr>
                 <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
                   Amallar tarixi topilmadi.

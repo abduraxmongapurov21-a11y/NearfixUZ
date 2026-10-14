@@ -2,6 +2,10 @@
 
 `DELETE /auth/me` performs authenticated account anonymization.
 
+If the account has an order that is neither completed nor cancelled, deletion returns `409 ACTIVE_ORDERS_EXIST` without modifying the account or revoking its session. This applies to orders where the account is the client or the provider. The user must cancel or complete those orders before retrying deletion.
+
+Account deletion and order creation lock the same user records before checking eligibility, so a concurrent request cannot leave a new active order attached to a deleted participant. Historical orders already affected by provider deletion can still be cancelled; releasing their reservation keeps the deleted provider offline and preserves any other active reservation.
+
 Immediately removed:
 
 - active session access through revocation;

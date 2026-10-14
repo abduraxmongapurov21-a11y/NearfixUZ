@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { colors, iconSizes, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
-import { resolveCategoryIcon } from "../../constants/categoryIcons";
+import { resolveCategoryIcon, resolveCategoryIconColor } from "../../constants/categoryIcons";
 
 export function CategoryCard({ category, onPress }) {
   const Icon = resolveCategoryIcon(category.iconKey || category.icon);
@@ -10,7 +10,7 @@ export function CategoryCard({ category, onPress }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
       <View style={styles.iconWrap}>
-        <Icon size={iconSizes.md} color={colors.primary} strokeWidth={2.5} />
+        <Icon size={iconSizes.md} color={resolveCategoryIconColor(category.iconKey || category.icon)} strokeWidth={2.5} />
       </View>
       <Text translate={false} style={styles.title}>{category.displayName || category.nameUz || category.title}</Text>
     </Pressable>

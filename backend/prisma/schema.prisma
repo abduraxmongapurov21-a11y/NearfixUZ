@@ -111,6 +111,16 @@ enum MediaStatus {
   DELETED
 }
 
+enum BannerPlacement {
+  HOME
+  CATEGORY
+}
+
+enum BannerMediaType {
+  IMAGE
+  VIDEO
+}
+
 enum BannerTargetType {
   NONE
   CATEGORY
@@ -625,6 +635,8 @@ model Banner {
   id          String           @id @default(cuid())
   title       String
   imageUrl    String
+  placement   BannerPlacement @default(HOME)
+  mediaType   BannerMediaType @default(IMAGE)
   targetType  BannerTargetType @default(NONE)
   targetValue String?
   sortOrder   Int              @default(0)
@@ -633,6 +645,7 @@ model Banner {
   updatedAt   DateTime         @updatedAt
 
   @@index([isActive, sortOrder])
+  @@index([placement, isActive, sortOrder])
   @@index([sortOrder])
 }
 

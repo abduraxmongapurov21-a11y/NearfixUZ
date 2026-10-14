@@ -32,6 +32,9 @@ export function mapApiOrder(order) {
     clientName: order.client?.name || "Mijoz",
     clientPhone: order.client?.phone,
     workerId: order.workerId,
+    workerAvailability: order.worker?.availability?.activeOrderId
+      ? "busy"
+      : String(order.worker?.availability?.status || "").toLowerCase() || null,
     provider: workerName,
     date: new Date(order.createdAt).toLocaleDateString("uz-UZ"),
     district: order.location?.district || order.cityId,

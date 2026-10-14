@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, StyleSheet, View } from "react-native";
 import { registerPushTokenApi } from "../services/notifications/notificationService";
 import { enqueuePushRegistration } from "../services/notifications/pushRegistrationQueue.mjs";
 import { useAuthStore } from "../store/authStore";
@@ -22,14 +22,27 @@ export function AppNavigator() {
   useEffect(() => {
     if (session?.token) {
       const sessionToken = session.token;
-      enqueuePushRegistration(() =>
-        registerPushTokenApi(
-          sessionToken,
-          () => useAuthStore.getState().session?.token === sessionToken
-        )
-      ).then((result) => {
-        if (!result?.ok && !result?.stale) console.warn("Push registration unavailable", result?.message);
+      let active = true;
+      let previousAppState = AppState.currentState;
+      const isCurrent = () => active && useAuthStore.getState().session?.token === sessionToken;
+      const register = () => {
+        if (!isCurrent()) return;
+        enqueuePushRegistration(() => registerPushTokenApi(sessionToken, isCurrent)).then((result) => {
+          if (!result?.ok && !result?.stale) console.warn("Push registration unavailable", result?.message);
+        });
+      };
+
+      register();
+      const subscription = AppState.addEventListener("change", (nextAppState) => {
+        const becameActive = nextAppState === "active" && previousAppState !== "active";
+        previousAppState = nextAppState;
+        if (becameActive) register();
       });
+
+      return () => {
+        active = false;
+        subscription.remove();
+      };
     }
   }, [session?.token]);
 

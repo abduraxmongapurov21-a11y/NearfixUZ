@@ -1,3 +1,4 @@
+import "./test-isolation-preload.js";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { PrismaClient, UserRole, WorkerAvailabilityStatus, WorkerProfileStatus } from "@prisma/client";
@@ -295,6 +296,36 @@ async function main() {
     const nearestWithoutOrigin = await request(`/workers/catalog?${catalogQuery}&sort=nearest`);
     assert.equal(nearestWithoutOrigin.response.status, 400);
     assert.equal(nearestWithoutOrigin.payload.code, "ORIGIN_ADDRESS_REQUIRED_FOR_NEAREST");
+
+    const gpsQuery = `${catalogQuery}&originLat=${Number(originAddress.lat)}&originLng=${Number(originAddress.lng)}&sort=nearest`;
+    const gpsGuestCatalog = await request(`/workers/catalog?${gpsQuery}`);
+    assert.equal(gpsGuestCatalog.response.status, 200, "device coordinates do not require a saved address or a login");
+    assert.deepEqual(gpsGuestCatalog.payload.workers.map((worker: any) => worker.id), nearestCatalog.payload.workers.map((worker: any) => worker.id));
+    assert.deepEqual(gpsGuestCatalog.payload.workers.map((worker: any) => worker.distanceMeters), nearestCatalog.payload.workers.map((worker: any) => worker.distanceMeters));
+    const gpsClientCatalog = await request(`/workers/catalog?${gpsQuery}`, { token: clientToken });
+    assert.equal(gpsClientCatalog.response.status, 200);
+    const gpsProviderCatalog = await request(`/workers/catalog?${gpsQuery}`, { token: providerToken });
+    assert.equal(gpsProviderCatalog.response.status, 200, "provider client mode can use its own device coordinates");
+    for (const worker of gpsGuestCatalog.payload.workers) {
+      assert.equal("serviceLat" in worker, false);
+      assert.equal("serviceLng" in worker, false);
+      assert.ok(worker.distanceMeters <= CATALOG_RADIUS_METERS);
+    }
+    const movedGps = await request(`/workers/catalog?${catalogQuery}&originLat=41.6&originLng=69.4&sort=nearest`);
+    assert.equal(movedGps.response.status, 200);
+    assert.notEqual(movedGps.payload.workers.find((worker: any) => worker.id === locatedWorker.id).distanceMeters, gpsGuestCatalog.payload.workers[0].distanceMeters);
+    for (const invalid of ["originLat=41.31", "originLng=69.24", "originLat=91&originLng=69.24", "originLat=41.31&originLng=181", "originLat=NaN&originLng=69.24", "originLat=&originLng=69.24", `originLat=41.31&originLng=69.24&originAddressId=${originAddress.id}`]) {
+      assert.equal((await request(`/workers/catalog?${catalogQuery}&${invalid}`, { token: clientToken })).response.status, 400);
+    }
+    assert.equal((await request(`/workers/catalog?${catalogQuery}&originLat=0&originLng=0`)).response.status, 200, "zero coordinates are valid");
+    const originalWarn = console.warn;
+    const errorLogs: string[] = [];
+    console.warn = (...parts: unknown[]) => { errorLogs.push(parts.join(" ")); };
+    try {
+      assert.equal((await request(`/workers/catalog?${gpsQuery}`, { token: "invalid-fixture-token" })).response.status, 401);
+      assert.ok(errorLogs.length > 0);
+      assert.ok(errorLogs.every((line) => !line.includes("originLat") && !line.includes("originLng") && !line.includes(String(originAddress.lat))));
+    } finally { console.warn = originalWarn; }
 
     const firstDefault = await request("/addresses", {
       token: clientToken,

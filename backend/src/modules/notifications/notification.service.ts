@@ -47,6 +47,7 @@ async function sendExpoPush(
           body,
           data,
           sound: "default",
+          priority: "high",
           channelId: "orders"
         }))
       )
@@ -192,11 +193,42 @@ export async function createNotifications(inputs: NotificationInput[]) {
 }
 
 export async function listNotifications(userId: string) {
-  return prisma.notification.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    take: 100
+  return (await listNotificationsPage(userId)).notifications;
+}
+
+function decodeNotificationCursor(value: string) {
+  try {
+    if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error();
+    const cursor = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { createdAt?: unknown; id?: unknown };
+    if (typeof cursor.createdAt !== "string" || typeof cursor.id !== "string" || !cursor.id || cursor.id.length > 191) throw new Error();
+    const createdAt = new Date(cursor.createdAt);
+    if (!Number.isFinite(createdAt.getTime()) || createdAt.toISOString() !== cursor.createdAt) throw new Error();
+    return { createdAt, id: cursor.id };
+  } catch {
+    throw Object.assign(new Error("Invalid notification cursor"), { status: 400, code: "INVALID_NOTIFICATION_CURSOR" });
+  }
+}
+
+export async function listNotificationsPage(userId: string, input: { limit?: number; cursor?: string } = {}) {
+  const limit = input.limit ?? 100;
+  const cursor = input.cursor ? decodeNotificationCursor(input.cursor) : undefined;
+  const rows = await prisma.notification.findMany({
+    where: {
+      userId,
+      ...(cursor ? { OR: [
+        { createdAt: { lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, id: { lt: cursor.id } }
+      ] } : {})
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: limit + 1
   });
+  const notifications = rows.slice(0, limit);
+  const last = notifications.at(-1);
+  const nextCursor = rows.length > limit && last
+    ? Buffer.from(JSON.stringify({ createdAt: last.createdAt.toISOString(), id: last.id })).toString("base64url")
+    : null;
+  return { notifications, nextCursor };
 }
 
 export async function countUnreadNotifications(userId: string) {

@@ -1,11 +1,11 @@
-import { resolveCatalogOriginAddressId } from "../services/catalog/catalogDistance.mjs";
+import { resolveCatalogRequestOrigin } from "../services/catalog/catalogDistance.mjs";
 
 export function reconcileCatalogAddressState(state, addresses) {
-  const catalogOriginAddressId = resolveCatalogOriginAddressId(state.catalogOriginAddressId, addresses);
+  const { originAddressId: catalogOriginAddressId } = resolveCatalogRequestOrigin({ ...state, savedAddresses: addresses });
   return {
     savedAddresses: addresses,
     catalogOriginAddressId,
-    catalogSort: catalogOriginAddressId ? state.catalogSort : "recommended"
+    catalogSort: state.catalogUseDeviceLocation || catalogOriginAddressId ? state.catalogSort : "recommended"
   };
 }
 

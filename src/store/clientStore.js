@@ -3,7 +3,7 @@ import { DEFAULT_CATALOG_FILTERS } from "../constants/catalog";
 import { ORDER_STATES } from "../constants/orderStates";
 import { TRACKING_STATUSES } from "../constants/orderTracking";
 import { fetchCatalogWorkers } from "../services/catalog/catalogService";
-import { resolveCatalogOriginAddressId, shouldApplyCatalogResponse } from "../services/catalog/catalogDistance.mjs";
+import { hasAddressCoordinates, resolveCatalogOriginAddressId, resolveCatalogRequestOrigin, shouldApplyCatalogResponse } from "../services/catalog/catalogDistance.mjs";
 import { cancelOrderApi, createOrderApi, fetchOrdersApi } from "../services/orders/orderService";
 import { createAddressApi, deleteAddressApi, getAddressesApi, updateAddressApi } from "../services/addresses/addressService";
 import { fetchBannersApi } from "../services/content/bannerService";
@@ -80,7 +80,9 @@ export const useClientStore = create((set, get) => ({
   categoriesLastLoadedAt: null,
   categoryCacheHydrated: false,
   workers: [],
+  publicWorkersById: {},
   banners: [],
+  categoryBanners: [],
   orders: [],
   activeOrder: null,
   chatMessages: [],
@@ -98,6 +100,8 @@ export const useClientStore = create((set, get) => ({
   },
   catalogQuery: "",
   catalogOriginAddressId: null,
+  catalogOriginCoordinates: null,
+  catalogUseDeviceLocation: false,
   catalogSort: "recommended",
   catalogLoading: false,
   catalogRequestVersion: 0,
@@ -109,6 +113,7 @@ export const useClientStore = create((set, get) => ({
     set({
       user: initialUser,
       workers: [],
+      publicWorkersById: {},
       orders: [],
       activeOrder: null,
       chatMessages: [],
@@ -116,6 +121,8 @@ export const useClientStore = create((set, get) => ({
       favoriteWorkerIds: [],
       selectedWorkerId: null,
       catalogOriginAddressId: null,
+      catalogOriginCoordinates: null,
+      catalogUseDeviceLocation: false,
       catalogSort: "recommended",
       catalogLoading: false,
       catalogRequestVersion: 0,
@@ -132,14 +139,30 @@ export const useClientStore = create((set, get) => ({
       const resolvedAddressId = resolveCatalogOriginAddressId(addressId, state.savedAddresses);
       return {
         catalogOriginAddressId: resolvedAddressId,
+        catalogOriginCoordinates: null,
+        catalogUseDeviceLocation: false,
         catalogSort: !resolvedAddressId && state.catalogSort === "nearest" ? "recommended" : state.catalogSort
       };
     }),
+  setCatalogDeviceLocation: (coordinate, { preserveSort = false } = {}) => set((state) => {
+    const next = hasAddressCoordinates(coordinate)
+      ? { lat: Number(coordinate.lat ?? coordinate.latitude), lng: Number(coordinate.lng ?? coordinate.longitude) }
+      : null;
+    const changed = !state.catalogUseDeviceLocation || state.catalogOriginCoordinates?.lat !== next?.lat || state.catalogOriginCoordinates?.lng !== next?.lng;
+    return {
+      catalogUseDeviceLocation: true,
+      catalogOriginCoordinates: next,
+      catalogOriginAddressId: null,
+      catalogSort: !next && !preserveSort && state.catalogSort === "nearest" ? "recommended" : state.catalogSort,
+      ...(changed ? { workers: [], catalogLoading: false, catalogRequestVersion: ++catalogRequestSequence } : {})
+    };
+  }),
   setCatalogSort: (sort) =>
     set((state) => {
       const requestedSort = ["recommended", "nearest", "rating", "price"].includes(sort) ? sort : "recommended";
+      const origin = resolveCatalogRequestOrigin(state);
       return {
-        catalogSort: requestedSort === "nearest" && !state.catalogOriginAddressId ? "recommended" : requestedSort
+        catalogSort: requestedSort === "nearest" && !origin.originAddressId && !origin.originCoordinates ? "recommended" : requestedSort
       };
     }),
   syncCategoriesFromApi: async () => {
@@ -206,14 +229,11 @@ export const useClientStore = create((set, get) => ({
   },
   syncCatalogFromApi: async (categoryId) => {
     const stateAtRequest = get();
-    const originAddressId = resolveCatalogOriginAddressId(
-      stateAtRequest.catalogOriginAddressId,
-      stateAtRequest.savedAddresses
-    );
+    const { originAddressId, originCoordinates } = resolveCatalogRequestOrigin(stateAtRequest);
     const selectedSort = ["recommended", "nearest", "rating", "price"].includes(stateAtRequest.catalogSort)
       ? stateAtRequest.catalogSort
       : "recommended";
-    const catalogSort = selectedSort === "nearest" && !originAddressId ? "recommended" : selectedSort;
+    const catalogSort = selectedSort === "nearest" && !originAddressId && !originCoordinates ? "recommended" : selectedSort;
     const requestSort = catalogSort === "nearest" ? "nearest" : "recommended";
     const requestVersion = ++catalogRequestSequence;
     const token = useAuthStore.getState().session?.token;
@@ -227,6 +247,7 @@ export const useClientStore = create((set, get) => ({
 
     const result = await clientStoreDependencies.fetchCatalogWorkers(categoryId, {
       originAddressId,
+      originCoordinates,
       sort: requestSort,
       token
     });
@@ -236,6 +257,10 @@ export const useClientStore = create((set, get) => ({
     if (result.ok) {
       set((state) => ({
         workers: result.workers,
+        publicWorkersById: {
+          ...state.publicWorkersById,
+          ...Object.fromEntries(result.workers.map((worker) => [worker.id, worker]))
+        },
         selectedWorkerId: result.workers.some((worker) => worker.id === state.selectedWorkerId)
           ? state.selectedWorkerId
           : result.workers[0]?.id || null,
@@ -286,12 +311,12 @@ export const useClientStore = create((set, get) => ({
 
     return result;
   },
-  syncBannersFromApi: async () => {
-    const result = await fetchBannersApi();
+  syncBannersFromApi: async (placement = "HOME") => {
+    const result = await fetchBannersApi(placement);
 
     if (result.ok) {
       set({
-        banners: result.banners
+        [placement === "CATEGORY" ? "categoryBanners" : "banners"]: result.banners
       });
     }
 
@@ -580,13 +605,19 @@ export const useClientStore = create((set, get) => ({
   upsertPublicWorker: (worker) =>
     set((state) => ({
       workers: worker
-        ? [worker, ...state.workers.filter((item) => item.id !== worker.id)]
+        ? state.workers.map((item) => item.id === worker.id ? worker : item)
         : state.workers,
-      selectedWorkerId: worker?.id || state.selectedWorkerId
+      publicWorkersById: worker?.id
+        ? { ...state.publicWorkersById, [worker.id]: worker }
+        : state.publicWorkersById
     })),
+  getWorkerById: (workerId) => {
+    if (!workerId) return null;
+    const state = get();
+    return state.publicWorkersById[workerId] || state.workers.find((worker) => worker.id === workerId) || null;
+  },
   getSelectedWorker: () => {
-    const { selectedWorkerId, workers: workerList } = get();
-    return workerList.find((worker) => worker.id === selectedWorkerId) || workerList[0] || null;
+    return get().getWorkerById(get().selectedWorkerId);
   },
   resetOrderDraft: (patch = {}) =>
     set({
@@ -616,7 +647,7 @@ export const useClientStore = create((set, get) => ({
   createOrderFromDraft: async () => {
     const state = get();
     const service = state.categories.find((item) => item.id === state.orderDraft.serviceId);
-    const worker = state.workers.find((item) => item.id === state.orderDraft.selectedWorkerId) || state.getSelectedWorker();
+    const worker = state.getWorkerById(state.orderDraft.selectedWorkerId);
     const session = clientStoreDependencies.getSession();
     const token = session?.token;
 
@@ -661,12 +692,15 @@ export const useClientStore = create((set, get) => ({
 
     return { ok: false, message: "Usta tanlanmagan." };
   },
-  cancelActiveOrder: async (reason) => {
+  cancelActiveOrder: async (reason, expectedOrderId) => {
     const state = get();
     const session = clientStoreDependencies.getSession();
     const token = session?.token;
 
     if (!token || !state.activeOrder?.id) return { ok: false, message: "Faol buyurtma topilmadi." };
+    if (expectedOrderId && state.activeOrder.id !== expectedOrderId) {
+      return { ok: false, code: "ORDER_CHANGED", message: "Faol buyurtma o'zgardi. Buyurtmalarni yangilang." };
+    }
 
     const ticket = clientRequestGuard.begin("order-cancel", session.userId);
     clientRequestGuard.begin("orders", session.userId);

@@ -18,6 +18,16 @@ export const authenticateEnvAdmin: RequestHandler = async (request, _response, n
     request.admin = admin;
     request.user = admin;
 
+    const path = request.originalUrl.split("?", 1)[0].replace(/\/+$/, "");
+    const passwordFlow = (request.method === "GET" && path === "/admin/auth/me") ||
+      (request.method === "POST" && path === "/admin/auth/change-password");
+    if (admin.mustChangePassword && !passwordFlow) {
+      throw Object.assign(new Error("Change your password before using the admin panel"), {
+        status: 403,
+        code: "ADMIN_PASSWORD_CHANGE_REQUIRED"
+      });
+    }
+
     next();
   } catch (error) {
     if (typeof error === "object" && error && "status" in error && (error.status === 401 || error.status === 403)) {

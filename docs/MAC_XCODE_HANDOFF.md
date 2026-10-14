@@ -1,5 +1,7 @@
 # NearFIX — Mac / Xcode source handoff
 
+> Historical 2026-09-19 record. For the current **1.0.7** Windows-to-Mac handoff, start with `MAC_START_HERE.md` at the repository root. The old version/toolchain and Firebase exclusion statements below do not describe the new ZIP. Its source identity and action ledger are in `SOURCE_HANDOFF.json` and `HANDOFF_RECORD.md` inside that ZIP.
+
 2026-09-19 · **PASS — SOURCE_READY_FOR_MAC_XCODE_BUILD**.
 Bu source topshirish holati; iOS native build, signing yoki production release PASS emas.
 

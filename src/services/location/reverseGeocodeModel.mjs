@@ -85,15 +85,8 @@ function buildStreetLine(address) {
 }
 
 export function normalizeCoordinate(value) {
-  if (
-    value?.latitude === null ||
-    value?.latitude === undefined ||
-    value?.latitude === "" ||
-    value?.longitude === null ||
-    value?.longitude === undefined ||
-    value?.longitude === ""
-  ) {
-    return null;
+  for (const component of [value?.latitude, value?.longitude]) {
+    if (typeof component !== "number" && (typeof component !== "string" || !component.trim())) return null;
   }
   const latitude = Number(value?.latitude);
   const longitude = Number(value?.longitude);

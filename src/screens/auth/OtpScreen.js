@@ -52,7 +52,7 @@ export function OtpScreen({ navigation, route }) {
         });
       } else {
         const resumed = await resumeAfterAuthentication(navigation, result.role);
-        if (!resumed.ok) Alert.alert("Usta mavjud emas", "Usta hozir buyurtma qabul qilmayapti. Boshqa ustani tanlang.");
+        if (!resumed.ok && !resumed.stale) Alert.alert("Usta mavjud emas", "Usta hozir buyurtma qabul qilmayapti. Boshqa ustani tanlang.");
       }
     } finally {
       actionRef.current = false;

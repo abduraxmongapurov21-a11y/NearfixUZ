@@ -2,6 +2,7 @@ import {
   OrderStatus,
   Prisma,
   UserRole,
+  UserStatus,
   WorkerAvailabilityStatus,
   WorkerProfileStatus
 } from "@prisma/client";
@@ -39,6 +40,17 @@ const categorySummarySelect = {
   sortOrder: true,
   isActive: true
 } satisfies Prisma.CategorySelect;
+
+const ownWorkerUserSelect = {
+  id: true,
+  phone: true,
+  name: true,
+  role: true,
+  status: true,
+  cityId: true,
+  createdAt: true,
+  updatedAt: true
+} satisfies Prisma.UserSelect;
 
 const platformFeeRate = 0.05;
 
@@ -286,7 +298,9 @@ function toWorkerApplicationDto(worker: {
 }) {
   return {
     id: worker.id,
-    state: worker.status === WorkerProfileStatus.APPROVED
+    state: worker.status === WorkerProfileStatus.SUSPENDED
+      ? "SUSPENDED"
+      : worker.status === WorkerProfileStatus.APPROVED
       ? "APPROVED"
       : worker.submittedAt
         ? "SUBMITTED"
@@ -335,13 +349,17 @@ async function assertClientApplicant(userId: string, tx: Prisma.TransactionClien
 }
 
 export async function getOwnWorkerApplication(userId: string) {
-  await assertClientApplicant(userId);
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (!user || (user.role !== UserRole.CLIENT && user.role !== UserRole.PROVIDER)) {
+    throw Object.assign(new Error("Client or provider required"), { status: 403, code: "CLIENT_REQUIRED" });
+  }
   const worker = await prisma.workerProfile.findUnique({ where: { userId }, select: workerApplicationSelect });
   return worker ? toWorkerApplicationDto(worker) : null;
 }
 
 export async function saveOwnWorkerApplication(userId: string, patch: WorkerApplicationPatch) {
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
     await assertClientApplicant(userId, tx);
     const existing = await tx.workerProfile.findUnique({
       where: { userId },
@@ -351,12 +369,6 @@ export async function saveOwnWorkerApplication(userId: string, patch: WorkerAppl
     if (Object.keys(userData).length) await tx.user.update({ where: { id: userId }, data: userData });
     if (existing?.status === WorkerProfileStatus.APPROVED || existing?.status === WorkerProfileStatus.SUSPENDED) {
       throw Object.assign(new Error("Worker profile already exists"), { status: 409, code: "WORKER_PROFILE_EXISTS" });
-    }
-    if (existing?.submittedAt) {
-      throw Object.assign(new Error("Submitted applications cannot be edited"), {
-        status: 409,
-        code: "WORKER_APPLICATION_SUBMITTED"
-      });
     }
     const worker = await tx.workerProfile.upsert({
       where: { userId },
@@ -372,22 +384,25 @@ export async function saveOwnWorkerApplication(userId: string, patch: WorkerAppl
 
 export async function submitOwnWorkerApplication(userId: string, patch: WorkerApplicationPatch) {
   return prisma.$transaction(async (tx) => {
-    await assertClientApplicant(userId, tx);
+    // Serialize retries and draft saves for one applicant; role/profile activation is atomic.
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { role: true, status: true } });
+    if (!user || (user.role !== UserRole.CLIENT && user.role !== UserRole.PROVIDER)) {
+      throw Object.assign(new Error("Client or provider required"), { status: 403, code: "CLIENT_REQUIRED" });
+    }
+    if (user.status !== UserStatus.ACTIVE) {
+      throw Object.assign(new Error("User is blocked"), { status: 403, code: "USER_BLOCKED" });
+    }
     const existing = await tx.workerProfile.findUnique({
       where: { userId },
-      select: { status: true, submittedAt: true, profession: true, professions: true }
+      select: workerApplicationSelect
     });
+    if (existing?.status === WorkerProfileStatus.SUSPENDED) {
+      throw Object.assign(new Error("Worker profile is suspended"), { status: 403, code: "WORKER_SUSPENDED" });
+    }
+    if (existing?.status === WorkerProfileStatus.APPROVED) return toWorkerApplicationDto(existing);
     const { profileData, userData, selectedCategories } = await normalizeWorkerPatch(patch, tx, existing);
     if (Object.keys(userData).length) await tx.user.update({ where: { id: userId }, data: userData });
-    if (existing?.status === WorkerProfileStatus.APPROVED || existing?.status === WorkerProfileStatus.SUSPENDED) {
-      throw Object.assign(new Error("Worker profile already exists"), { status: 409, code: "WORKER_PROFILE_EXISTS" });
-    }
-    if (existing?.submittedAt) {
-      throw Object.assign(new Error("Application is already submitted"), {
-        status: 409,
-        code: "WORKER_APPLICATION_SUBMITTED"
-      });
-    }
     const candidate = await tx.workerProfile.upsert({
       where: { userId },
       update: profileData,
@@ -398,8 +413,15 @@ export async function submitOwnWorkerApplication(userId: string, patch: WorkerAp
     assertProfileCompleteForReview(candidate);
     const submitted = await tx.workerProfile.update({
       where: { id: candidate.id },
-      data: { submittedAt: new Date(), moderationReason: null },
+      data: { status: WorkerProfileStatus.APPROVED, submittedAt: new Date(), moderationReason: null },
       select: workerApplicationSelect
+    });
+    // Tokens resolve roles from the database. Keep the applicant's valid session usable.
+    await tx.user.update({ where: { id: userId }, data: { role: UserRole.PROVIDER } });
+    await tx.workerAvailability.upsert({
+      where: { workerId: candidate.id },
+      update: {},
+      create: { workerId: candidate.id, status: WorkerAvailabilityStatus.OFFLINE }
     });
     return toWorkerApplicationDto(submitted);
   });
@@ -409,11 +431,20 @@ type CatalogWorkerOptions = {
   categoryId?: string;
   legacyCityId?: string;
   originAddressId?: string;
+  originLat?: number;
+  originLng?: number;
   requester?: Pick<AuthUser, "id" | "role">;
   sort?: "nearest";
 };
 
 async function getCatalogOrigin(options: CatalogWorkerOptions): Promise<Coordinates | null> {
+  if (options.originLat !== undefined || options.originLng !== undefined) {
+    if (options.originAddressId || !Number.isFinite(options.originLat) || !Number.isFinite(options.originLng) ||
+        options.originLat! < -90 || options.originLat! > 90 || options.originLng! < -180 || options.originLng! > 180) {
+      throw Object.assign(new Error("Origin coordinates are invalid"), { status: 400, code: "ORIGIN_COORDINATES_INVALID" });
+    }
+    return { lat: options.originLat!, lng: options.originLng! };
+  }
   if (!options.originAddressId) return null;
 
   if (!options.requester) {
@@ -466,8 +497,8 @@ async function getCatalogOrigin(options: CatalogWorkerOptions): Promise<Coordina
 }
 
 export async function getCatalogWorkers(profession?: string, options: CatalogWorkerOptions = {}) {
-  if (options.sort === "nearest" && !options.originAddressId) {
-    throw Object.assign(new Error("An origin address is required for nearest sorting"), {
+  if (options.sort === "nearest" && !options.originAddressId && options.originLat === undefined && options.originLng === undefined) {
+    throw Object.assign(new Error("An origin location is required for nearest sorting"), {
       status: 400,
       code: "ORIGIN_ADDRESS_REQUIRED_FOR_NEAREST"
     });
@@ -477,12 +508,11 @@ export async function getCatalogWorkers(profession?: string, options: CatalogWor
   const legacyCategory = !options.categoryId && profession ? await resolveCategoryByLegacyValue(profession) : null;
   const legacyCityId = !origin ? options.legacyCityId : undefined;
   const blockerId = options.requester?.role === UserRole.CLIENT.toLowerCase() ? options.requester.id : undefined;
-  const userFilter = legacyCityId || blockerId
-    ? {
-        ...(legacyCityId ? { cityId: legacyCityId } : {}),
-        ...(blockerId ? { blocksReceived: { none: { blockerId } } } : {})
-      }
-    : undefined;
+  const userFilter = {
+    status: UserStatus.ACTIVE,
+    ...(legacyCityId ? { cityId: legacyCityId } : {}),
+    ...(blockerId ? { blocksReceived: { none: { blockerId } } } : {})
+  };
   const workers = await prisma.workerProfile.findMany({
     select: publicWorkerSelect,
     where: {
@@ -551,7 +581,8 @@ export async function getPublicWorker(workerId: string) {
   const worker = await prisma.workerProfile.findFirst({
     where: {
       id: workerId,
-      status: WorkerProfileStatus.APPROVED
+      status: WorkerProfileStatus.APPROVED,
+      user: { status: UserStatus.ACTIVE }
     },
     select: publicWorkerDetailSelect
   });
@@ -575,7 +606,7 @@ export async function getOwnWorkerProfile(userId: string) {
       serviceLocationUpdatedAt: false
     },
     include: {
-      user: true,
+      user: { select: ownWorkerUserSelect },
       availability: true,
       categories: { orderBy: { sortOrder: "asc" }, include: { category: true } }
     }
@@ -649,6 +680,40 @@ export async function getOwnWorkerEarnings(userId: string) {
     };
   });
 
+  function summarizePeriod(start: Date, end: Date, previousStart: Date) {
+    const periodOrders = orders.filter((order) => order.updatedAt >= start && order.updatedAt < end);
+    const total = periodOrders.reduce((sum, order) => sum + orderAmount(order), 0);
+    const previousTotal = orders
+      .filter((order) => order.updatedAt >= previousStart && order.updatedAt < start)
+      .reduce((sum, order) => sum + orderAmount(order), 0);
+    const trend = [];
+    for (let day = start; day < end; day = addDays(day, 1)) {
+      const nextDay = addDays(day, 1);
+      trend.push({
+        date: day.toISOString(),
+        amount: roundMoney(periodOrders
+          .filter((order) => order.updatedAt >= day && order.updatedAt < nextDay)
+          .reduce((sum, order) => sum + orderAmount(order), 0))
+      });
+    }
+    const elapsedDays = Math.max(1, trend.filter((day) => new Date(day.date) <= now).length);
+    return {
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
+      total: roundMoney(total),
+      completedJobs: periodOrders.length,
+      averagePerDay: roundMoney(total / elapsedDays),
+      growthPercentage: Number((previousTotal ? ((total - previousTotal) / previousTotal) * 100 : total > 0 ? 100 : 0).toFixed(1)),
+      revenueTrend: trend
+    };
+  }
+
+  const periods = {
+    today: summarizePeriod(todayStart, addDays(todayStart, 1), addDays(todayStart, -1)),
+    week: summarizePeriod(weekStart, addDays(weekStart, 7), previousWeekStart),
+    month: summarizePeriod(monthStart, new Date(now.getFullYear(), now.getMonth() + 1, 1), new Date(now.getFullYear(), now.getMonth() - 1, 1))
+  };
+
   return {
     todayEarnings: roundMoney(totals.today),
     weekEarnings: roundMoney(totals.week),
@@ -658,11 +723,32 @@ export async function getOwnWorkerEarnings(userId: string) {
     averagePerDay: roundMoney(totals.week / daysElapsedThisWeek),
     growthPercentage: Number(growthPercentage.toFixed(1)),
     platformFees: roundMoney(totals.week * platformFeeRate),
-    revenueTrend
+    revenueTrend,
+    periods
   };
 }
 
 export async function getOwnWorkerTransactions(userId: string) {
+  return (await getOwnWorkerTransactionsPage(userId)).transactions;
+}
+
+export async function getOwnWorkerTransactionsPage(userId: string, query: { limit?: unknown; cursor?: unknown } = {}) {
+  const limit = query.limit === undefined ? 100 : Number(query.limit);
+  if ((query.limit !== undefined && typeof query.limit !== "string" && typeof query.limit !== "number") || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw Object.assign(new Error("Transaction page limit must be between 1 and 100"), { status: 400, code: "INVALID_TRANSACTION_LIMIT" });
+  }
+  let boundary: { date: Date; id: string } | null = null;
+  if (query.cursor !== undefined) {
+    try {
+      if (typeof query.cursor !== "string" || query.cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(query.cursor)) throw new Error();
+      const [timestamp, id] = JSON.parse(Buffer.from(query.cursor, "base64url").toString("utf8"));
+      const date = new Date(timestamp);
+      if (typeof timestamp !== "string" || !Number.isFinite(date.getTime()) || date.toISOString() !== timestamp || typeof id !== "string" || !id || id.length > 128) throw new Error();
+      boundary = { date, id };
+    } catch {
+      throw Object.assign(new Error("Invalid transaction cursor"), { status: 400, code: "INVALID_TRANSACTION_CURSOR" });
+    }
+  }
   const worker = await prisma.workerProfile.findUnique({
     where: { userId }
   });
@@ -677,17 +763,23 @@ export async function getOwnWorkerTransactions(userId: string) {
   const orders = await prisma.order.findMany({
     where: {
       workerId: worker.id,
-      status: OrderStatus.COMPLETED
+      status: OrderStatus.COMPLETED,
+      ...(boundary ? { OR: [
+        { updatedAt: { lt: boundary.date } },
+        { updatedAt: boundary.date, id: { lt: boundary.id } }
+      ] } : {})
     },
     include: {
       client: true,
       payments: true
     },
-    orderBy: { updatedAt: "desc" },
-    take: 100
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: limit + 1
   });
 
-  return orders.map((order) => {
+  const page = orders.slice(0, limit);
+  const last = page[page.length - 1];
+  const transactions = page.map((order) => {
     const amount = orderAmount(order);
     return {
       id: order.id,
@@ -702,10 +794,17 @@ export async function getOwnWorkerTransactions(userId: string) {
       createdAt: order.updatedAt
     };
   });
+  return {
+    transactions,
+    nextCursor: orders.length > limit && last
+      ? Buffer.from(JSON.stringify([last.updatedAt.toISOString(), last.id])).toString("base64url")
+      : null
+  };
 }
 
 export async function updateOwnWorkerProfile(userId: string, patch: WorkerProfilePatch) {
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
     const isProfileImageOnlyUpdate = patch.profileImageUrl !== undefined && Object.keys(patch).length === 1;
     const current = await tx.workerProfile.findUnique({
       where: { userId },
@@ -736,7 +835,7 @@ export async function updateOwnWorkerProfile(userId: string, patch: WorkerProfil
             })
       },
       include: {
-        user: true,
+        user: { select: ownWorkerUserSelect },
         availability: true,
         categories: { orderBy: { sortOrder: "asc" }, include: { category: true } }
       }
@@ -746,12 +845,26 @@ export async function updateOwnWorkerProfile(userId: string, patch: WorkerProfil
       where: { id: worker.id },
       omit: { serviceLat: false, serviceLng: false, serviceLocationUpdatedAt: false },
       include: {
-        user: true,
+        user: { select: ownWorkerUserSelect },
         availability: true,
         categories: { orderBy: { sortOrder: "asc" }, include: { category: true } }
       }
     });
-    if (!isProfileImageOnlyUpdate) assertProfileCompleteForReview(updated);
+    if (!isProfileImageOnlyUpdate) {
+      assertProfileCompleteForReview(updated);
+      // Older provider drafts can also finish registration without a moderation queue.
+      if (updated.status === WorkerProfileStatus.DRAFT) {
+        await tx.workerAvailability.upsert({
+          where: { workerId: updated.id }, update: {},
+          create: { workerId: updated.id, status: WorkerAvailabilityStatus.OFFLINE }
+        });
+        return tx.workerProfile.update({
+          where: { id: updated.id }, data: { status: WorkerProfileStatus.APPROVED },
+          omit: { serviceLat: false, serviceLng: false, serviceLocationUpdatedAt: false },
+          include: { user: { select: ownWorkerUserSelect }, availability: true, categories: { orderBy: { sortOrder: "asc" }, include: { category: true } } }
+        });
+      }
+    }
     return updated;
   });
 }
@@ -773,7 +886,7 @@ export async function updateOwnWorkerServiceLocation(
       serviceLocationUpdatedAt: new Date()
     },
     include: {
-      user: true,
+      user: { select: ownWorkerUserSelect },
       availability: true
     }
   });

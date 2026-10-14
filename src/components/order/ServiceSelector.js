@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { colors, iconSizes, radius, shadow } from "../../theme";
 import { Text } from "../../i18n/native";
-import { resolveCategoryIcon } from "../../constants/categoryIcons";
+import { resolveCategoryIcon, resolveCategoryIconColor } from "../../constants/categoryIcons";
 
 export function ServiceSelector({ categories, selectedId, onSelect }) {
   return (
@@ -18,7 +18,7 @@ export function ServiceSelector({ categories, selectedId, onSelect }) {
             style={({ pressed }) => [styles.card, selected && styles.selected, pressed && styles.pressed]}
           >
             <View style={[styles.iconWrap, selected && styles.iconSelected]}>
-              <Icon size={iconSizes.lg} color={selected ? colors.white : colors.primary} strokeWidth={2.6} />
+              <Icon size={iconSizes.lg} color={selected ? colors.white : resolveCategoryIconColor(service.iconKey || service.icon)} strokeWidth={2.6} />
             </View>
             <Text translate={false} style={[styles.title, selected && styles.titleSelected]}>{service.displayName || service.nameUz || service.title}</Text>
             <Text style={styles.caption}>{service.id === "more" ? "Boshqa xizmatlar" : "Tez tanlash"}</Text>

@@ -1,3 +1,4 @@
+import "./test-isolation-preload.js";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { AdminAccountRole, AdminAccountStatus, UserRole, WorkerProfileStatus } from "@prisma/client";
@@ -116,8 +117,10 @@ async function main() {
     experienceYears: 4, profileImageUrl: "https://example.com/applicant.jpg", bio: "Experienced professional",
     basePrice: 120000
   };
-  const submitted = await submitOwnWorkerApplication(clientId, complete);
-  assert.equal(submitted.state, "SUBMITTED");
+  // A legacy queued application remains reviewable by an admin. New submissions
+  // activate immediately and are covered by worker-self-registration-tests.ts.
+  const submitted = await saveOwnWorkerApplication(clientId, complete);
+  await prisma.workerProfile.update({ where: { id: submitted.id }, data: { submittedAt: new Date() } });
   assert.deepEqual(submitted.professions, ["Electrician", "Plumber"], "application must preserve multiple professions");
   let client = await prisma.user.findUniqueOrThrow({ where: { id: clientId } });
   assert.equal(client.role, UserRole.CLIENT);
@@ -138,8 +141,8 @@ async function main() {
   client = await prisma.user.findUniqueOrThrow({ where: { id: clientId } });
   assert.equal(client.sessionVersion, rejectedVersion);
   assert.equal(await prisma.session.count({ where: { userId: clientId, revoked: false } }), rejectedActiveSessions);
-  const resubmitted = await submitOwnWorkerApplication(clientId, complete);
-  assert.equal(resubmitted.state, "SUBMITTED");
+  const resubmitted = await saveOwnWorkerApplication(clientId, complete);
+  await prisma.workerProfile.update({ where: { id: resubmitted.id }, data: { submittedAt: new Date(), moderationReason: null } });
 
   const versionBeforeApproval = client.sessionVersion;
   await approveWorkerProfile(resubmitted.id, {});
@@ -315,7 +318,7 @@ async function main() {
       "POST"
     );
     assert.equal(submittedApplication.response.status, 200, "authenticated application submit endpoint must work");
-    assert.equal(submittedApplication.payload.application.state, "SUBMITTED");
+    assert.equal(submittedApplication.payload.application.state, "APPROVED");
     assert.equal((await request(`/admin/workers/${preparedProfile.id}/approve`)).response.status, 401);
     const [limitedToken, managerToken, superToken] = await Promise.all(adminUsernames.map(login));
     assert.equal((await request(`/admin/workers/${preparedProfile.id}/approve`, limitedToken, {})).response.status, 403);

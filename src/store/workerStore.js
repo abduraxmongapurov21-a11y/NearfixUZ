@@ -33,6 +33,9 @@ const defaultWorkerStoreDependencies = {
   cancelWorkerOrderApi,
   createWorkerOrderApi,
   updateWorkerServiceLocationApi,
+  updateAvailabilityApi,
+  updateWorkerProfileApi,
+  updateOrderStatusApi,
   acceptOrderApi,
   rejectOrderApi
 };
@@ -116,6 +119,9 @@ export const useWorkerStore = create((set, get) => ({
     revenueTrend: []
   },
   transactions: [],
+  transactionsNextCursor: null,
+  transactionsLoading: false,
+  transactionsError: null,
   completedOrders: [],
   apiStatus: {
     source: "idle",
@@ -151,6 +157,9 @@ export const useWorkerStore = create((set, get) => ({
         revenueTrend: []
       },
       transactions: [],
+      transactionsNextCursor: null,
+      transactionsLoading: false,
+      transactionsError: null,
       completedOrders: [],
       apiStatus: {
         source: "idle",
@@ -173,6 +182,10 @@ export const useWorkerStore = create((set, get) => ({
     const token = session?.token;
     if (!token) return { ok: false, message: "API sessiya tokeni topilmadi." };
     const requestTicket = workerRequestGuard.begin("worker-sync", session.userId);
+    if (!ordersOnly) {
+      workerRequestGuard.begin("worker-transactions", session.userId);
+      set({ transactionsLoading: false, transactionsError: null });
+    }
 
     set((state) => ({
       profileSyncStatus: { ...state.profileSyncStatus, loading: true, error: null }
@@ -202,6 +215,7 @@ export const useWorkerStore = create((set, get) => ({
         activeJob,
         earnings: earningsResult.ok && earningsResult.earnings ? earningsResult.earnings : state.earnings,
         transactions: transactionsResult.ok ? transactionsResult.transactions : state.transactions,
+        transactionsNextCursor: transactionsResult.ok ? transactionsResult.nextCursor || null : state.transactionsNextCursor,
         completedOrders: ordersResult.ok
           ? ordersResult.orders.filter((order) => order.statusKey === TRACKING_STATUSES.COMPLETED)
           : state.completedOrders,
@@ -215,11 +229,34 @@ export const useWorkerStore = create((set, get) => ({
 
     return { ok: profileResult.ok || incomingResult.ok || ordersResult.ok };
   },
+  loadMoreTransactionsFromApi: async () => {
+    const state = get();
+    const session = workerStoreDependencies.getSession();
+    if (!session?.token || !state.transactionsNextCursor || state.transactionsLoading || state.profileSyncStatus.loading) return { ok: false, skipped: true };
+    const cursor = state.transactionsNextCursor;
+    const ticket = workerRequestGuard.begin("worker-transactions", session.userId);
+    set({ transactionsLoading: true, transactionsError: null });
+    const result = await workerStoreDependencies.fetchWorkerTransactionsApi(session.token, { cursor });
+    if (!workerRequestGuard.isCurrent(ticket, currentAccountId())) return { ok: false, stale: true };
+    if (!result.ok) {
+      set({ transactionsLoading: false, transactionsError: result.message || "Tranzaksiyalarni yuklab bo'lmadi." });
+      return result;
+    }
+    set((current) => {
+      const byId = new Map(current.transactions.map((item) => [item.id, item]));
+      for (const transaction of result.transactions) byId.set(transaction.id, transaction);
+      return { transactions: [...byId.values()], transactionsNextCursor: result.nextCursor || null, transactionsLoading: false, transactionsError: null };
+    });
+    return { ok: true };
+  },
   setOperationalStatus: async (status) => {
-    const token = useAuthStore.getState().session?.token;
+    const session = workerStoreDependencies.getSession();
+    const token = session?.token;
 
     if (token) {
-      const result = await updateAvailabilityApi(token, status);
+      const ticket = workerRequestGuard.begin("worker-availability", session.userId);
+      const result = await workerStoreDependencies.updateAvailabilityApi(token, status);
+      if (!workerRequestGuard.isCurrent(ticket, currentAccountId())) return { ok: false, stale: true };
       if (result.ok) {
         set((state) => ({
           operationalStatus: result.availability.status,
@@ -239,11 +276,14 @@ export const useWorkerStore = create((set, get) => ({
     return { ok: false, message: "Holatni o'zgartirish uchun tizimga kiring." };
   },
   submitWorkerProfile: async (profile) => {
-    const token = useAuthStore.getState().session?.token;
+    const session = workerStoreDependencies.getSession();
+    const token = session?.token;
 
     if (!token) return { ok: false, code: "UNAUTHORIZED", message: "Profilni saqlash uchun tizimga kiring." };
 
-    const result = await updateWorkerProfileApi(token, profile);
+    const ticket = workerRequestGuard.begin("worker-profile", session.userId);
+    const result = await workerStoreDependencies.updateWorkerProfileApi(token, profile);
+    if (!workerRequestGuard.isCurrent(ticket, currentAccountId())) return { ok: false, stale: true };
     if (!result.ok) {
       set((state) => ({
         apiStatus: {
@@ -467,11 +507,16 @@ export const useWorkerStore = create((set, get) => ({
     };
   },
   updateActiveJobStatus: async (statusKey) => {
-    const token = useAuthStore.getState().session?.token;
+    const session = workerStoreDependencies.getSession();
+    const token = session?.token;
     const activeJob = get().activeJob;
 
     if (token && activeJob?.id) {
-      const result = await updateOrderStatusApi(token, activeJob.id, statusKey);
+      const ticket = workerRequestGuard.begin("worker-active-job", session.userId);
+      const result = await workerStoreDependencies.updateOrderStatusApi(token, activeJob.id, statusKey);
+      if (!workerRequestGuard.isCurrent(ticket, currentAccountId()) || get().activeJob?.id !== activeJob.id) {
+        return { ok: false, stale: true };
+      }
       if (result.ok) {
         set((state) => ({
           activeJob: state.activeJob ? { ...state.activeJob, ...result.order } : result.order
@@ -483,26 +528,34 @@ export const useWorkerStore = create((set, get) => ({
     return { ok: false, message: "Faol ish topilmadi." };
   },
   completeActiveJob: async () => {
-    const token = useAuthStore.getState().session?.token;
+    const session = workerStoreDependencies.getSession();
+    const token = session?.token;
     const activeJob = get().activeJob;
 
     if (token && activeJob?.id) {
-      const result = await updateOrderStatusApi(token, activeJob.id, TRACKING_STATUSES.COMPLETED);
+      const ticket = workerRequestGuard.begin("worker-active-job", session.userId);
+      const result = await workerStoreDependencies.updateOrderStatusApi(token, activeJob.id, TRACKING_STATUSES.COMPLETED);
+      if (!workerRequestGuard.isCurrent(ticket, currentAccountId()) || get().activeJob?.id !== activeJob.id) {
+        return { ok: false, stale: true };
+      }
       if (result.ok) {
-        set((state) => ({
-          activeJob: null,
-          operationalStatus: WORKER_STATUS.AVAILABLE,
-          workerProfile: {
-            ...state.workerProfile,
-            availability: WORKER_STATUS.AVAILABLE,
-            completedOrders: (state.workerProfile.completedOrders || 0) + 1
-          },
-          earnings: {
-            ...state.earnings,
-            completedJobs: state.earnings.completedJobs + 1
-          },
-          completedOrders: [result.order, ...state.completedOrders]
-        }));
+        set((state) => {
+          const alreadyCompleted = state.completedOrders.some((order) => order.id === activeJob.id);
+          return {
+            activeJob: null,
+            operationalStatus: WORKER_STATUS.AVAILABLE,
+            workerProfile: {
+              ...state.workerProfile,
+              availability: WORKER_STATUS.AVAILABLE,
+              completedOrders: (state.workerProfile.completedOrders || 0) + (alreadyCompleted ? 0 : 1)
+            },
+            earnings: {
+              ...state.earnings,
+              completedJobs: state.earnings.completedJobs + (alreadyCompleted ? 0 : 1)
+            },
+            completedOrders: alreadyCompleted ? state.completedOrders : [result.order, ...state.completedOrders]
+          };
+        });
         return result;
       }
     }

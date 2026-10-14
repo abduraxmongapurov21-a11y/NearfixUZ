@@ -2,8 +2,12 @@ import { z } from "zod";
 
 const optionalCoordinate = (minimum: number, maximum: number) =>
   z.preprocess(
-    (value) => (value === null || (typeof value === "string" && value.trim() === "") ? undefined : value),
-    z.coerce.number().min(minimum).max(maximum).optional()
+    (value) => {
+      if (value === null) return undefined;
+      if (typeof value === "string") return value.trim() === "" ? undefined : Number(value);
+      return value;
+    },
+    z.number().finite().min(minimum).max(maximum).optional()
   );
 
 const addressPayloadShape = z.object({

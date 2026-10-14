@@ -153,7 +153,7 @@ export async function getOrderDetail(orderId: string): Promise<AdminOrderDetail>
   const token = getAdminToken();
   if (!token) throw new Error("Admin sifatida kirish talab qilinadi");
 
-  const payload = await apiClient<{ ok: boolean; order: any }>(`/orders/${orderId}`, { token });
+  const payload = await apiClient<{ ok: boolean; order: any }>(`/admin/orders/${orderId}`, { token });
   return mapOrderDetail(payload.order);
 }
 
@@ -162,7 +162,7 @@ export async function runOrderAction(orderId: string, action: AdminOrderAction) 
   if (!token) throw new Error("Admin token mavjud emas");
 
   if (action === "accept") {
-    await apiClient<{ ok: boolean; order: any }>(`/orders/${orderId}/accept`, {
+    await apiClient<{ ok: boolean; order: any }>(`/admin/orders/${orderId}/accept`, {
       method: "POST",
       token
     });
@@ -170,7 +170,7 @@ export async function runOrderAction(orderId: string, action: AdminOrderAction) 
   }
 
   if (action === "cancel") {
-    await apiClient<{ ok: boolean; order: any }>(`/orders/${orderId}/cancel`, {
+    await apiClient<{ ok: boolean; order: any }>(`/admin/orders/${orderId}/cancel`, {
       body: JSON.stringify({ reason: "Admin tomonidan bekor qilindi" }),
       method: "POST",
       token
@@ -184,7 +184,7 @@ export async function runOrderAction(orderId: string, action: AdminOrderAction) 
     completed: "COMPLETED"
   };
 
-  await apiClient<{ ok: boolean; order: any }>(`/orders/${orderId}/status`, {
+  await apiClient<{ ok: boolean; order: any }>(`/admin/orders/${orderId}/status`, {
     body: JSON.stringify({ status: statusByAction[action] }),
     method: "POST",
     token

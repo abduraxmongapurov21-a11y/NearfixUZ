@@ -223,7 +223,7 @@ export async function getAdminReport(reportId: string) {
 
 export async function updateAdminReport(
   reportId: string,
-  adminId: string,
+  adminId: string | null,
   input: { status: ReportStatus; adminNote?: string }
 ) {
   const existing = await prisma.report.findUnique({ where: { id: reportId }, select: { id: true } });

@@ -5,9 +5,18 @@ export async function listFavorites(clientId: string) {
     where: { clientId },
     include: {
       worker: {
-        include: {
-          user: true,
-          availability: true
+        select: {
+          id: true,
+          profession: true,
+          professions: true,
+          experienceYears: true,
+          profileImageUrl: true,
+          bio: true,
+          basePrice: true,
+          ratingAvg: true,
+          completedOrdersCount: true,
+          user: { select: { name: true } },
+          availability: { select: { status: true } }
         }
       }
     },
@@ -16,6 +25,10 @@ export async function listFavorites(clientId: string) {
 }
 
 export async function addFavorite(clientId: string, workerId: string) {
+  const worker = await prisma.workerProfile.findUnique({ where: { id: workerId }, select: { id: true } });
+  if (!worker) {
+    throw Object.assign(new Error("Worker not found"), { status: 404, code: "WORKER_NOT_FOUND" });
+  }
   return prisma.favorite.upsert({
     where: {
       clientId_workerId: {

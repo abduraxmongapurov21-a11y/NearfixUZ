@@ -1,3 +1,4 @@
+import "./test-isolation-preload.js";
 import assert from "node:assert/strict";
 import { WorkerAvailabilityStatus, WorkerProfileStatus } from "@prisma/client";
 import { prisma } from "../src/db/prisma.js";

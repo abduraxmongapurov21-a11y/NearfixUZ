@@ -56,3 +56,16 @@ export function resolveCatalogOriginAddressId(currentAddressId, addresses = []) 
 export function shouldApplyCatalogResponse(responseVersion, activeVersion) {
   return responseVersion === activeVersion;
 }
+
+export function resolveCatalogRequestOrigin(state) {
+  if (state.catalogUseDeviceLocation) {
+    const coordinate = state.catalogOriginCoordinates;
+    return {
+      originAddressId: null,
+      originCoordinates: hasAddressCoordinates(coordinate)
+        ? { lat: Number(coordinate.lat ?? coordinate.latitude), lng: Number(coordinate.lng ?? coordinate.longitude) }
+        : null
+    };
+  }
+  return { originAddressId: resolveCatalogOriginAddressId(state.catalogOriginAddressId, state.savedAddresses), originCoordinates: null };
+}

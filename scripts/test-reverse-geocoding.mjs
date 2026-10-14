@@ -5,6 +5,7 @@ import {
   formatReverseGeocodeAddress,
   isCoordinateLikeAddress,
   mapKitLocaleMatchesAppLocale,
+  normalizeCoordinate,
   normalizeReverseGeocodeResult,
   normalizeReverseGeocodeLocale,
   normalizeYandexReverseGeocodeResult,
@@ -84,6 +85,18 @@ assert.deepEqual(normalizeYandexReverseGeocodeResult(yandexResult), {
 });
 
 const failingCoordinate = { latitude: 41.311081, longitude: 69.240562 };
+for (const invalid of [null, undefined, "", " ", true, false, [], [41.3], {}, NaN, Infinity, -Infinity]) {
+  assert.equal(normalizeCoordinate({ latitude: invalid, longitude: 69.2 }), null);
+  assert.equal(normalizeCoordinate({ latitude: 41.3, longitude: invalid }), null);
+  let providerCalled = false;
+  const invalidResult = await resolveReverseGeocode(
+    { latitude: invalid, longitude: 69.2, locale: "uz" },
+    { nativeReverseGeocode: async () => { providerCalled = true; return []; } }
+  );
+  assert.equal(invalidResult.code, "invalid.coordinates");
+  assert.equal(providerCalled, false, "invalid coordinates must not reach a provider");
+}
+assert.deepEqual(normalizeCoordinate({ latitude: " 0 ", longitude: "0" }), { latitude: 0, longitude: 0 });
 const emptyResult = await resolveReverseGeocode(
   { ...failingCoordinate, locale: "uz" },
   { nativeReverseGeocode: async () => [], getNativeLocale: () => "uz-UZ" }

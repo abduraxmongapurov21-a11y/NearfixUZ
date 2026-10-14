@@ -1,12 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { MoreVertical, Search } from "lucide-react-native";
+import { ArrowRight, MessageCircle, MoreVertical, RefreshCw, Search, X } from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../constants/routes";
 import { useAuthStore } from "../../store/authStore";
 import { useChatRefresh } from "../../hooks/useChatRefresh";
 import { refreshChatRooms, useChatStore } from "../../store/chatStore";
 import { chatUnreadCount } from "../../services/chats/chatSync.mjs";
 import { Text, TextInput } from "../../i18n/native";
+import { normalizeExperienceMode } from "../../navigation/experienceMode.mjs";
+import { ClientHeader } from "../../components/client/ClientHeader";
+import { GlassSurface } from "../../components/client/GlassSurface";
+import { colors as clientColors, font as clientFont, CLIENT_CONTENT_BOTTOM, shadow as clientShadow } from "../../theme/clientTheme";
 
 const font = {
   regular: "Inter_400Regular",
@@ -33,7 +38,7 @@ function resolvePrivateRoom(room, currentUserId, index) {
   return {
     ...room,
     title,
-    subtitle: room.subtitle || room.serviceType || "Buyurtma suhbati",
+    subtitle: room.subtitle || room.serviceType || (room.orderId ? "Buyurtma suhbati" : "Shaxsiy chat"),
     time: room.time || "hozir",
     avatarBg: palette.avatarBg,
     avatarColor: palette.avatarColor,
@@ -43,7 +48,9 @@ function resolvePrivateRoom(room, currentUserId, index) {
 }
 
 export function ChatScreen({ navigation, route }) {
+  const { t } = useTranslation();
   const session = useAuthStore((state) => state.session);
+  const isClient = normalizeExperienceMode(session?.role, session?.experienceMode) === "client";
   const rooms = useChatStore((state) => state.rooms);
   const apiRooms = useMemo(() => rooms.map((room, index) => resolvePrivateRoom(room, session?.userId, index)), [rooms, session?.userId]);
   const refreshRooms = useChatRefresh(refreshChatRooms);
@@ -82,12 +89,79 @@ export function ChatScreen({ navigation, route }) {
     [visibleRooms]
   );
 
+  if (isClient) {
+    return (
+      <View style={clientStyles.screen}>
+        <ClientHeader
+          title="Xabarlar"
+          subtitle={unreadCount ? t("{{value0}} ta o'qilmagan xabar", { value0: unreadCount, count: unreadCount }) : "Usta bilan barcha suhbatlar bir joyda"}
+          right={
+            <GlassSurface style={clientStyles.headerAction}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Suhbatlarni yangilash")}
+                onPress={handleRefresh}
+                disabled={refreshing}
+                style={({ pressed }) => [clientStyles.iconButton, pressed && clientStyles.pressed]}
+              >
+                <RefreshCw size={20} color={clientColors.primary} strokeWidth={1.8} />
+              </Pressable>
+            </GlassSurface>
+          }
+        />
+        <View style={clientStyles.searchWrap}>
+          <View style={clientStyles.searchBox}>
+            <Search size={20} color={clientColors.muted} strokeWidth={1.8} />
+            <TextInput
+              accessibilityLabel="Suhbatlarni qidirish"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Suhbatlarni qidirish..."
+              placeholderTextColor={clientColors.subtle}
+              returnKeyType="search"
+              style={clientStyles.searchInput}
+            />
+            {searchQuery ? (
+              <Pressable accessibilityRole="button" accessibilityLabel={t("Qidiruvni tozalash")} onPress={() => setSearchQuery("")} style={clientStyles.clearButton}>
+                <X size={18} color={clientColors.muted} strokeWidth={1.8} />
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={clientStyles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={clientColors.primary} colors={[clientColors.primary]} />}
+        >
+          {filteredRooms.length ? filteredRooms.map((room) => (
+            <ClientChatRow key={room.id} room={room} onPress={() => openThread(room)} />
+          )) : (
+            <GlassSurface style={clientStyles.emptyState}>
+              <View style={clientStyles.emptyIcon}><MessageCircle size={29} color={clientColors.primary} strokeWidth={1.6} /></View>
+              <Text style={clientStyles.emptyTitle}>{normalizedQuery ? "Suhbat topilmadi" : "Suhbatlar hali yo'q"}</Text>
+              <Text style={clientStyles.emptyText}>{normalizedQuery ? "Boshqa nom bilan qidirib ko'ring." : "Ustani tanlang va xizmat tafsilotlarini chatda kelishib oling."}</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => normalizedQuery ? setSearchQuery("") : navigation.navigate(ROUTES.HOME_TAB)}
+                style={({ pressed }) => [clientStyles.emptyButton, pressed && clientStyles.pressed]}
+              >
+                <Text style={clientStyles.emptyButtonText}>{normalizedQuery ? "Qidiruvni tozalash" : "Usta topish"}</Text>
+                <ArrowRight size={18} color={clientColors.white} strokeWidth={1.8} />
+              </Pressable>
+            </GlassSurface>
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screen}>
       <View style={styles.contentHeader}>
         <View>
           <Text style={styles.title}>Xabarlar</Text>
-          <Text style={styles.subtitle}>{unreadCount} ta o'qilmagan xabar</Text>
+          <Text translate={false} style={styles.subtitle}>{t("{{value0}} ta o'qilmagan xabar", { value0: unreadCount, count: unreadCount })}</Text>
         </View>
         <Pressable style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}>
           <MoreVertical size={20} color="#1F385E" strokeWidth={2.3} />
@@ -127,6 +201,28 @@ export function ChatScreen({ navigation, route }) {
   );
 }
 
+function ClientChatRow({ room, onPress }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [clientStyles.chatCard, pressed && clientStyles.pressed]}>
+      <View style={clientStyles.avatar}>
+        <Text translate={false} style={clientStyles.avatarText}>{getInitials(room.title)}</Text>
+        {room.online ? <View style={clientStyles.onlineDot} /> : null}
+      </View>
+      <View style={clientStyles.roomBody}>
+        <View style={clientStyles.roomTop}>
+          <Text translate={false} style={clientStyles.roomTitle} numberOfLines={1}>{room.title}</Text>
+          <Text style={clientStyles.roomTime}>{room.time}</Text>
+        </View>
+        {room.orderId ? <Text style={clientStyles.orderLabel} numberOfLines={1}>Buyurtma · {room.orderCode || room.orderId.slice(-6)}</Text> : null}
+        <View style={clientStyles.roomBottom}>
+          <Text translate={!room.lastMessage?.body} style={clientStyles.roomSubtitle} numberOfLines={1}>{room.subtitle}</Text>
+          {room.unread ? <View style={clientStyles.unreadBadge}><Text translate={false} style={clientStyles.unreadText}>{room.unread > 99 ? "99+" : room.unread}</Text></View> : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
 function ChatRow({ room, index, onPress }) {
   const palette = avatarPalette[index % avatarPalette.length];
   const avatarBg = room.avatarBg || palette.avatarBg;
@@ -135,19 +231,19 @@ function ChatRow({ room, index, onPress }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.chatCard, pressed && styles.pressed]}>
       <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
-        <Text style={[styles.avatarText, { color: avatarColor }]}>{getInitials(room.title)}</Text>
+        <Text translate={false} style={[styles.avatarText, { color: avatarColor }]}>{getInitials(room.title)}</Text>
         {room.online ? <View style={styles.onlineDot} /> : null}
       </View>
       <View style={styles.roomBody}>
         <View style={styles.roomTop}>
-          <Text style={styles.roomTitle} numberOfLines={1}>
+          <Text translate={false} style={styles.roomTitle} numberOfLines={1}>
             {room.title}
           </Text>
           <Text style={styles.roomTime}>{room.time}</Text>
         </View>
         {room.orderId ? <Text style={styles.roomSubtitle} numberOfLines={1}>Buyurtma · {room.orderCode || room.orderId.slice(-6)}</Text> : null}
         <View style={styles.roomBottom}>
-          <Text style={styles.roomSubtitle} numberOfLines={1}>
+          <Text translate={!room.lastMessage?.body} style={styles.roomSubtitle} numberOfLines={1}>
             {room.subtitle}
           </Text>
           {room.unread ? (
@@ -345,4 +441,35 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.78
   }
+});
+
+const clientStyles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: clientColors.background },
+  headerAction: { width: 46, height: 46, borderRadius: 17 },
+  iconButton: { flex: 1, alignItems: "center", justifyContent: "center" },
+  searchWrap: { paddingHorizontal: 22 },
+  searchBox: { minHeight: 52, borderRadius: 18, backgroundColor: clientColors.white, borderWidth: 1, borderColor: clientColors.border, flexDirection: "row", alignItems: "center", paddingLeft: 16, paddingRight: 4, gap: 11 },
+  searchInput: { flex: 1, minWidth: 0, paddingVertical: 12, color: clientColors.text, fontSize: 15, fontFamily: clientFont.regular },
+  clearButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  listContent: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 18, paddingBottom: CLIENT_CONTENT_BOTTOM, gap: 12 },
+  chatCard: { minHeight: 92, borderRadius: 22, backgroundColor: clientColors.white, borderWidth: 1, borderColor: clientColors.border, padding: 16, flexDirection: "row", alignItems: "center", ...clientShadow },
+  avatar: { width: 48, height: 48, borderRadius: 18, backgroundColor: clientColors.primarySoft, alignItems: "center", justifyContent: "center" },
+  avatarText: { color: clientColors.primaryDark, fontSize: 16, fontFamily: clientFont.semi },
+  onlineDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: clientColors.white, backgroundColor: clientColors.success },
+  roomBody: { flex: 1, minWidth: 0, marginLeft: 14 },
+  roomTop: { flexDirection: "row", alignItems: "center", gap: 8 },
+  roomTitle: { flex: 1, color: clientColors.text, fontSize: 15, lineHeight: 21, fontFamily: clientFont.semi },
+  roomTime: { color: clientColors.subtle, fontSize: 11, fontFamily: clientFont.regular },
+  orderLabel: { marginTop: 3, color: clientColors.primary, fontSize: 11, lineHeight: 16, fontFamily: clientFont.medium },
+  roomBottom: { marginTop: 5, flexDirection: "row", alignItems: "center", gap: 8 },
+  roomSubtitle: { flex: 1, color: clientColors.muted, fontSize: 13, lineHeight: 19, fontFamily: clientFont.regular },
+  unreadBadge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: clientColors.primary, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
+  unreadText: { color: clientColors.white, fontSize: 11, fontFamily: clientFont.semi },
+  emptyState: { marginTop: 12, borderRadius: 28, alignItems: "center", paddingHorizontal: 24, paddingVertical: 32 },
+  emptyIcon: { width: 68, height: 68, borderRadius: 24, backgroundColor: clientColors.primarySoft, alignItems: "center", justifyContent: "center", marginBottom: 18 },
+  emptyTitle: { color: clientColors.text, fontSize: 20, lineHeight: 27, fontFamily: clientFont.semi, textAlign: "center" },
+  emptyText: { marginTop: 8, color: clientColors.muted, fontSize: 14, lineHeight: 22, fontFamily: clientFont.regular, textAlign: "center" },
+  emptyButton: { minHeight: 48, marginTop: 22, borderRadius: 16, backgroundColor: clientColors.primary, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 },
+  emptyButtonText: { color: clientColors.white, fontSize: 14, fontFamily: clientFont.semi },
+  pressed: { opacity: 0.78 }
 });

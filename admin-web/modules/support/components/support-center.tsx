@@ -1,16 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { adminLabel } from "@/lib/admin-labels";
+import { hasPermission } from "@/shared/auth/permissions";
+import { useAdminSessionStore } from "@/stores/admin-session-store";
 import { getSupportTickets, updateSupportTicket, type AdminSupportTicket } from "../services/support-service";
 
 const statuses = ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"];
 
 export function SupportCenter() {
+  const canManage = useAdminSessionStore((state) => hasPermission(state.session, "support.manage"));
   const [items, setItems] = useState<AdminSupportTicket[]>([]);
   const [selected, setSelected] = useState<AdminSupportTicket | null>(null);
   const [filter, setFilter] = useState("");
@@ -18,34 +21,50 @@ export function SupportCenter() {
   const [adminNote, setAdminNote] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const requestVersion = useRef(0);
+  const updateInFlight = useRef(false);
 
   const load = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError("");
     try {
       const query = new URLSearchParams();
       if (filter) query.set("status", filter);
       if (search.trim()) query.set("search", search.trim());
-      setItems(await getSupportTickets(query.toString() ? `?${query}` : ""));
+      const tickets = await getSupportTickets(query.toString() ? `?${query}` : "");
+      if (version === requestVersion.current) setItems(tickets);
     } catch (value) {
-      setError(value instanceof Error ? value.message : "Yordam murojaatlarini yuklab bo'lmadi");
+      if (version === requestVersion.current) setError(value instanceof Error ? value.message : "Yordam murojaatlarini yuklab bo'lmadi");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, [filter, search]);
 
   useEffect(() => {
     load();
-  }, [load]);
+    return () => { requestVersion.current += 1; };
+  }, [load, refreshVersion]);
 
   async function changeStatus(status: string) {
-    if (!selected) return;
+    if (!selected || !canManage || updateInFlight.current) return;
+    const ticketId = selected.id;
+    const note = adminNote;
+    updateInFlight.current = true;
+    setUpdating(true);
+    setError("");
     try {
-      await updateSupportTicket(selected.id, status, adminNote);
-      await load();
-      setSelected((current) => current ? { ...current, status, adminNote } : current);
+      await updateSupportTicket(ticketId, status, note);
+      setItems((current) => current.map((ticket) => ticket.id === ticketId ? { ...ticket, status, adminNote: note } : ticket));
+      setSelected((current) => current?.id === ticketId ? { ...current, status, adminNote: note } : current);
+      setRefreshVersion((current) => current + 1);
     } catch (value) {
       setError(value instanceof Error ? value.message : "Yordam murojaatini yangilab bo'lmadi");
+    } finally {
+      updateInFlight.current = false;
+      setUpdating(false);
     }
   }
 
@@ -61,7 +80,7 @@ export function SupportCenter() {
             </select>
             <Button onClick={load} disabled={loading}>{loading ? "Yuklanmoqda..." : "Filtrlash"}</Button>
           </div>
-          {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
+          {error ? <p className="mb-3 text-sm text-danger" role="alert">{error}</p> : null}
           <div className="space-y-2">
             {items.map((ticket) => (
               <button
@@ -89,11 +108,11 @@ export function SupportCenter() {
               <div className="text-sm"><b>Sabab:</b> {selected.reason}</div>
               <div className="rounded-md bg-muted p-3 text-sm">{selected.message || "Xabar kiritilmagan."}</div>
               {selected.order ? <div className="text-sm"><b>Buyurtma:</b> {selected.order.publicCode} · {adminLabel(selected.order.status)}</div> : null}
-              <textarea className="min-h-28 w-full rounded-md border bg-card p-3 text-sm" value={adminNote} onChange={(event) => setAdminNote(event.target.value)} placeholder="Ichki admin izohi" />
+              <textarea disabled={!canManage || updating} className="min-h-28 w-full rounded-md border bg-card p-3 text-sm" value={adminNote} onChange={(event) => setAdminNote(event.target.value)} placeholder="Ichki admin izohi" />
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => changeStatus("IN_PROGRESS")}>Jarayonga olish</Button>
-                <Button variant="outline" onClick={() => changeStatus("RESOLVED")}>Hal qilish</Button>
-                <Button variant="outline" onClick={() => changeStatus("CLOSED")}>Yopish</Button>
+                <Button disabled={!canManage || updating} variant="outline" onClick={() => changeStatus("IN_PROGRESS")}>Jarayonga olish</Button>
+                <Button disabled={!canManage || updating} variant="outline" onClick={() => changeStatus("RESOLVED")}>Hal qilish</Button>
+                <Button disabled={!canManage || updating} variant="outline" onClick={() => changeStatus("CLOSED")}>Yopish</Button>
               </div>
             </div>
           )}

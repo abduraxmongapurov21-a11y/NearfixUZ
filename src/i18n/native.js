@@ -1,5 +1,5 @@
 import React, { forwardRef } from "react";
-import { Alert as NativeAlert, Text as NativeText, TextInput as NativeTextInput } from "react-native";
+import { Alert as NativeAlert, Platform, Text as NativeText, TextInput as NativeTextInput } from "react-native";
 import { useTranslation } from "react-i18next";
 import { translateCopy } from "./index";
 
@@ -40,6 +40,20 @@ function translateButtons(buttons) {
 }
 
 export const Alert = Object.freeze({
+  confirm(title, message, buttons, options) {
+    if (Platform.OS === "web") {
+      if (typeof globalThis.confirm !== "function") return;
+      let confirmed;
+      try {
+        confirmed = globalThis.confirm([translateCopy(title), translateCopy(message)].filter(Boolean).join("\n\n"));
+      } catch {
+        return;
+      }
+      const button = buttons?.find((item) => confirmed === true ? item.style !== "cancel" : item.style === "cancel");
+      return button?.onPress?.();
+    }
+    return NativeAlert.alert(translateCopy(title), translateCopy(message), translateButtons(buttons), options);
+  },
   alert(title, message, buttons, options) {
     return NativeAlert.alert(translateCopy(title), translateCopy(message), translateButtons(buttons), options);
   },

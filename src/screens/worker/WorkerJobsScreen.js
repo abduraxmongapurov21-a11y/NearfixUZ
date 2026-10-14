@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useOrderRefresh } from "../../hooks/useOrderRefresh";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { ArrowRight, CheckCircle2, Clock3, MapPin, Plus, SlidersHorizontal, Star } from "lucide-react-native";
 import { ActiveJobCard } from "../../components/executor/ActiveJobCard";
@@ -41,9 +42,11 @@ export function WorkerJobsScreen({ navigation, route }) {
   const [cancellingActiveJob, setCancellingActiveJob] = useState(false);
   const canAccept = status === WORKER_STATUS.AVAILABLE && !activeJob;
 
-  useEffect(() => {
-    syncWorkerFromApi();
-  }, [syncWorkerFromApi]);
+  const refreshOrders = useCallback((context) => {
+    return syncWorkerFromApi(context);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- A new notification target must refresh this tab while already focused.
+  }, [syncWorkerFromApi, route?.params?.orderId]);
+  useOrderRefresh(refreshOrders, "worker");
 
   useEffect(() => {
     const targetOrderId = route?.params?.orderId;
@@ -261,7 +264,7 @@ function JobCard({
   const initials = getInitials(clientName);
   const service = job.service || job.problemTitle || job.title;
   const summary = job.problemSummary || job.problemDescription;
-  const scheduledAt = job.createdAt || job.date;
+  const scheduledAt = job.date || job.createdAt;
   const price = job.estimatedPayment || job.amount || job.price;
   const avatarBg = job.avatarBg || avatarPalette[index % avatarPalette.length].avatarBg;
   const avatarColor = job.avatarColor || avatarPalette[index % avatarPalette.length].avatarColor;

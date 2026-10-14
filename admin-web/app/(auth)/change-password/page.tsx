@@ -64,15 +64,17 @@ export default function ChangePasswordPage() {
 
     setError("");
     setIsSubmitting(true);
+    const submittedToken = session.token;
     try {
-      await changeAdminPassword(session.token, { currentPassword, newPassword });
+      await changeAdminPassword(submittedToken, { currentPassword, newPassword });
+      if (useAdminSessionStore.getState().session?.token !== submittedToken) return;
       logout();
       window.localStorage.setItem("nearfix-admin-flash", "Parol o'zgartirildi. Yangi parol bilan qayta kiring.");
       router.replace("/login");
     } catch (error) {
-      setError(changePasswordErrorMessage(error));
+      if (useAdminSessionStore.getState().session?.token === submittedToken) setError(changePasswordErrorMessage(error));
     } finally {
-      setIsSubmitting(false);
+      if (useAdminSessionStore.getState().session?.token === submittedToken) setIsSubmitting(false);
     }
   }
 
@@ -108,6 +110,9 @@ export default function ChangePasswordPage() {
             {error ? <p className="text-sm text-danger">{error}</p> : null}
             <Button className="w-full" disabled={isSubmitting || !currentPassword || !newPassword} type="submit">
               {isSubmitting ? "Saqlanmoqda..." : "Parolni o'zgartirish"}
+            </Button>
+            <Button className="w-full" onClick={() => { logout(); router.replace("/login"); }} type="button" variant="outline">
+              Chiqish
             </Button>
           </form>
         </CardContent>

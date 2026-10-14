@@ -1,4 +1,7 @@
 node_modules/
+/artifacts/
+*.tsbuildinfo
+.eas/.env/
 .serena/
 /android/
 /ios/

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { authorizeTestProcess, isolationClaim } from "./test-isolation.js";
+import { localAuditDatabaseSuites } from "./local-audit-suites.js";
 
 // Fake configuration and grant/connection spies only. No DB client is imported.
 const fakeDatabase = `nearfix_chat_test_${"a".repeat(32)}`;
@@ -48,7 +49,7 @@ console.log("[F2.1] PASS negative: unconfirmed/mismatched/replayed grant and cha
 // Exercise the actual guarded entrypoints with no runner, using fake targets.
 // A net spy aborts any attempted TCP connection without opening a socket.
 const probe = 'import net from "node:net"; const original=net.Socket.prototype.connect; net.Socket.prototype.connect = function(...args){const first=Array.isArray(args[0])?args[0][0]:args[0]; if(typeof first === "number" || (first && typeof first === "object" && "port" in first) || (typeof first === "string" && /^[0-9]+$/.test(first))){process.stderr.write("CONNECTION_SPY_CALLED"); process.exit(91);} return original.apply(this,args);};';
-for (const script of ["chat-read-compat-http-tests", "chat-sync-http-tests", "chat-mobile-state-tests", "chat-mobile-runtime", "chat-test-fixture", "notification-rating-v1-tests", "chat-privacy-http-tests", "password-auth-tests", "unified-auth-api-tests", "order-expiry-http-tests", "order-lifecycle-tests", "order-capability-tests", "worker-created-order-tests", "order-location-snapshot-tests", "order-mobile-runtime"]) {
+for (const script of new Set([...localAuditDatabaseSuites, "chat-mobile-runtime", "chat-test-fixture", "order-mobile-runtime"])) {
   const env = { ...process.env, ...base }; delete env.NODE_OPTIONS; delete env.DOTENV_CONFIG_OVERRIDE;
   const child = spawnSync(process.execPath, ["--import", `data:text/javascript,${encodeURIComponent(probe)}`, "--import", "tsx", `scripts/${script}.ts`], { env, encoding: "utf8", timeout: 15000, windowsHide: true });
   assert.equal(child.status, 1, `${script} must reject direct invocation`);

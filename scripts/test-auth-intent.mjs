@@ -16,6 +16,9 @@ const booking = sanitizePendingIntent({
   token: "must-drop"
 });
 assert.deepEqual(booking, { kind: "BOOKING", workerId: "worker-public-id" });
+assert.deepEqual(sanitizePendingIntent({ kind: "BOOKING", workerId: " worker-id ", categoryId: " electric ", addressId: "drop" }), { kind: "BOOKING", workerId: "worker-id", categoryId: "electric" }, "auth resume must preserve the selected service of a multi-category worker");
+assert.deepEqual(sanitizePendingIntent({ kind: "BOOKING", workerId: "worker-id", categoryId: { id: "unsafe" } }), { kind: "BOOKING", workerId: "worker-id" });
+assert.deepEqual(sanitizePendingIntent({ kind: "PROTECTED_ROUTE", routeName: "WorkerProfile", workerId: "worker-id", categoryId: "electric" }), { kind: "PROTECTED_ROUTE", routeName: "WorkerProfile", workerId: "worker-id", categoryId: "electric" });
 assert.equal(sanitizePendingIntent({ kind: "BOOKING", workerId: { id: "unsafe-object" } }), null);
 assert.equal(sanitizePendingIntent({ kind: "BOOKING", workerId: "   " }), null);
 assert.equal(sanitizePendingIntent({ kind: "PROTECTED_ROUTE", routeName: "AdminUsers", token: "unsafe" }), null);
@@ -53,6 +56,7 @@ for (const routeName of privateClientRoutes) {
 }
 assert.deepEqual(guestRouteDecision("WorkerProfile"), { allow: true, requireAuthentication: false, intent: null });
 assert.deepEqual(pendingIntentForPrivateRoute("Booking", { workerId: "worker-id" }), { kind: "BOOKING", workerId: "worker-id" });
+assert.deepEqual(pendingIntentForPrivateRoute("Booking", { workerId: "worker-id", categoryId: "electric" }), { kind: "BOOKING", workerId: "worker-id", categoryId: "electric" });
 assert.deepEqual(pendingIntentForPrivateRoute("ChatThread", { room: { id: "must-drop" } }), { kind: "PROTECTED_ROUTE", routeName: "ChatsTab" });
 assert.deepEqual(pendingIntentForPrivateRoute("MapPicker", { coordinates: { lat: 1, lng: 2 } }), { kind: "PROTECTED_ROUTE", routeName: "ProfileTab" });
 assert.equal(pendingIntentForPrivateRoute("WorkerProfile", { workerId: "public" }), null);

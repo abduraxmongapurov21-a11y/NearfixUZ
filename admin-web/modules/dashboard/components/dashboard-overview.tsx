@@ -3,11 +3,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/shared/components/empty-state";
 import { StatCard } from "@/shared/components/stat-card";
+import { TableLoadState } from "@/shared/components/filter-bar";
 import { adminLabel } from "@/lib/admin-labels";
 import { useDashboardSummary } from "../hooks/use-dashboard-summary";
 
 export function DashboardOverview() {
-  const { data, isLoading } = useDashboardSummary();
+  const { data, isLoading, error, refetch } = useDashboardSummary();
+
+  if (error) return <TableLoadState error={error} isPending={false} onRetry={() => void refetch()} />;
 
   if (isLoading || !data) {
     return (

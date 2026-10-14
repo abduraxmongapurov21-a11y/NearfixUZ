@@ -61,7 +61,16 @@ export const catalogWorkersQuerySchema = z.object({
   category: z.string().min(1).max(80).optional(),
   categoryId: z.string().min(1).max(191).optional(),
   originAddressId: z.string().min(1).max(191).optional(),
+  originLat: z.union([z.number(), z.string().trim().min(1)]).pipe(z.coerce.number().finite().min(-90).max(90)).optional(),
+  originLng: z.union([z.number(), z.string().trim().min(1)]).pipe(z.coerce.number().finite().min(-180).max(180)).optional(),
   sort: z.enum(["nearest"]).optional()
+}).superRefine((value, context) => {
+  if ((value.originLat !== undefined) !== (value.originLng !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["originLat"], message: "Origin coordinates must be provided together" });
+  }
+  if (value.originAddressId && (value.originLat !== undefined || value.originLng !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["originAddressId"], message: "Choose one catalog origin" });
+  }
 });
 
 export const updateAvailabilitySchema = z.object({

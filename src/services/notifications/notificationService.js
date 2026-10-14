@@ -20,12 +20,15 @@ export async function getOrCreatePushDeviceId() {
   return deviceId;
 }
 
-export async function fetchNotificationsApi(token) {
+export async function fetchNotificationsApi(token, { cursor, limit = 100 } = {}) {
   return apiRequest(async () => {
-    const payload = await httpAuthRequest("/notifications", { token });
+    const query = `limit=${encodeURIComponent(limit)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const payload = await httpAuthRequest(`/notifications?${query}`, { token });
     return {
       ok: true,
-      notifications: payload.notifications || []
+      notifications: payload.notifications || [],
+      nextCursor: payload.nextCursor || null,
+      unreadCount: typeof payload.unreadCount === "number" ? payload.unreadCount : undefined
     };
   });
 }
@@ -75,6 +78,7 @@ export async function registerPushTokenApi(token, isCurrent = () => true) {
       await Notifications.setNotificationChannelAsync("orders", {
         name: "NearFIX buyurtma va chatlar",
         importance: Notifications.AndroidImportance.HIGH,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         vibrationPattern: [0, 250, 180, 250],
         lightColor: "#0F719D",
         sound: "default"

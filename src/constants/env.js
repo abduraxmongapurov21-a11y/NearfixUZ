@@ -1,29 +1,10 @@
-const LOCAL_DEVELOPMENT_HOSTS = new Set(["10.0.2.2", "127.0.0.1", "localhost", "::1"]);
-const appEnvironment = process.env.EXPO_PUBLIC_APP_ENV?.trim();
-const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "");
+import { resolveMobileRuntimeConfig } from "./mobileRuntimeConfig";
 
-if (!appEnvironment || !["development", "production"].includes(appEnvironment)) {
-  throw new Error("EXPO_PUBLIC_APP_ENV must be explicitly set to development or production.");
-}
-
-if (!configuredApiBaseUrl) {
-  throw new Error(`EXPO_PUBLIC_API_BASE_URL is required for ${appEnvironment}. Production fallback is disabled.`);
-}
-
-let parsedApiUrl;
-try {
-  parsedApiUrl = new URL(configuredApiBaseUrl);
-} catch {
-  throw new Error("EXPO_PUBLIC_API_BASE_URL must be a valid absolute URL.");
-}
-
-if (appEnvironment === "development" && !LOCAL_DEVELOPMENT_HOSTS.has(parsedApiUrl.hostname)) {
-  throw new Error("Development API must use localhost, loopback, or the Android emulator host bridge.");
-}
-
-if (appEnvironment === "production" && parsedApiUrl.protocol !== "https:") {
-  throw new Error("Production API must use HTTPS.");
-}
+// Keep direct process.env property reads so Expo inlines the public build values.
+const { appEnvironment, apiBaseUrl: configuredApiBaseUrl } = resolveMobileRuntimeConfig({
+  EXPO_PUBLIC_APP_ENV: process.env.EXPO_PUBLIC_APP_ENV,
+  EXPO_PUBLIC_API_BASE_URL: process.env.EXPO_PUBLIC_API_BASE_URL
+});
 
 export const env = {
   appEnvironment,

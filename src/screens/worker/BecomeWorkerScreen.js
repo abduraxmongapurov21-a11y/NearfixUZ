@@ -1,15 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, AppState, Image, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { ArrowLeft, Camera, CheckCircle2 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
-import { PrimaryButton, SecondaryButton } from "../../components/ui/Button";
+import { PrimaryButton } from "../../components/ui/Button";
 import { ROUTES } from "../../constants/routes";
 import { uploadMediaApi } from "../../services/media/mediaService";
 import {
   fetchWorkerApplicationApi,
-  saveWorkerApplicationApi,
   submitWorkerApplicationApi
 } from "../../services/workers/workerService";
 import { workerApplicationStatusCopy } from "../../services/workers/workerApplicationState.mjs";
@@ -67,6 +67,13 @@ async function prepareWorkerProfileImage(asset) {
   };
 }
 
+async function refreshWorkerSession() {
+  const result = await useAuthStore.getState().refreshSession();
+  if (!result.ok && !result.stale) {
+    Alert.alert("Usta profili tayyor", "Usta rejimini ochish uchun qayta kirib ko'ring.");
+  }
+}
+
 export function BecomeWorkerScreen({ navigation }) {
   const { i18n } = useTranslation();
   const session = useAuthStore((state) => state.session);
@@ -74,6 +81,7 @@ export function BecomeWorkerScreen({ navigation }) {
   const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
   const categoryStatus = useClientStore((state) => state.categoryStatus);
   const categoryError = useClientStore((state) => state.categoryError);
+  const categoryRefreshing = useClientStore((state) => state.categoryRefreshing);
   const [form, setForm] = useState(emptyForm);
   const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +89,15 @@ export function BecomeWorkerScreen({ navigation }) {
   const [uploading, setUploading] = useState(false);
   const requestGeneration = useRef(0);
   const scrollRef = useRef(null);
-  const locked = application?.state === "SUBMITTED" || application?.state === "APPROVED";
+  const locked = application?.state === "APPROVED" || application?.state === "SUSPENDED";
+
+  useFocusEffect(useCallback(() => {
+    syncCategoriesFromApi();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") syncCategoriesFromApi();
+    });
+    return () => subscription.remove();
+  }, [syncCategoriesFromApi]));
 
   useEffect(() => {
     const generation = ++requestGeneration.current;
@@ -96,6 +112,9 @@ export function BecomeWorkerScreen({ navigation }) {
       if (result.ok && result.application) {
         const item = result.application;
         setApplication(item);
+        if (item.state === "APPROVED") {
+          refreshWorkerSession();
+        }
         const availableCategories = useClientStore.getState().categories;
         const legacyValues = item.professions?.length ? item.professions : [item.profession].filter(Boolean);
         const categoryIds = item.categoryIds?.length
@@ -165,30 +184,28 @@ export function BecomeWorkerScreen({ navigation }) {
     else Alert.alert("Rasm yuklanmadi", upload.message || "Qayta urinib ko'ring.");
   }
 
-  async function perform(submit) {
+  async function startWorking() {
     if (!session?.token || saving || locked) return;
-    if (submit) {
-      const missing = missingWorkerApplicationFields(form);
-      if (missing.length) {
-        Alert.alert("Ariza to'liq emas", `Quyidagi maydonlarni to'ldiring: ${missing.join(", ")}.`);
-        return;
-      }
+    const missing = missingWorkerApplicationFields(form);
+    if (missing.length) {
+      Alert.alert("Ariza to'liq emas", `Quyidagi maydonlarni to'ldiring: ${missing.join(", ")}.`);
+      return;
     }
     const identity = useAuthStore.getState().captureAuthRequest(session.token);
     const generation = ++requestGeneration.current;
     setSaving(true);
-    const payload = workerApplicationPayload(form, !submit);
-    const result = submit
-      ? await submitWorkerApplicationApi(session.token, payload)
-      : await saveWorkerApplicationApi(session.token, payload);
+    const payload = workerApplicationPayload(form);
+    const result = await submitWorkerApplicationApi(session.token, payload);
     if (generation !== requestGeneration.current || !useAuthStore.getState().isAuthRequestCurrent(identity)) return;
     setSaving(false);
     if (!result.ok) {
-      Alert.alert(submit ? "Ariza yuborilmadi" : "Ariza saqlanmadi", workerApplicationErrorMessage(result));
+      Alert.alert("Ariza yuborilmadi", workerApplicationErrorMessage(result));
       return;
     }
     setApplication(result.application);
-    Alert.alert(submit ? "Ariza yuborildi" : "Ariza saqlandi", submit ? "Admin tekshiruvidan keyin sizga xabar beramiz." : "Keyinroq davom ettirishingiz mumkin.");
+    if (result.application?.state === "APPROVED") {
+      await refreshWorkerSession();
+    }
   }
 
   if (loading) return <View style={styles.loading}><ActivityIndicator color={colors.primary} /></View>;
@@ -197,7 +214,7 @@ export function BecomeWorkerScreen({ navigation }) {
     <View style={styles.screen}>
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.back}><ArrowLeft color={colors.text} size={22} /></Pressable>
-        <Text style={styles.title}>Usta arizasi</Text><View style={styles.back} />
+        <Text style={styles.title}>Usta sifatida ro'yxatdan o'tish</Text><View style={styles.back} />
       </View>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
       <ScrollView
@@ -206,6 +223,7 @@ export function BecomeWorkerScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         automaticallyAdjustKeyboardInsets
+        refreshControl={<RefreshControl refreshing={categoryRefreshing} onRefresh={syncCategoriesFromApi} tintColor={colors.primary} colors={[colors.primary]} />}
       >
         {application?.state ? (
           <View style={styles.status}><CheckCircle2 color={colors.primary} size={20} /><Text style={styles.statusText}>Ariza holati: {workerApplicationStatusCopy(application.state)}</Text></View>
@@ -226,7 +244,8 @@ export function BecomeWorkerScreen({ navigation }) {
         <Field label="Tajriba (yil)" value={form.experienceYears} onChangeText={(value) => update("experienceYears", value.replace(/\D/g, ""))} keyboardType="number-pad" editable={!locked} />
         <Field label="Boshlang'ich narx" value={formatGroupedDigits(form.basePrice)} onChangeText={(value) => update("basePrice", normalizeDigits(value))} keyboardType="number-pad" editable={!locked} />
         <Field label="O'zingiz haqingizda" value={form.bio} onChangeText={(value) => update("bio", value)} onFocus={revealBioAboveKeyboard} multiline editable={!locked} />
-        {!locked ? <><SecondaryButton disabled={saving} title="Arizani saqlash" onPress={() => perform(false)} /><PrimaryButton disabled={saving || uploading} title={saving ? "Saqlanmoqda..." : "Arizani yuborish"} onPress={() => perform(true)} /></> : null}
+        {!locked ? <PrimaryButton disabled={saving || uploading} title={saving ? "Yuborilmoqda..." : "Usta bo'lib ishlashni boshlash"} onPress={startWorking} /> : null}
+        {application?.state === "APPROVED" ? <PrimaryButton title="Usta rejimini ochish" onPress={refreshWorkerSession} /> : null}
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

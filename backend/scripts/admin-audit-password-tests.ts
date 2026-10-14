@@ -1,3 +1,4 @@
+import "./test-isolation-preload.js";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { AdminAccountRole, AdminAccountStatus, UserRole } from "@prisma/client";
@@ -150,7 +151,11 @@ async function main() {
     assert.equal(mustChangeMe.payload.user.mustChangePassword, true);
 
     const mustChangeAuditAccess = await request("GET", "/admin/audit-logs", mustChangeToken);
-    assert.equal(mustChangeAuditAccess.response.status, 200);
+    assert.equal(mustChangeAuditAccess.response.status, 403);
+    assert.equal(mustChangeAuditAccess.payload.code, "ADMIN_PASSWORD_CHANGE_REQUIRED");
+    const mustChangeAdminsAccess = await request("GET", "/admin/admins", mustChangeToken);
+    assert.equal(mustChangeAdminsAccess.response.status, 403);
+    assert.equal(mustChangeAdminsAccess.payload.code, "ADMIN_PASSWORD_CHANGE_REQUIRED");
 
     const wrongCurrentPassword = await request("POST", "/admin/auth/change-password", mustChangeToken, {
       currentPassword: "WrongPassword-123",
@@ -172,6 +177,7 @@ async function main() {
     const changedMe = await request("GET", "/admin/auth/me", changedLoginToken);
     assert.equal(changedMe.response.status, 200);
     assert.equal(changedMe.payload.user.mustChangePassword, false);
+    assert.equal((await request("GET", "/admin/audit-logs", changedLoginToken)).response.status, 200);
 
     const createAdmin = await request("POST", "/admin/admins", envToken, {
       username: "audit-created",

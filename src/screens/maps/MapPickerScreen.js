@@ -18,6 +18,12 @@ import {
 import { loadYandexMapKit } from "../../services/maps/yandexMapKit";
 import { IOS_YANDEX_LOCALE_RELAUNCH_REQUIRED } from "../../services/maps/yandexLocaleLifecycle.mjs";
 import { useUiStore } from "../../store/uiStore";
+import { useAuthStore } from "../../store/authStore";
+import { normalizeExperienceMode } from "../../navigation/experienceMode.mjs";
+import { useTranslation } from "react-i18next";
+import { ClientHeader } from "../../components/client/ClientHeader";
+import { GlassSurface } from "../../components/client/GlassSurface";
+import { colors as clientColors, font as clientFont, shadow as clientShadow } from "../../theme/clientTheme";
 
 const TASHKENT_REGION = {
   latitude: 41.311081,
@@ -45,6 +51,11 @@ function toCoordinate(region) {
 }
 
 export function MapPickerScreen({ navigation, route, onSelect }) {
+  const { t } = useTranslation();
+  const session = useAuthStore((state) => state.session);
+  const isClient = normalizeExperienceMode(session?.role, session?.experienceMode) === "client";
+  const styles = isClient ? clientMapStyles : workerMapStyles;
+  const FooterSurface = isClient ? GlassSurface : View;
   const mapRef = useRef(null);
   const mountedRef = useRef(true);
   const geocoderRef = useRef(null);
@@ -287,9 +298,11 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
         return;
       }
 
-      navigation.navigate(route.params.returnTo, {
-        [route.params.returnParamKey || "selectedLocation"]: confirmedSelection
-      });
+      navigation.popTo(
+        route.params.returnTo,
+        { [route.params.returnParamKey || "selectedLocation"]: confirmedSelection },
+        { merge: true }
+      );
       return;
     }
 
@@ -297,6 +310,15 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
   }
 
   if (Platform.OS === "web") {
+    if (isClient) {
+      return (
+        <ClientMapState
+          navigation={navigation}
+          title="Xarita mobil ilovada ishlaydi"
+          text="Manzilni xaritada tanlash uchun NearFIX mobil ilovasidan foydalaning."
+        />
+      );
+    }
     return (
       <View style={styles.unsupported}>
         <Text style={styles.unsupportedTitle}>Xarita mobil ilovada ishlaydi</Text>
@@ -308,6 +330,15 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
   }
 
   if (!mapKit.ready) {
+    if (isClient) {
+      return (
+        <ClientMapState
+          navigation={navigation}
+          title="Xarita vaqtincha mavjud emas"
+          text="Manzilni tanlash uchun keyinroq qayta urinib ko'ring."
+        />
+      );
+    }
     return (
       <View style={styles.unsupported}>
         <Text style={styles.unsupportedTitle}>Yandex xarita sozlanmagan</Text>
@@ -324,6 +355,16 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
   }
 
   if (!mapKitInitialized || mapKitInitializationFailed) {
+    if (isClient) {
+      return (
+        <ClientMapState
+          navigation={navigation}
+          loading={!mapKitInitializationFailed}
+          title={mapKitInitializationFailed ? "Xarita vaqtincha mavjud emas" : "Xarita yuklanmoqda..."}
+          text={mapKitInitializationFailed ? "Manzilni tanlash uchun keyinroq qayta urinib ko'ring." : undefined}
+        />
+      );
+    }
     return (
       <View style={styles.unsupported}>
         {mapKitInitializationFailed ? (
@@ -350,32 +391,77 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
 
       <View pointerEvents="none" style={styles.centerPinWrap}>
         <View style={styles.centerPinShadow}>
-          <MapPin size={44} color={colors.primary} fill={colors.primary} strokeWidth={2.4} />
+          <MapPin
+            size={44}
+            color={isClient ? clientColors.white : colors.primary}
+            fill={isClient ? clientColors.primary : colors.primary}
+            strokeWidth={isClient ? 1.8 : 2.4}
+          />
         </View>
         <View style={styles.centerDot} />
       </View>
 
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.iconButton}>
-          <ArrowLeft size={22} color={colors.text} strokeWidth={2.7} />
-        </Pressable>
-        <Text style={styles.headerTitle}>{route?.params?.title || "Lokatsiyani tanlang"}</Text>
-        <Pressable onPress={centerOnCurrentLocation} style={styles.iconButton}>
-          {loadingLocation ? (
-            <ActivityIndicator color={colors.primary} size="small" />
-          ) : (
-            <LocateFixed size={22} color={colors.primary} strokeWidth={2.7} />
-          )}
-        </Pressable>
-      </View>
+      {isClient ? (
+        <View style={styles.header}>
+          <GlassSurface style={styles.iconSurface}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Orqaga")}
+              onPress={() => navigation.goBack()}
+              style={styles.glassButton}
+            >
+              <ArrowLeft size={22} color={clientColors.text} strokeWidth={1.8} />
+            </Pressable>
+          </GlassSurface>
+          <GlassSurface style={styles.titleSurface}>
+            <Text style={styles.headerTitle} numberOfLines={2}>
+              {route?.params?.title || "Manzil tanlang"}
+            </Text>
+          </GlassSurface>
+          <GlassSurface style={styles.iconSurface}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Joriy joylashuvga o'tish")}
+              accessibilityState={{ busy: loadingLocation }}
+              onPress={centerOnCurrentLocation}
+              style={styles.glassButton}
+            >
+              {loadingLocation ? (
+                <ActivityIndicator color={clientColors.primary} size="small" />
+              ) : (
+                <LocateFixed size={22} color={clientColors.primary} strokeWidth={1.8} />
+              )}
+            </Pressable>
+          </GlassSurface>
+        </View>
+      ) : (
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} style={styles.iconButton}>
+            <ArrowLeft size={22} color={colors.text} strokeWidth={2.7} />
+          </Pressable>
+          <Text style={styles.headerTitle}>{route?.params?.title || "Lokatsiyani tanlang"}</Text>
+          <Pressable onPress={centerOnCurrentLocation} style={styles.iconButton}>
+            {loadingLocation ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <LocateFixed size={22} color={colors.primary} strokeWidth={2.7} />
+            )}
+          </Pressable>
+        </View>
+      )}
 
-      <View style={styles.footer}>
+      <FooterSurface style={styles.footer}>
+        {isClient ? <Text style={styles.selectionHint}>Nuqtani tanlash uchun xaritani siljiting.</Text> : null}
         <View style={styles.coordinateRow}>
           <View style={styles.coordinateIcon}>
             {addressState.status === ADDRESS_STATUS.LOADING ? (
-              <ActivityIndicator color={colors.primary} size="small" />
+              <ActivityIndicator color={isClient ? clientColors.primary : colors.primary} size="small" />
             ) : (
-              <Crosshair size={19} color={colors.primary} strokeWidth={2.7} />
+              <Crosshair
+                size={19}
+                color={isClient ? clientColors.primary : colors.primary}
+                strokeWidth={isClient ? 1.8 : 2.7}
+              />
             )}
           </View>
           <View style={styles.coordinateBody}>
@@ -393,12 +479,43 @@ export function MapPickerScreen({ navigation, route, onSelect }) {
           </View>
         </View>
         <Pressable
+          {...(isClient
+            ? {
+                accessibilityRole: "button",
+                accessibilityLabel: t(confirming ? "Manzil tekshirilmoqda..." : "Manzilni tasdiqlash"),
+                accessibilityState: { disabled: confirming, busy: confirming }
+              }
+            : {})}
           onPress={handleConfirm}
           disabled={confirming}
           style={({ pressed }) => [styles.confirmButton, (pressed || confirming) && styles.pressed]}
         >
-          <Text style={styles.confirmText}>{confirming ? "Manzil tekshirilmoqda..." : "Tanlash"}</Text>
+          {isClient && confirming ? <ActivityIndicator color={clientColors.white} size="small" /> : null}
+          <Text style={styles.confirmText}>
+            {confirming ? "Manzil tekshirilmoqda..." : isClient ? "Manzilni tasdiqlash" : "Tanlash"}
+          </Text>
         </Pressable>
+      </FooterSurface>
+    </View>
+  );
+}
+
+function ClientMapState({ navigation, title, text, loading = false }) {
+  return (
+    <View style={clientMapStyles.screen}>
+      <ClientHeader title="Manzil tanlang" onBack={() => navigation.goBack()} />
+      <View style={clientMapStyles.stateBody}>
+        <View style={clientMapStyles.stateCard}>
+          <View style={clientMapStyles.stateIcon}>
+            {loading ? (
+              <ActivityIndicator color={clientColors.primary} />
+            ) : (
+              <MapPin size={30} color={clientColors.primary} strokeWidth={1.8} />
+            )}
+          </View>
+          <Text style={clientMapStyles.stateTitle}>{title}</Text>
+          {text ? <Text style={clientMapStyles.stateText}>{text}</Text> : null}
+        </View>
       </View>
     </View>
   );
@@ -557,3 +674,132 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   }
 });
+
+const workerMapStyles = styles;
+const clientMapStyles = {
+  ...workerMapStyles,
+  ...StyleSheet.create({
+    screen: { flex: 1, backgroundColor: clientColors.background },
+    header: { position: "absolute", top: 18, left: 18, right: 18, flexDirection: "row", alignItems: "center", gap: 10 },
+    iconSurface: { width: 46, height: 46, borderRadius: 17, ...clientShadow },
+    glassButton: { flex: 1, alignItems: "center", justifyContent: "center" },
+    titleSurface: {
+      flex: 1,
+      minHeight: 46,
+      borderRadius: 17,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      ...clientShadow
+    },
+    headerTitle: {
+      color: clientColors.text,
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: clientFont.semi,
+      textAlign: "center"
+    },
+    centerPinShadow: {
+      shadowColor: clientColors.text,
+      shadowOpacity: 0.18,
+      shadowOffset: { width: 0, height: 6 },
+      shadowRadius: 10,
+      elevation: 5
+    },
+    centerDot: {
+      width: 8,
+      height: 8,
+      marginTop: -3,
+      borderRadius: 4,
+      backgroundColor: clientColors.white,
+      borderWidth: 2,
+      borderColor: clientColors.primary
+    },
+    footer: {
+      position: "absolute",
+      left: 18,
+      right: 18,
+      bottom: 18,
+      borderRadius: 24,
+      padding: 18,
+      gap: 14,
+      borderColor: "rgba(255,255,255,0.95)",
+      ...clientShadow
+    },
+    selectionHint: {
+      color: clientColors.muted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: clientFont.regular,
+      textAlign: "center"
+    },
+    coordinateRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+    coordinateIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 15,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: clientColors.primarySoft
+    },
+    coordinateBody: { flex: 1, minWidth: 0 },
+    coordinateLabel: { color: clientColors.muted, fontSize: 11, lineHeight: 17, fontFamily: clientFont.medium },
+    coordinateText: {
+      marginTop: 3,
+      color: clientColors.text,
+      fontSize: 14,
+      lineHeight: 21,
+      fontFamily: clientFont.semi
+    },
+    confirmButton: {
+      minHeight: 56,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      flexDirection: "row",
+      gap: 9,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      backgroundColor: clientColors.primary
+    },
+    confirmText: { color: clientColors.white, fontSize: 15, lineHeight: 22, fontFamily: clientFont.semi },
+    stateBody: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 22, paddingBottom: 36 },
+    stateCard: {
+      width: "100%",
+      maxWidth: 420,
+      borderRadius: 24,
+      backgroundColor: clientColors.white,
+      borderWidth: 1,
+      borderColor: clientColors.border,
+      padding: 26,
+      alignItems: "center",
+      ...clientShadow
+    },
+    stateIcon: {
+      width: 66,
+      height: 66,
+      borderRadius: 22,
+      backgroundColor: clientColors.primarySoft,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 19
+    },
+    stateTitle: {
+      color: clientColors.text,
+      fontSize: 21,
+      lineHeight: 29,
+      fontFamily: clientFont.bold,
+      textAlign: "center",
+      letterSpacing: -0.4
+    },
+    stateText: {
+      marginTop: 10,
+      color: clientColors.muted,
+      fontSize: 14,
+      lineHeight: 22,
+      fontFamily: clientFont.regular,
+      textAlign: "center"
+    }
+  })
+};

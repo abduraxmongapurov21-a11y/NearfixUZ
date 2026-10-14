@@ -19,7 +19,7 @@ import {
   getOwnWorkerEarnings,
   getOwnWorkerApplication,
   getOwnWorkerProfile,
-  getOwnWorkerTransactions,
+  getOwnWorkerTransactionsPage,
   setWorkerAvailability,
   saveOwnWorkerApplication,
   submitOwnWorkerApplication,
@@ -37,7 +37,7 @@ function disableRealtimeCaching(response: Response) {
   });
 }
 
-workerRouter.get("/application", authenticate, requireRole("CLIENT"), async (request, response, next) => {
+workerRouter.get("/application", authenticate, async (request, response, next) => {
   try {
     response.json({ ok: true, application: await getOwnWorkerApplication(request.user!.id) });
   } catch (error) {
@@ -55,7 +55,7 @@ workerRouter.put("/application", authenticate, requireRole("CLIENT"), async (req
   }
 });
 
-workerRouter.post("/application/submit", authenticate, requireRole("CLIENT"), async (request, response, next) => {
+workerRouter.post("/application/submit", authenticate, async (request, response, next) => {
   try {
     const input = workerApplicationSubmitSchema.parse(request.body);
     const application = await submitOwnWorkerApplication(request.user!.id, input);
@@ -92,6 +92,8 @@ workerRouter.get("/catalog", (request, response, next) => {
       categoryId: query.categoryId,
       legacyCityId: query.cityId,
       originAddressId: query.originAddressId,
+      originLat: query.originLat,
+      originLng: query.originLng,
       requester: request.user,
       sort: query.sort
     });
@@ -134,11 +136,11 @@ workerRouter.get("/me/earnings", authenticate, requireRole("PROVIDER"), async (r
 
 workerRouter.get("/me/transactions", authenticate, requireRole("PROVIDER"), async (request, response, next) => {
   try {
-    const transactions = await getOwnWorkerTransactions(request.user!.id);
+    const page = await getOwnWorkerTransactionsPage(request.user!.id, request.query);
 
     response.json({
       ok: true,
-      transactions
+      ...page
     });
   } catch (error) {
     next(error);

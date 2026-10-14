@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/shared/components/data-table";
+import { TableLoadState } from "@/shared/components/filter-bar";
 import { hasPermission } from "@/shared/auth/permissions";
 import { useAdminSessionStore } from "@/stores/admin-session-store";
 import { resolveCategoryIcon, resolveCategoryIconLabel } from "../category-icons";
+import { categorySaveErrorMessage, validateCategoryDraft } from "../category-form";
 import { useCategories } from "../hooks/use-categories";
 import { createCategory, deleteCategory, reorderCategories, updateCategory } from "../services/categories-service";
 import type { AdminCategory, CategoryInput } from "../types/category";
@@ -21,7 +23,7 @@ const emptyDraft: CategoryInput = {
 };
 
 export function CategoriesManager() {
-  const { data = { categories: [], iconKeys: [] } } = useCategories();
+  const { data = { categories: [], iconKeys: [] }, error: loadError, isPending, refetch } = useCategories();
   const queryClient = useQueryClient();
   const session = useAdminSessionStore((state) => state.session);
   const canManage = hasPermission(session, "content.manage");
@@ -41,7 +43,7 @@ export function CategoriesManager() {
       ? updateCategory(editingId, { nameUz: draft.nameUz, nameRu: draft.nameRu, nameEn: draft.nameEn, iconKey: draft.iconKey, isActive: draft.isActive })
       : createCategory(draft),
     onSuccess: async () => { setDraft(emptyDraft); setEditingId(null); await refresh(editingId ? "Kategoriya yangilandi." : "Kategoriya yaratildi."); },
-    onError: (value) => setError(value instanceof Error ? value.message : "Kategoriya saqlanmadi")
+    onError: (value) => setError(categorySaveErrorMessage(value))
   });
   const toggleMutation = useMutation({
     mutationFn: (category: AdminCategory) => updateCategory(category.id, { isActive: !category.isActive }),
@@ -59,7 +61,13 @@ export function CategoriesManager() {
     onError: (value) => setError(value instanceof Error ? value.message : "Tartib saqlanmadi")
   });
 
-  function submit(event: FormEvent) { event.preventDefault(); setMessage(null); setError(null); saveMutation.mutate(); }
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    setMessage(null);
+    const validationError = validateCategoryDraft(draft, Boolean(editingId));
+    setError(validationError);
+    if (!validationError) saveMutation.mutate();
+  }
   function edit(category: AdminCategory) {
     setEditingId(category.id);
     setDraft({ slug: category.slug, nameUz: category.nameUz, nameRu: category.nameRu, nameEn: category.nameEn, iconKey: category.iconKey, isActive: category.isActive });
@@ -88,11 +96,12 @@ export function CategoriesManager() {
   const PreviewIcon = resolveCategoryIcon(draft.iconKey);
 
   return <div className="space-y-6">
+    <TableLoadState error={loadError} isPending={isPending} onRetry={() => void refetch()} />
     {message ? <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">{message}</div> : null}
-    {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div> : null}
-    {canManage ? <Card><CardHeader><CardTitle>{editingId ? "Kategoriyani tahrirlash" : "Kategoriya yaratish"}</CardTitle></CardHeader><CardContent>
-      <form className="grid gap-4 md:grid-cols-3" onSubmit={submit}>
-        <label className="space-y-1 text-sm">Slug<Input disabled={Boolean(editingId)} onChange={(e) => setDraft((v) => ({ ...v, slug: e.target.value }))} required value={draft.slug} /></label>
+    {error ? <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div> : null}
+    {canManage && !isPending && !loadError ? <Card><CardHeader><CardTitle>{editingId ? "Kategoriyani tahrirlash" : "Kategoriya yaratish"}</CardTitle></CardHeader><CardContent>
+      <form className="grid gap-4 md:grid-cols-3" noValidate onSubmit={submit}>
+        <label className="space-y-1 text-sm">Slug<Input aria-describedby="category-slug-help" disabled={Boolean(editingId)} onChange={(e) => setDraft((v) => ({ ...v, slug: e.target.value }))} required value={draft.slug} /><span id="category-slug-help" className="block text-xs text-muted-foreground">Kichik lotin harflari, raqamlar va defis (-). Bo'shliqsiz, 2–64 belgi. Masalan: test-slug.</span></label>
         <label className="space-y-1 text-sm">O'zbekcha nomi<Input onChange={(e) => setDraft((v) => ({ ...v, nameUz: e.target.value }))} required value={draft.nameUz} /></label>
         <label className="space-y-1 text-sm">Ruscha nomi<Input onChange={(e) => setDraft((v) => ({ ...v, nameRu: e.target.value }))} required value={draft.nameRu} /></label>
         <label className="space-y-1 text-sm">Inglizcha nomi<Input onChange={(e) => setDraft((v) => ({ ...v, nameEn: e.target.value }))} required value={draft.nameEn} /></label>
@@ -101,6 +110,6 @@ export function CategoriesManager() {
         <div className="flex gap-2 md:col-span-3"><Button disabled={saveMutation.isPending} type="submit">{editingId ? "Saqlash" : "Yaratish"}</Button>{editingId ? <Button onClick={() => { setEditingId(null); setDraft(emptyDraft); }} type="button" variant="outline">Bekor qilish</Button> : null}</div>
       </form>
     </CardContent></Card> : null}
-    <DataTable columns={columns} data={categories} emptyDescription="Birinchi kategoriyani yarating." emptyTitle="Kategoriyalar yo'q" />
+    {!isPending && !loadError ? <DataTable columns={columns} data={categories} emptyDescription="Birinchi kategoriyani yarating." emptyTitle="Kategoriyalar yo'q" /> : null}
   </div>;
 }

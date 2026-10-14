@@ -41,6 +41,10 @@ const envSchema = z
     APP_REVIEW_DEMO_EXTRA_ACCOUNTS_JSON: optionalNonEmptyString,
     PRIVACY_POLICY_URL: optionalUrl,
     TERMS_URL: optionalUrl,
+    PUBLIC_SUPPORT_EMAIL: z.preprocess(
+      (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+      z.string().trim().email().default("possibleuz@gmail.com")
+    ),
     ESKIZ_EMAIL: optionalNonEmptyString,
     ESKIZ_PASSWORD: optionalNonEmptyString,
     ESKIZ_BASE_URL: optionalNonEmptyString,
@@ -133,6 +137,7 @@ export function parseEnv(source: NodeJS.ProcessEnv) {
     APP_REVIEW_DEMO_EXTRA_ACCOUNTS_JSON: source.APP_REVIEW_DEMO_EXTRA_ACCOUNTS_JSON,
     PRIVACY_POLICY_URL: source.PRIVACY_POLICY_URL,
     TERMS_URL: source.TERMS_URL,
+    PUBLIC_SUPPORT_EMAIL: source.PUBLIC_SUPPORT_EMAIL,
     ESKIZ_EMAIL: source.ESKIZ_EMAIL,
     ESKIZ_PASSWORD: source.ESKIZ_PASSWORD,
     ESKIZ_BASE_URL: source.ESKIZ_BASE_URL,

@@ -67,7 +67,7 @@ export function navigateToNotificationTarget(navigation, data, experienceMode) {
     navigation.navigate(target.root, {
       screen: target.screen,
       ...(target.params ? { params: target.params } : {})
-    });
+    }, { pop: true });
     return { ok: true, target };
   } catch {
     return { ok: false, code: "NAVIGATION_FAILED", target };

@@ -1,3 +1,4 @@
+import "./test-isolation-preload.js";
 import {
   ChatParticipantRole,
   ChatRoomType,

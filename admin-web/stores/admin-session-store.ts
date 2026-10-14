@@ -24,11 +24,17 @@ type AdminSessionState = {
   logout: () => void;
 };
 
+let sessionRequestVersion = 0;
+
 export const useAdminSessionStore = create<AdminSessionState>((set, get) => ({
   session: null,
   isSessionReady: false,
-  setSession: (session) => set({ session, isSessionReady: true }),
+  setSession: (session) => {
+    sessionRequestVersion += 1;
+    set({ session, isSessionReady: true });
+  },
   hydrateSession: async () => {
+    const requestVersion = ++sessionRequestVersion;
     const token = window.localStorage.getItem("nearfix-admin-token");
     if (!token) {
       set({ session: null, isSessionReady: true });
@@ -37,6 +43,7 @@ export const useAdminSessionStore = create<AdminSessionState>((set, get) => ({
 
     try {
       const result = await fetchAdminMe(token);
+      if (requestVersion !== sessionRequestVersion) return;
       const role = normalizeAdminRole(result.user.role);
 
       set({
@@ -53,13 +60,16 @@ export const useAdminSessionStore = create<AdminSessionState>((set, get) => ({
         isSessionReady: true
       });
     } catch {
+      if (requestVersion !== sessionRequestVersion) return;
       window.localStorage.removeItem("nearfix-admin-token");
       set({ session: null, isSessionReady: true });
     }
   },
   login: async (username, password) => {
+    const requestVersion = ++sessionRequestVersion;
     try {
       const result = await loginAdmin(username, password);
+      if (requestVersion !== sessionRequestVersion) return { ok: false };
       const role = normalizeAdminRole(result.user.role);
 
       window.localStorage.setItem("nearfix-admin-token", result.token);
@@ -78,6 +88,7 @@ export const useAdminSessionStore = create<AdminSessionState>((set, get) => ({
       });
       return { ok: true };
     } catch {
+      if (requestVersion !== sessionRequestVersion) return { ok: false };
       return { ok: false, message: "Foydalanuvchi nomi yoki parol noto'g'ri." };
     }
   },

@@ -74,7 +74,7 @@ function getStatusMeta(status) {
       return {
         label: "To'ldirilmoqda",
         title: "Profil to'ldirilmoqda",
-        text: "Admin tekshiruvi uchun kerakli ma'lumotlarni kiriting.",
+        text: "Ishlashni boshlash uchun profilni to'ldiring.",
         color: "#F59E0B"
       };
   }
@@ -101,7 +101,6 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   const syncWorkerFromApi = useWorkerStore((state) => state.syncWorkerFromApi);
   const submitWorkerProfile = useWorkerStore((state) => state.submitWorkerProfile);
   const saveServiceLocation = useWorkerStore((state) => state.saveServiceLocation);
-  const clearUserData = useWorkerStore((state) => state.clearUserData);
   const categories = useClientStore((state) => state.categories);
   const syncCategoriesFromApi = useClientStore((state) => state.syncCategoriesFromApi);
   const categoryStatus = useClientStore((state) => state.categoryStatus);
@@ -271,7 +270,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     }
 
     if (!name.trim()) {
-      Alert.alert("Ism kerak", "Admin tekshiruvi uchun ismingizni kiriting.");
+      Alert.alert("Ism kerak", "Profil uchun ismingizni kiriting.");
       return;
     }
 
@@ -286,7 +285,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
     }
 
     if (!profileImageUrl.trim()) {
-      Alert.alert("Profil rasmi kerak", "Admin tekshiruvi uchun profil rasmini yuklang.");
+      Alert.alert("Profil rasmi kerak", "Profil rasmini yuklang.");
       return;
     }
 
@@ -313,7 +312,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
 
     Alert.alert(
       result.ok ? "Yuborildi" : "Xatolik",
-      result.ok ? "Profil ma'lumotlari admin tekshiruviga yuborildi." : result.message || t("Profilni yuborishda xatolik yuz berdi.")
+      result.ok ? "Profil saqlandi. Buyurtma qabul qilish uchun onlayn holatga o'ting." : result.message || t("Profilni yuborishda xatolik yuz berdi.")
     );
   }
 
@@ -358,7 +357,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
   }
 
   function handleLogout() {
-    Alert.alert("Chiqish", "Usta profilidan chiqishni tasdiqlaysizmi?", [
+    Alert.confirm("Chiqish", "Usta profilidan chiqishni tasdiqlaysizmi?", [
       { text: "Bekor qilish", style: "cancel" },
       {
         text: "Chiqish",
@@ -409,7 +408,6 @@ export function WorkerProfileManageScreen({ navigation, route }) {
       return;
     }
 
-    clearUserData();
     Alert.alert("Akkaunt o'chirildi", "Shaxsiy ma'lumotlaringiz anonimlashtirildi.");
   }
 
@@ -495,7 +493,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
               <Text style={styles.photoText}>
                 {isApproved
                   ? "Yangi rasm darhol saqlanadi, admin tasdig'i talab qilinmaydi."
-                  : "Admin tekshiruvi uchun aniq profil rasmi kerak."}
+                  : "Profil uchun aniq rasm kerak."}
               </Text>
               <Pressable
                 onPress={handlePickImage}
@@ -666,7 +664,7 @@ export function WorkerProfileManageScreen({ navigation, route }) {
             style={[styles.submitButton, (saving || locationSaving) && styles.controlDisabled]}
           >
             <CheckCircle2 size={21} color={colors.white} strokeWidth={2.6} />
-            <Text style={styles.submitText}>{saving ? "Yuborilmoqda..." : "Admin tekshiruviga yuborish"}</Text>
+            <Text style={styles.submitText}>{saving ? "Yuborilmoqda..." : "Profilni saqlash"}</Text>
           </Pressable>
         ) : null}
       </ScrollView>

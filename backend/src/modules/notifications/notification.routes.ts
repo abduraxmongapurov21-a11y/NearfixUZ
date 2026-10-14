@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { authenticate } from "../auth/middleware/auth.middleware.js";
-import { deletePushTokenSchema, pushTokenSchema } from "./notification.contracts.js";
+import { deletePushTokenSchema, notificationsQuerySchema, pushTokenSchema } from "./notification.contracts.js";
 import {
   countUnreadNotifications,
   deletePushToken,
-  listNotifications,
+  listNotificationsPage,
   markNotificationRead,
   savePushToken
 } from "./notification.service.js";
@@ -15,8 +15,12 @@ notificationRouter.use(authenticate);
 
 notificationRouter.get("/", async (request, response, next) => {
   try {
-    const notifications = await listNotifications(request.user!.id);
-    response.json({ ok: true, notifications });
+    const input = notificationsQuerySchema.parse(request.query);
+    const [page, unreadCount] = await Promise.all([
+      listNotificationsPage(request.user!.id, input),
+      countUnreadNotifications(request.user!.id)
+    ]);
+    response.json({ ok: true, ...page, unreadCount });
   } catch (error) {
     next(error);
   }

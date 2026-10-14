@@ -6,6 +6,7 @@ import {
   OrderEventActorType,
   OrderEventType,
   UserRole,
+  UserStatus,
   WorkerProfileStatus
 } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
@@ -171,11 +172,11 @@ export async function ensureWorkerDirectChatRoom(user: AuthUser, workerId: strin
       userId: true,
       status: true,
       profession: true,
-      user: { select: { name: true, cityId: true } }
+      user: { select: { name: true, cityId: true, status: true } }
     }
   });
 
-  if (!worker || worker.status !== WorkerProfileStatus.APPROVED) {
+  if (!worker || worker.status !== WorkerProfileStatus.APPROVED || worker.user.status !== UserStatus.ACTIVE) {
     throw Object.assign(new Error("Worker not found"), {
       status: 404,
       code: "WORKER_NOT_FOUND"

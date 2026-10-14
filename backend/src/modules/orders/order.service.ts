@@ -75,7 +75,8 @@ async function releaseWorkerAvailability(tx: Prisma.TransactionClient, workerId:
   const released = await tx.workerAvailability.updateMany({
     where: {
       workerId,
-      activeOrderId: orderId
+      activeOrderId: orderId,
+      worker: { user: { status: { not: UserStatus.DELETED } } }
     },
     data: {
       status: WorkerAvailabilityStatus.AVAILABLE,
@@ -85,9 +86,37 @@ async function releaseWorkerAvailability(tx: Prisma.TransactionClient, workerId:
   });
 
   if (released.count !== 1) {
+    // Recover orders stranded by older account deletion behavior. Keep a
+    // deleted provider offline and never touch another order's reservation.
+    const inactive = await tx.workerAvailability.updateMany({
+      where: {
+        workerId,
+        worker: { user: { status: UserStatus.DELETED } },
+        OR: [
+          { activeOrderId: orderId },
+          { activeOrderId: null, status: WorkerAvailabilityStatus.OFFLINE }
+        ]
+      },
+      data: { status: WorkerAvailabilityStatus.OFFLINE, activeOrderId: null, lockedUntil: null }
+    });
+    if (inactive.count === 1) return;
     throw Object.assign(new Error("Worker availability release failed"), {
       status: 409,
       code: "WORKER_RELEASE_FAILED"
+    });
+  }
+}
+
+async function lockActiveOrderUsers(tx: Prisma.TransactionClient, userIds: string[]) {
+  // Stable lock ordering also covers providers acting as clients.
+  for (const userId of [...new Set(userIds)].sort()) {
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+  }
+  const activeUsers = await tx.user.count({ where: { id: { in: userIds }, status: UserStatus.ACTIVE, deletedAt: null } });
+  if (activeUsers !== new Set(userIds).size) {
+    throw Object.assign(new Error("Order participants must have active accounts"), {
+      status: 409,
+      code: "ORDER_PARTICIPANT_INACTIVE"
     });
   }
 }
@@ -203,12 +232,14 @@ export async function createOrder(user: AuthUser, input: CreateOrderInput) {
       include: { availability: true, user: true, categories: true }
     });
 
-    if (!worker || worker.status !== WorkerProfileStatus.APPROVED) {
+    if (!worker || worker.status !== WorkerProfileStatus.APPROVED || worker.user.status !== UserStatus.ACTIVE) {
       throw Object.assign(new Error("Worker is not approved or does not exist"), {
         status: 404,
         code: "WORKER_NOT_BOOKABLE"
       });
     }
+
+    await lockActiveOrderUsers(tx, [user.id, worker.userId]);
 
     if (worker.userId === user.id) {
       throw Object.assign(new Error("Providers cannot create client orders for their own worker profile"), {
@@ -391,7 +422,7 @@ export async function createWorkerOrder(user: AuthUser, input: CreateWorkerOrder
       }
     });
 
-    if (!worker || worker.status !== WorkerProfileStatus.APPROVED) {
+    if (!worker || worker.status !== WorkerProfileStatus.APPROVED || worker.user.status !== UserStatus.ACTIVE) {
       throw Object.assign(new Error("Only approved providers can create worker phone orders"), {
         status: 403,
         code: "WORKER_NOT_APPROVED"
@@ -438,6 +469,7 @@ export async function createWorkerOrder(user: AuthUser, input: CreateWorkerOrder
         cityId: worker.user.cityId
       }
     });
+    await lockActiveOrderUsers(tx, [worker.userId, client.id]);
     const cityId = worker.user.cityId || client.cityId || "tashkent";
     const serviceType = workerCategory.category.nameUz;
 
@@ -603,7 +635,11 @@ export async function listIncomingOrdersForProvider(user: AuthUser) {
   });
 }
 
-export async function acceptOrder(user: AuthUser, orderId: string) {
+export async function acceptOrder(
+  user: AuthUser,
+  orderId: string,
+  adminActor?: { actorType: "ENV_ADMIN" | "ADMIN_ACCOUNT"; id: string; username: string }
+) {
   if (!isProvider(user) && !isAdmin(user)) {
     throw Object.assign(new Error("Only provider or admin can accept order"), {
       status: 403,
@@ -661,11 +697,18 @@ export async function acceptOrder(user: AuthUser, orderId: string) {
       conflictCode: "WORKER_NOT_AVAILABLE"
     });
 
+    const eventAdmin = isAdmin(user) ? adminActor : undefined;
     await tx.orderEvent.create({
       data: {
         orderId: order.id,
-        actorType: actorTypeForUser(user),
-        actorId: user.id,
+        actorType: eventAdmin ? OrderEventActorType.ADMIN : actorTypeForUser(user),
+        // actorId references User; independent admin identities belong in metadata.
+        actorId: eventAdmin ? null : user.id,
+        ...(eventAdmin ? { metadata: {
+          adminActorType: eventAdmin.actorType,
+          adminActorId: eventAdmin.id,
+          adminUsername: eventAdmin.username
+        } } : {}),
         eventType: OrderEventType.WORKER_ACCEPTED,
         fromStatus: OrderStatus.WAITING_RESPONSE,
         toStatus: OrderStatus.ACCEPTED,
@@ -773,7 +816,12 @@ export async function rejectOrder(user: AuthUser, orderId: string, reason: strin
   return rejectedOrder;
 }
 
-export async function transitionOrder(user: AuthUser, orderId: string, toStatus: OrderStatus) {
+export async function transitionOrder(
+  user: AuthUser,
+  orderId: string,
+  toStatus: OrderStatus,
+  adminActor?: { actorType: "ENV_ADMIN" | "ADMIN_ACCOUNT"; id: string; username: string }
+) {
   if (!isProvider(user) && !isAdmin(user)) {
     throw Object.assign(new Error("Only provider or admin can update active order status"), {
       status: 403,
@@ -808,14 +856,7 @@ export async function transitionOrder(user: AuthUser, orderId: string, toStatus:
     });
 
     if (toStatus === OrderStatus.COMPLETED) {
-      await tx.workerAvailability.update({
-        where: { workerId: order.workerId },
-        data: {
-          status: WorkerAvailabilityStatus.AVAILABLE,
-          activeOrderId: null,
-          lockedUntil: null
-        }
-      });
+      await releaseWorkerAvailability(tx, order.workerId, order.id);
 
       await tx.workerProfile.update({
         where: { id: order.workerId },
@@ -827,11 +868,18 @@ export async function transitionOrder(user: AuthUser, orderId: string, toStatus:
       });
     }
 
+    const eventAdmin = isAdmin(user) ? adminActor : undefined;
     await tx.orderEvent.create({
       data: {
         orderId: order.id,
-        actorType: actorTypeForUser(user),
-        actorId: user.id,
+        actorType: eventAdmin ? OrderEventActorType.ADMIN : actorTypeForUser(user),
+        // Preserve User actor FKs for legacy/mobile callers without this context.
+        actorId: eventAdmin ? null : user.id,
+        ...(eventAdmin ? { metadata: {
+          adminActorType: eventAdmin.actorType,
+          adminActorId: eventAdmin.id,
+          adminUsername: eventAdmin.username
+        } } : {}),
         eventType: eventByTransition[toStatus] || OrderEventType.SUPPORT_NOTE_ADDED,
         fromStatus: order.status,
         toStatus,
@@ -870,7 +918,8 @@ export async function cancelOrder(
   user: AuthUser,
   orderId: string,
   reason: string,
-  eventType: OrderEventType = OrderEventType.ORDER_CANCELLED
+  eventType: OrderEventType = OrderEventType.ORDER_CANCELLED,
+  adminActor?: { actorType: "ENV_ADMIN" | "ADMIN_ACCOUNT"; id: string; username: string }
 ) {
   const cancelledOrder = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -905,11 +954,18 @@ export async function cancelOrder(
 
     await releaseWorkerAvailability(tx, order.workerId, order.id);
 
+    const eventAdmin = isAdmin(user) ? adminActor : undefined;
     await tx.orderEvent.create({
       data: {
         orderId: order.id,
-        actorType: ownsOrderAsClient(user, order) ? OrderEventActorType.CLIENT : actorTypeForUser(user),
-        actorId: user.id,
+        actorType: eventAdmin ? OrderEventActorType.ADMIN : ownsOrderAsClient(user, order) ? OrderEventActorType.CLIENT : actorTypeForUser(user),
+        // actorId references User; independent admin identities must not be written to that FK.
+        actorId: eventAdmin ? null : user.id,
+        ...(eventAdmin ? { metadata: {
+          adminActorType: eventAdmin.actorType,
+          adminActorId: eventAdmin.id,
+          adminUsername: eventAdmin.username
+        } } : {}),
         eventType,
         fromStatus: order.status,
         toStatus: OrderStatus.CANCELLED,
@@ -929,7 +985,7 @@ export async function cancelOrder(
     serviceType: cancelledOrder.serviceType,
     clientId: cancelledOrder.clientId,
     workerUserId: cancelledOrder.worker.userId,
-    actor: actorTypeForUser(user),
+    actor: isProvider(user) && ownsOrderAsClient(user, cancelledOrder) ? OrderEventActorType.CLIENT : actorTypeForUser(user),
     reason,
     clientIsProvisional: cancelledOrder.client.isProvisional
   });

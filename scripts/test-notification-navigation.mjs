@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { CommonActions, StackRouter } from "@react-navigation/routers";
 import {
   navigateToNotificationTarget,
   processNotificationResponse,
@@ -102,7 +103,7 @@ const handledResult = processNotificationResponse({
 if (handledResult.status === "handled") handledIdentifier = handledResult.identifier;
 assert.equal(handledResult.status, "handled", "notification should navigate after the worker navigator mounts");
 assert.equal(handledIdentifier, "notification-during-switch");
-assert.deepEqual(switchingNavigation.calls, [["WorkerTabs", { screen: "WorkerJobsTab", params: { orderId: "order-switch" } }]]);
+assert.deepEqual(switchingNavigation.calls, [["WorkerTabs", { screen: "WorkerJobsTab", params: { orderId: "order-switch" } }, { pop: true }]]);
 
 const clientNavigation = createNavigation(["ClientTabs"]);
 assert.equal(
@@ -113,7 +114,21 @@ assert.equal(
   ).ok,
   true
 );
-assert.deepEqual(clientNavigation.calls, [["ClientTabs", { screen: "ChatsTab", params: { roomId: "room-provider-client" } }]]);
+assert.deepEqual(clientNavigation.calls, [["ClientTabs", { screen: "ChatsTab", params: { roomId: "room-provider-client" } }, { pop: true }]]);
+
+const options = { routeNames: ["ClientTabs", "Notifications"], routeParamList: {}, routeGetIdList: {} };
+const router = StackRouter({ initialRouteName: "ClientTabs" });
+let stack = router.getInitialState(options);
+const actualNavigation = {
+  getState: () => stack,
+  navigate: (...args) => { stack = router.getStateForAction(stack, CommonActions.navigate(...args), options); }
+};
+for (let cycle = 0; cycle < 5; cycle += 1) {
+  actualNavigation.navigate("Notifications");
+  assert.equal(navigateToNotificationTarget(actualNavigation, { notificationType: "ORDER_COMPLETED", orderId: `order-${cycle}` }, "client").ok, true);
+  assert.equal(stack.routes.length, 1, "notification exit must remove detail screens and reuse the original tabs");
+  assert.equal(stack.routes[0].params.params.orderId, `order-${cycle}`);
+}
 
 const registrationOrder = [];
 const first = enqueuePushRegistration(async () => {

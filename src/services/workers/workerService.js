@@ -97,12 +97,14 @@ export async function fetchWorkerEarningsApi(token) {
   });
 }
 
-export async function fetchWorkerTransactionsApi(token) {
+export async function fetchWorkerTransactionsApi(token, { cursor, limit = 100 } = {}) {
   return apiRequest(async () => {
-    const payload = await httpAuthRequest("/workers/me/transactions", { token });
+    const query = `limit=${encodeURIComponent(limit)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const payload = await httpAuthRequest(`/workers/me/transactions?${query}`, { token });
     return {
       ok: true,
-      transactions: payload.transactions || []
+      transactions: payload.transactions || [],
+      nextCursor: payload.nextCursor || null
     };
   });
 }

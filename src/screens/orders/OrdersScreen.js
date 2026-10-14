@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { ArrowLeft, CalendarDays, MapPin, MessageCircle, WalletCards } from "lucide-react-native";
+import { ArrowRight, CalendarDays, ClipboardList, MapPin, MessageCircle, WalletCards } from "lucide-react-native";
 import { ActiveOrderCard } from "../../components/orders/ActiveOrderCard";
 import { CancelReasonSheet } from "../../components/orders/CancelReasonSheet";
-import { EmptyState } from "../../components/ui/EmptyState";
+import { ClientHeader } from "../../components/client/ClientHeader";
+import { GlassSurface } from "../../components/client/GlassSurface";
+import { colors, font, shadow, CLIENT_CONTENT_BOTTOM } from "../../theme/clientTheme";
+import { useTranslation } from "react-i18next";
 import { activeStatusKeys, TRACKING_STATUSES } from "../../constants/orderTracking";
 import { ROUTES } from "../../constants/routes";
 import { ensureOrderChatRoomApi } from "../../services/chats/chatService";
@@ -17,13 +20,6 @@ import { OrderRatingCard } from "../../components/orders/OrderRatingCard";
 import { submitOrderReviewApi } from "../../services/orders/orderService";
 import { useOrderRefresh } from "../../hooks/useOrderRefresh";
 import { resolveOrderDetail } from "../../services/orders/orderRefreshLoop.mjs";
-
-const font = {
-  medium: "Inter_500Medium",
-  semi: "Inter_600SemiBold",
-  bold: "Inter_700Bold",
-  extra: "Inter_800ExtraBold"
-};
 
 const statusCopy = {
   [TRACKING_STATUSES.REQUEST_SENT]: { label: "Kutilmoqda", tone: "warning" },
@@ -42,11 +38,12 @@ function uniqueOrders(orders) {
 
 function resolveAmount(order) {
   const amount = order.amount || order.price;
-  if (!amount || amount === "Kelishiladi") return "Kelishilgan";
+  if (!amount || amount === "Kelishiladi") return "Kelishiladi";
   return amount;
 }
 
 export function OrdersScreen({ navigation, route }) {
+  const { t } = useTranslation();
   const session = useAuthStore((state) => state.session);
   const [tab, setTab] = useState("active");
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -55,6 +52,7 @@ export function OrdersScreen({ navigation, route }) {
   const [reportOrderId, setReportOrderId] = useState(null);
   const [supportOrderId, setSupportOrderId] = useState(null);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [loadState, setLoadState] = useState({ loading: true, error: null });
   const orders = useClientStore((state) => state.orders);
   const activeOrder = useClientStore((state) => state.activeOrder);
   const workers = useClientStore((state) => state.workers);
@@ -62,7 +60,16 @@ export function OrdersScreen({ navigation, route }) {
   const syncOrdersFromApi = useClientStore((state) => state.syncOrdersFromApi);
   const syncCatalogFromApi = useClientStore((state) => state.syncCatalogFromApi);
 
-  useOrderRefresh(syncOrdersFromApi, "client");
+  const refreshOrders = useCallback(
+    async (options) => {
+      const result = await syncOrdersFromApi(options);
+      if (!result.stale)
+        setLoadState({ loading: false, error: result.ok ? null : result.message || "Buyurtmalar yuklanmadi" });
+      return result;
+    },
+    [syncOrdersFromApi]
+  );
+  useOrderRefresh(refreshOrders, "client");
   const detailOrder = resolveOrderDetail(orders, activeOrder, detailOrderId);
 
   useEffect(() => {
@@ -91,7 +98,10 @@ export function OrdersScreen({ navigation, route }) {
     [orders]
   );
 
-  const detailWorker = workers.find((worker) => worker.id === detailOrder?.workerId);
+  const detailWorker = {
+    ...workers.find((worker) => worker.id === detailOrder?.workerId),
+    availability: detailOrder?.workerAvailability
+  };
 
   async function handleOpenChat(order) {
     if (!session?.token || !order?.id) {
@@ -109,7 +119,7 @@ export function OrdersScreen({ navigation, route }) {
   }
 
   async function handleCancel(reason) {
-    const result = await cancelActiveOrder(reason);
+    const result = await cancelActiveOrder(reason, detailOrder?.id);
     if (!result.ok) {
       await syncOrdersFromApi();
       if (!result.stale) Alert.alert("Buyurtma bekor qilinmadi", result.message || "Qayta urinib ko'ring.");
@@ -122,7 +132,7 @@ export function OrdersScreen({ navigation, route }) {
 
   async function handleRefresh() {
     setRefreshing(true);
-    await syncOrdersFromApi();
+    await refreshOrders();
     setRefreshing(false);
   }
 
@@ -151,24 +161,21 @@ export function OrdersScreen({ navigation, route }) {
 
     return (
       <View style={styles.screen}>
+        <ClientHeader title="Buyurtma holati" onBack={() => setDetailOrderId(null)} />
         <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           contentContainerStyle={styles.detailContent}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor="#0F80B7"
-              colors={["#0F80B7"]}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
         >
-          <View style={styles.detailHeader}>
-            <Pressable onPress={() => setDetailOrderId(null)} style={styles.backButton}>
-              <ArrowLeft size={23} color="#2D3748" strokeWidth={2.8} />
-            </Pressable>
-            <Text style={styles.detailTitle}>Buyurtma holati</Text>
-            <View style={styles.headerSpacer} />
-          </View>
           <ActiveOrderCard
             order={detailOrder}
             worker={detailWorker}
@@ -178,11 +185,7 @@ export function OrdersScreen({ navigation, route }) {
             onSupport={() => setSupportOrderId(detailOrder.id)}
           />
           {detailOrder.statusKey === TRACKING_STATUSES.COMPLETED ? (
-            <OrderRatingCard
-              review={detailOrder.review}
-              submitting={reviewSubmitting}
-              onSubmit={handleReview}
-            />
+            <OrderRatingCard key={detailOrder.id} review={detailOrder.review} submitting={reviewSubmitting} onSubmit={handleReview} />
           ) : null}
         </ScrollView>
         <CancelReasonSheet visible={cancelOpen} onClose={() => setCancelOpen(false)} onSelectReason={handleCancel} />
@@ -209,31 +212,57 @@ export function OrdersScreen({ navigation, route }) {
 
   return (
     <View style={styles.screen}>
+      <ClientHeader title="Buyurtmalar" />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#0F80B7" colors={["#0F80B7"]} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
         }
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>Buyurtmalar</Text>
-        </View>
-
-        <View style={styles.segment}>
+        <GlassSurface style={styles.segment}>
           <Pressable
+            accessibilityRole="tab"
+            accessibilityLabel={t("Faol")}
+            accessibilityState={{ selected: tab === "active" }}
             onPress={() => setTab("active")}
             style={[styles.segmentItem, tab === "active" && styles.segmentActive]}
           >
             <Text style={[styles.segmentText, tab === "active" && styles.segmentTextActive]}>Faol</Text>
+            {activeOrders.length > 0 ? (
+              <Text translate={false} style={[styles.segmentCount, tab === "active" && styles.segmentTextActive]}>
+                {activeOrders.length}
+              </Text>
+            ) : null}
           </Pressable>
           <Pressable
+            accessibilityRole="tab"
+            accessibilityLabel={t("Tarix")}
+            accessibilityState={{ selected: tab === "history" }}
             onPress={() => setTab("history")}
             style={[styles.segmentItem, tab === "history" && styles.segmentActive]}
           >
             <Text style={[styles.segmentText, tab === "history" && styles.segmentTextActive]}>Tarix</Text>
+            {historyOrders.length > 0 ? (
+              <Text translate={false} style={[styles.segmentCount, tab === "history" && styles.segmentTextActive]}>
+                {historyOrders.length}
+              </Text>
+            ) : null}
           </Pressable>
-        </View>
+        </GlassSurface>
+
+        {loadState.error ? (
+          <Pressable accessibilityRole="button" onPress={handleRefresh} style={styles.errorCard}>
+            <Text style={styles.errorTitle}>Buyurtmalar yuklanmadi</Text>
+            <Text style={styles.errorText}>{loadState.error}</Text>
+            <Text style={styles.retryText}>Qayta urinish</Text>
+          </Pressable>
+        ) : null}
 
         <View style={styles.list}>
           {visibleOrders.length ? (
@@ -246,16 +275,34 @@ export function OrdersScreen({ navigation, route }) {
                 onDetail={() => setDetailOrderId(order.id)}
               />
             ))
-          ) : (
-            <EmptyState
-              title={tab === "active" ? "Faol buyurtma yo'q" : "Tarix hali bo'sh"}
-              text={
-                tab === "active"
-                  ? "Yangi buyurtma yaratilgandan keyin u shu yerda card ko'rinishida chiqadi."
-                  : "Yakunlangan va bekor qilingan buyurtmalar shu yerda saqlanadi."
-              }
-            />
-          )}
+          ) : loadState.loading ? (
+            <View style={styles.loadingCard}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={styles.emptyCopy}>Buyurtmalar yuklanmoqda...</Text>
+            </View>
+          ) : !loadState.error ? (
+            <View style={styles.emptyCard}>
+              <View style={styles.emptyIcon}>
+                <ClipboardList size={30} color={colors.primary} strokeWidth={1.6} />
+              </View>
+              <Text style={styles.emptyTitle}>{tab === "active" ? "Faol buyurtma yo'q" : "Tarix hali bo'sh"}</Text>
+              <Text style={styles.emptyCopy}>
+                {tab === "active"
+                  ? "Xizmat tanlang va mos ustaga buyurtma yuboring. Holatini shu yerda kuzatasiz."
+                  : "Yakunlangan va bekor qilingan buyurtmalar shu yerda saqlanadi."}
+              </Text>
+              {tab === "active" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => navigation.navigate(ROUTES.HOME_TAB)}
+                  style={styles.exploreButton}
+                >
+                  <Text style={styles.exploreText}>Xizmatlarni ko'rish</Text>
+                  <ArrowRight size={18} color={colors.white} strokeWidth={1.8} />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </View>
@@ -264,40 +311,52 @@ export function OrdersScreen({ navigation, route }) {
 
 function OrderListCard({ order, worker, onChat, onDetail }) {
   const status = statusCopy[order.statusKey] || statusCopy[TRACKING_STATUSES.REQUEST_SENT];
-  const waitingForResponse = order.statusKey === TRACKING_STATUSES.REQUEST_SENT;
 
   return (
     <View style={styles.orderCard}>
       <View style={styles.orderTop}>
-        <WorkerAvatar worker={worker} size={56} radius={28} style={styles.avatar} />
+        <WorkerAvatar worker={worker} size={50} radius={17} style={styles.avatar} />
         <View style={styles.orderTitleBlock}>
-          <Text style={styles.orderTitle} numberOfLines={2}>
+          <Text translate={false} style={styles.orderTitle} numberOfLines={2}>
             {order.title || order.service}
           </Text>
-          <Text style={styles.provider} numberOfLines={1}>
+          <Text translate={!worker?.name && !order.provider} style={styles.provider} numberOfLines={1}>
             {worker?.name || order.provider || "NearFIX usta"}
           </Text>
         </View>
-        <View style={[styles.statusBadge, waitingForResponse && styles.waitingStatusBadge, styles[`status_${status.tone}`]]}>
-          {waitingForResponse ? <ActivityIndicator size="small" color="#FB8C00" style={styles.waitingSpinner} /> : null}
+      </View>
+
+      <View style={styles.statusRow}>
+        <View style={styles.dateRow}>
+          <CalendarDays size={15} color={colors.subtle} strokeWidth={1.7} />
+          <Text style={styles.dateText}>{order.date || "Sana ko'rsatilmagan"}</Text>
+        </View>
+        <View style={[styles.statusBadge, styles[`status_${status.tone}`]]}>
           <Text style={[styles.statusText, styles[`statusText_${status.tone}`]]}>{status.label}</Text>
         </View>
       </View>
 
       <View style={styles.metaStack}>
-        <InfoLine icon={CalendarDays} text={order.date || "Bugun"} />
-        <InfoLine icon={MapPin} text={order.address || "Manzil kiritilgan"} />
+        <InfoLine icon={MapPin} text={order.address || "Manzil ko'rsatilmagan"} translate={!order.address} />
         <InfoLine icon={WalletCards} text={resolveAmount(order)} strong />
       </View>
 
       <View style={styles.divider} />
 
       <View style={styles.actions}>
-        <Pressable onPress={onChat} style={({ pressed }) => [styles.chatButton, pressed && styles.pressed]}>
-          <MessageCircle size={19} color="#0F80B7" strokeWidth={2.5} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={onChat}
+          style={({ pressed }) => [styles.chatButton, pressed && styles.pressed]}
+        >
+          <MessageCircle size={19} color={colors.primary} strokeWidth={1.8} />
           <Text style={styles.chatText}>Chat</Text>
         </Pressable>
-        <Pressable onPress={onDetail} style={({ pressed }) => [styles.detailButton, pressed && styles.pressed]}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onDetail}
+          style={({ pressed }) => [styles.detailButton, pressed && styles.pressed]}
+        >
           <Text style={styles.detailButtonText}>Batafsil</Text>
         </Pressable>
       </View>
@@ -305,11 +364,11 @@ function OrderListCard({ order, worker, onChat, onDetail }) {
   );
 }
 
-function InfoLine({ icon: Icon, text, strong = false }) {
+function InfoLine({ icon: Icon, text, strong = false, translate = true }) {
   return (
     <View style={styles.infoLine}>
-      <Icon size={17} color="#A3ABB8" fill={Icon === WalletCards ? "#A3ABB8" : "transparent"} strokeWidth={2.6} />
-      <Text style={[styles.infoText, strong && styles.infoTextStrong]} numberOfLines={1}>
+      <Icon size={17} color={colors.subtle} strokeWidth={1.7} />
+      <Text translate={translate} style={[styles.infoText, strong && styles.infoTextStrong]} numberOfLines={strong ? 1 : 2}>
         {text}
       </Text>
     </View>
@@ -317,232 +376,134 @@ function InfoLine({ icon: Icon, text, strong = false }) {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#F0F9FB"
-  },
-  content: {
-    paddingTop: 18,
-    paddingHorizontal: 18,
-    paddingBottom: 112,
-    gap: 14,
-    backgroundColor: "#F0F9FB"
-  },
-  header: {
-    marginBottom: 2,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between"
-  },
-  title: {
-    color: "#2D3748",
-    fontSize: 28,
-    lineHeight: 34,
-    fontFamily: font.extra
-  },
-  segment: {
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "#CDEAF2",
-    backgroundColor: "#EAF8FC",
-    padding: 5,
-    flexDirection: "row"
-  },
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { paddingHorizontal: 20, paddingBottom: CLIENT_CONTENT_BOTTOM, gap: 18 },
+  segment: { minHeight: 54, borderRadius: 19, padding: 5, flexDirection: "row", backgroundColor: colors.surface },
   segmentItem: {
     flex: 1,
-    borderRadius: 23,
+    minHeight: 44,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 8,
     alignItems: "center",
     justifyContent: "center"
   },
-  segmentActive: {
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#0F719D",
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 7 },
-    shadowRadius: 12,
-    elevation: 3
-  },
-  segmentText: {
-    color: "#818A99",
-    fontSize: 17,
-    fontFamily: font.extra
-  },
-  segmentTextActive: {
-    color: "#0F80B7"
-  },
-  list: {
-    gap: 12
-  },
+  segmentActive: { backgroundColor: colors.white, ...shadow },
+  segmentText: { color: colors.muted, fontSize: 14, fontFamily: font.medium },
+  segmentCount: { color: colors.muted, fontSize: 11, fontFamily: font.semi },
+  segmentTextActive: { color: colors.primary, fontFamily: font.semi },
+  list: { gap: 14 },
   orderCard: {
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    shadowColor: "#0F719D",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 18,
-    elevation: 5
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 18,
+    ...shadow
   },
-  orderTop: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#E5EEF3"
-  },
-  orderTitleBlock: {
-    flex: 1,
-    paddingTop: 2
-  },
-  orderTitle: {
-    color: "#101828",
-    fontSize: 17,
-    lineHeight: 22,
-    fontFamily: font.extra
-  },
-  provider: {
-    marginTop: 5,
-    color: "#818A99",
-    fontSize: 14,
-    lineHeight: 18,
-    fontFamily: font.medium
-  },
+  orderTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  avatar: { width: 50, height: 50, borderRadius: 17, backgroundColor: colors.surface },
+  orderTitleBlock: { flex: 1, minWidth: 0 },
+  orderTitle: { color: colors.text, fontSize: 16, lineHeight: 22, fontFamily: font.bold, letterSpacing: -0.2 },
+  provider: { marginTop: 4, color: colors.muted, fontSize: 12, lineHeight: 18, fontFamily: font.regular },
+  statusRow: { marginTop: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  dateRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 7 },
+  dateText: { flex: 1, color: colors.muted, fontSize: 11, lineHeight: 16, fontFamily: font.regular },
   statusBadge: {
-    maxWidth: 102,
-    minHeight: 34,
-    borderRadius: 13,
-    paddingHorizontal: 10,
+    minHeight: 28,
+    borderRadius: 9,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     alignItems: "center",
     justifyContent: "center"
   },
-  waitingStatusBadge: {
-    maxWidth: 116,
-    flexDirection: "row",
-    gap: 5
-  },
-  waitingSpinner: {
-    marginHorizontal: -3,
-    transform: [{ scale: 0.68 }]
-  },
-  status_warning: {
-    backgroundColor: "#FFF3E2"
-  },
-  status_success: {
-    backgroundColor: "#DCF8EF"
-  },
-  status_danger: {
-    backgroundColor: "#FEECEC"
-  },
-  statusText: {
-    fontSize: 12,
-    lineHeight: 16,
-    textAlign: "center",
-    fontFamily: font.extra
-  },
-  statusText_warning: {
-    color: "#FB8C00"
-  },
-  statusText_success: {
-    color: "#19B982"
-  },
-  statusText_danger: {
-    color: "#EF4444"
-  },
-  metaStack: {
-    marginTop: 16,
-    gap: 10
-  },
-  infoLine: {
-    minHeight: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10
-  },
-  infoText: {
-    flex: 1,
-    color: "#667085",
-    fontSize: 14,
-    lineHeight: 19,
-    fontFamily: font.medium
-  },
-  infoTextStrong: {
-    color: "#101828",
-    fontFamily: font.extra
-  },
-  divider: {
-    height: 1,
-    marginTop: 15,
-    backgroundColor: "#E7ECF0"
-  },
-  actions: {
-    marginTop: 15,
-    flexDirection: "row",
-    gap: 12
-  },
+  status_warning: { backgroundColor: "#FFF5E7" },
+  status_success: { backgroundColor: colors.mintSoft },
+  status_danger: { backgroundColor: "#FFF0F1" },
+  statusText: { fontSize: 11, lineHeight: 16, fontFamily: font.semi },
+  statusText_warning: { color: colors.warning },
+  statusText_success: { color: colors.success },
+  statusText_danger: { color: colors.danger },
+  metaStack: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.border, gap: 10 },
+  infoLine: { minHeight: 20, flexDirection: "row", alignItems: "flex-start", gap: 9 },
+  infoText: { flex: 1, color: colors.muted, fontSize: 12, lineHeight: 19, fontFamily: font.regular },
+  infoTextStrong: { color: colors.text, fontSize: 14, fontFamily: font.semi },
+  divider: { height: 1, marginTop: 16, backgroundColor: colors.border },
+  actions: { marginTop: 14, flexDirection: "row", gap: 10 },
   chatButton: {
     flex: 1,
-    height: 48,
-    borderRadius: 16,
+    minHeight: 46,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#D8EFF6",
-    backgroundColor: "#F2FBFE",
+    borderColor: colors.border,
+    backgroundColor: colors.primarySoft,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8
+    gap: 7
   },
-  chatText: {
-    color: "#0F80B7",
-    fontSize: 16,
-    fontFamily: font.extra
-  },
+  chatText: { color: colors.primary, fontSize: 13, fontFamily: font.semi },
   detailButton: {
     flex: 1,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: "#1597A9",
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center"
   },
-  detailButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontFamily: font.extra
+  detailButtonText: { color: colors.white, fontSize: 13, fontFamily: font.semi },
+  pressed: { opacity: 0.75 },
+  detailContent: { paddingHorizontal: 20, paddingBottom: CLIENT_CONTENT_BOTTOM, gap: 14 },
+  emptyCard: {
+    marginTop: 12,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 26,
+    alignItems: "center",
+    gap: 14,
+    ...shadow
   },
-  pressed: {
-    opacity: 0.78
+  emptyIcon: {
+    width: 70,
+    height: 70,
+    borderRadius: 24,
+    backgroundColor: colors.primarySoft,
+    alignItems: "center",
+    justifyContent: "center"
   },
-  detailContent: {
-    padding: 16,
-    paddingTop: 42,
-    paddingBottom: 112,
-    gap: 12,
-    backgroundColor: "#F0F9FB"
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 20,
+    lineHeight: 26,
+    fontFamily: font.bold,
+    textAlign: "center",
+    letterSpacing: -0.5
   },
-  detailHeader: {
+  emptyCopy: { color: colors.muted, fontSize: 13, lineHeight: 21, fontFamily: font.regular, textAlign: "center" },
+  exploreButton: {
+    alignSelf: "stretch",
+    minHeight: 48,
+    marginTop: 6,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between"
-  },
-  backButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: "#FFFFFF",
+    gap: 10,
     alignItems: "center",
     justifyContent: "center"
   },
-  detailTitle: {
-    color: "#2D3748",
-    fontSize: 18,
-    fontFamily: font.extra
+  exploreText: { color: colors.white, fontSize: 13, fontFamily: font.semi },
+  loadingCard: { paddingVertical: 56, alignItems: "center", gap: 16 },
+  errorCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#F2DADD",
+    backgroundColor: "#FFF5F6",
+    padding: 16,
+    gap: 6
   },
-  headerSpacer: {
-    width: 46
-  }
+  errorTitle: { color: colors.danger, fontSize: 14, fontFamily: font.semi },
+  errorText: { color: colors.muted, fontSize: 12, lineHeight: 18, fontFamily: font.regular },
+  retryText: { color: colors.primary, marginTop: 6, fontSize: 13, fontFamily: font.semi }
 });

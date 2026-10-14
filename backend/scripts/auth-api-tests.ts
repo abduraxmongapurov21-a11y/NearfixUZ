@@ -1,3 +1,4 @@
+import "./test-isolation-preload.js";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 
@@ -153,12 +154,25 @@ async function main() {
       code: otpCode
     });
     assert.equal(normalVerify.response.status, 200);
-    assert.ok(normalVerify.payload.accessToken);
-    assert.ok(normalVerify.payload.refreshToken);
+    assert.equal(normalVerify.payload.status, "REGISTRATION_REQUIRED", "A new phone must complete registration before receiving a session");
+    assert.ok(normalVerify.payload.registrationToken);
+    assert.equal(normalVerify.payload.accessToken, undefined);
+    assert.equal(normalVerify.payload.refreshToken, undefined);
     assert.equal(normalVerify.payload.otpSessionToken, undefined);
     assert.equal(normalVerify.payload.nextStep, undefined);
+    assert.equal(await prisma.user.count({ where: { phone } }), 0, "OTP verification alone must not create the new user");
 
-    const normalMe = await get("/auth/me", normalVerify.payload.accessToken);
+    const registration = await post("/auth/register/complete", {
+      registrationToken: normalVerify.payload.registrationToken,
+      name: "Registered Client"
+    });
+    assert.equal(registration.response.status, 201);
+    assert.equal(registration.payload.status, "AUTHENTICATED");
+    assert.ok(registration.payload.accessToken);
+    assert.ok(registration.payload.refreshToken);
+    assert.equal(registration.payload.user.role, "client");
+
+    const normalMe = await get("/auth/me", registration.payload.accessToken);
     assert.equal(normalMe.response.status, 200);
     assert.equal(normalMe.payload.user.phone, phone);
 

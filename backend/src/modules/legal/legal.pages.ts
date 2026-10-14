@@ -1,4 +1,9 @@
-const lastUpdated = "2026-yil 27-iyul";
+import { env } from "../../config/env.js";
+import { supportContactHtml } from "./legal-contact.js";
+
+const lastUpdated = "2026-yil 14-oktabr";
+const supportLink = supportContactHtml(env.PUBLIC_SUPPORT_EMAIL);
+const deletionLink = supportContactHtml(env.PUBLIC_SUPPORT_EMAIL, "NearFIX akkauntini o'chirish so'rovi");
 
 const styles = `
   :root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #f3f8fa; }
@@ -56,6 +61,8 @@ export const privacyPolicyHtml = page(
       <li><strong>Eskiz</strong> — tasdiqlash SMS xabarlarini yuborish uchun;</li>
       <li><strong>Cloudflare R2</strong> — yuklangan media fayllarini saqlash uchun;</li>
       <li><strong>DigitalOcean</strong> — backend va boshqariladigan PostgreSQL infratuzilmasi uchun.</li>
+      <li><strong>Yandex MapKit</strong> — xarita va lokatsiya funksiyalari uchun;</li>
+      <li><strong>Expo, Apple va Google</strong> — qurilmaga push bildirishnomalarini yetkazish uchun.</li>
     </ul>
     <h2>4. To‘lov ma’lumotlari</h2>
     <div class="notice">NearFIX ilovasida hozircha ichki to‘lov mavjud emas. Ilova to‘lovga oid ma’lumotlarni yig‘maydi va saqlamaydi.</div>
@@ -67,6 +74,7 @@ export const privacyPolicyHtml = page(
     <p>NearFIX foydalanuvchilarni reklama maqsadida kuzatmaydi va shaxsiy ma’lumotlarni reklama tarmoqlariga sotmaydi.</p>
     <h2>8. Aloqa</h2>
     <p>Maxfiylik bo‘yicha savollar uchun ilovadagi Yordam bo‘limidan foydalaning.</p>
+    ${supportLink ? `<p>Ilovaga kirmasdan murojaat yuborish: ${supportLink}.</p>` : ""}
   `
 );
 
@@ -101,6 +109,7 @@ export const termsHtml = page(
     <p>NearFIX ushbu shartlarni xizmat yoki qonunchilik talablari o‘zgarganda yangilashi mumkin. Yangilangan sana sahifaning yuqori qismida ko‘rsatiladi.</p>
     <h2>11. Aloqa</h2>
     <p>Shartlar yoki xizmat bo‘yicha savollar uchun ilovadagi Yordam bo‘limidan foydalaning.</p>
+    ${supportLink ? `<p>Elektron pochta orqali murojaat: ${supportLink}.</p>` : ""}
   `
 );
 
@@ -108,6 +117,9 @@ export const accountDeletionHtml = page(
   "NearFIX akkauntini o‘chirish",
   `
     <p>NearFIX akkauntingizni va unga bog‘langan shaxsiy ma’lumotlarni ilovaning o‘zida o‘chirishingiz mumkin.</p>
+    ${deletionLink ? `<section id="request-deletion"><h2>Ilovaga kirmasdan o‘chirish so‘rovini yuborish</h2>
+    <p>Akkaunt va unga bog‘langan shaxsiy ma’lumotlarni o‘chirish so‘rovini ${deletionLink} manziliga yuboring. Ilovani qayta o‘rnatish shart emas.</p>
+    <p>So‘rovda NearFIX’da ro‘yxatdan o‘tgan telefon raqamingizni ko‘rsating. Yordam jamoasi akkaunt sizga tegishli ekanini tekshirib, so‘rov natijasi haqida javob beradi. Parol yoki SMS tasdiqlash kodini yubormang.</p></section>` : ""}
     <h2>O‘chirish tartibi</h2>
     <ol>
       <li>NearFIX ilovasiga kiring.</li>
@@ -115,10 +127,11 @@ export const accountDeletionHtml = page(
       <li><strong>Hisobni o‘chirish</strong> tugmasini bosing.</li>
       <li>Ogohlantirishni o‘qib, o‘chirishni tasdiqlang.</li>
     </ol>
+    <p>Faol buyurtmalarni avval yakunlang yoki bekor qiling, keyin hisobni o‘chirishni qayta tanlang.${supportLink ? ` Buyurtma bunga to‘sqinlik qilsa, ${supportLink} orqali yordam so‘rang.` : ""}</p>
     <h2>Darhol o‘chiriladigan ma’lumotlar</h2>
     <p>Faol sessiyalar, push tokenlar, saqlangan manzillar, sevimlilar, shaxsiy bildirishnomalar va faol tasdiqlash so‘rovlari o‘chiriladi. Telefon raqami, ism va profil ma’lumotlari anonimlashtiriladi.</p>
     <h2>Saqlanib qoladigan ma’lumotlar</h2>
     <p>Buyurtmalar, chat va yordam tarixi, sharhlar hamda qonuniy yoki nizolarni ko‘rib chiqish uchun zarur operatsion yozuvlar anonimlashtirilgan foydalanuvchi identifikatori bilan saqlanishi mumkin.</p>
-    <div class="notice">Ilovaga kira olmasangiz, ilovadagi kirish/tiklash vositalaridan foydalaning yoki NearFIX Yordam bo‘limi orqali murojaat yuboring.</div>
+    <div class="notice">${deletionLink ? `Ilovaga kira olmasangiz ham ${deletionLink} orqali o‘chirish so‘rovini yuborishingiz mumkin.` : "Ilovaga kira olmasangiz, ilovadagi kirish/tiklash vositalaridan foydalaning yoki NearFIX Yordam bo‘limi orqali murojaat yuboring."}</div>
   `
 );

@@ -1,4 +1,4 @@
-import { UserRole, UserStatus, WorkerAvailabilityStatus, WorkerProfileStatus } from "@prisma/client";
+import { OrderStatus, UserRole, UserStatus, WorkerAvailabilityStatus, WorkerProfileStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import { isAppReviewDemoPhone } from "./auth.service.js";
 
@@ -16,6 +16,9 @@ function isProtectedDemoAccount(phone: string | null | undefined) {
 
 export async function deleteCurrentUserAccount(userId: string) {
   return prisma.$transaction(async (tx) => {
+    // Order creation takes the same user locks before checking eligibility.
+    // A deletion must not race a new reservation after its active-order check.
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
     const user = await tx.user.findUnique({
       where: { id: userId },
       include: {
@@ -49,6 +52,23 @@ export async function deleteCurrentUserAccount(userId: string) {
         userId: user.id,
         deletedAt: user.deletedAt
       };
+    }
+
+    const activeOrder = await tx.order.findFirst({
+      where: {
+        status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+        OR: [
+          { clientId: userId },
+          ...(user.workerProfile ? [{ workerId: user.workerProfile.id }] : [])
+        ]
+      },
+      select: { id: true }
+    });
+    if (activeOrder) {
+      throw Object.assign(new Error("Cancel or complete active orders before deleting your account"), {
+        status: 409,
+        code: "ACTIVE_ORDERS_EXIST"
+      });
     }
 
     await Promise.all([

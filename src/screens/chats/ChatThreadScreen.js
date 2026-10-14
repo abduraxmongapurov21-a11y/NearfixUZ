@@ -13,6 +13,7 @@ import {
   View
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
   Camera,
@@ -35,6 +36,9 @@ import { ReportModal } from "../../components/moderation/ReportModal";
 import { blockUserApi } from "../../services/moderation/moderationService";
 import { Alert, Text, TextInput } from "../../i18n/native";
 import { normalizeExperienceMode } from "../../navigation/experienceMode.mjs";
+import { ClientHeader } from "../../components/client/ClientHeader";
+import { GlassSurface } from "../../components/client/GlassSurface";
+import { colors as clientColors, font as clientFont } from "../../theme/clientTheme";
 
 const font = {
   medium: "Inter_500Medium",
@@ -100,10 +104,17 @@ export function ChatThreadScreen({ navigation, route }) {
   const session = useAuthStore((state) => state.session);
   const generation = useAuthStore((state) => state.navigationGeneration);
   const mode = normalizeExperienceMode(session?.role, session?.experienceMode);
-  return <ChatThreadContent key={`${session?.userId}:${generation}:${mode}:${route.params?.room?.id}`} navigation={navigation} route={route} />;
+  return (
+    <ChatThreadContent
+      key={`${session?.userId}:${generation}:${mode}:${route.params?.room?.id}`}
+      navigation={navigation}
+      route={route}
+    />
+  );
 }
 
 function ChatThreadContent({ navigation, route }) {
+  const { t } = useTranslation();
   const scrollRef = useRef(null);
   const screenRef = useRef(null);
   const nearBottom = useRef(true);
@@ -112,14 +123,21 @@ function ChatThreadContent({ navigation, route }) {
   const keyboardTop = useRef(null);
   const session = useAuthStore((state) => state.session);
   const experienceMode = normalizeExperienceMode(session?.role, session?.experienceMode);
+  const isClient = experienceMode === "client";
+  const styles = isClient ? clientThreadStyles : workerThreadStyles;
+  const InputPanel = isClient ? GlassSurface : View;
   const room = route.params?.room || {
     title: "Chat",
-    participants: 0,
+    participants: [],
     color: "#17B9AD"
   };
   const isApiRoom = Boolean(room.id && session?.token);
+  const chatSubtitle = room.orderId ? "Buyurtma chati" : "Shaxsiy chat";
   const { messages: apiMessages, sending, thread, refresh } = useChatThread(room.id);
-  const messages = useMemo(() => apiMessages.map((message) => ({ ...mapApiMessageToThread(message), status: message.status })), [apiMessages]);
+  const messages = useMemo(
+    () => apiMessages.map((message) => ({ ...mapApiMessageToThread(message), status: message.status })),
+    [apiMessages]
+  );
   const [inputText, setInputText] = useState("");
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -159,17 +177,22 @@ function ChatThreadContent({ navigation, route }) {
     scrollFrame.current = requestAnimationFrame(() => {
       scrollFrame.current = requestAnimationFrame(() => {
         scrollFrame.current = null;
-        if (nearBottom.current && navigation.isFocused()) scrollRef.current?.getScrollResponder()?.scrollToEnd({ animated: false });
+        if (nearBottom.current && navigation.isFocused())
+          scrollRef.current?.getScrollResponder()?.scrollToEnd({ animated: false });
       });
     });
   }
-  useEffect(() => () => {
-    if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
+    },
+    []
+  );
   function rememberScrollPosition({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) {
     // Layout/content changes also emit onScroll. Only a user's scroll changes
     // the follow-new-messages preference; growing content must not turn it off.
-    if (userScrolling.current) nearBottom.current = contentSize.height - layoutMeasurement.height - contentOffset.y < 72;
+    if (userScrolling.current)
+      nearBottom.current = contentSize.height - layoutMeasurement.height - contentOffset.y < 72;
   }
   function finishUserScroll(event) {
     rememberScrollPosition(event);
@@ -248,7 +271,8 @@ function ChatThreadContent({ navigation, route }) {
 
     const identity = useAuthStore.getState().captureAuthRequest(session.token);
     const result = await thread.send({ type: "text", body }, () =>
-      sendChatMessageApi(session.token, room.id, { type: "TEXT", body }, currentUserId));
+      sendChatMessageApi(session.token, room.id, { type: "TEXT", body }, currentUserId)
+    );
     if (!result.ok && useAuthStore.getState().isAuthRequestCurrent(identity) && navigation.isFocused()) {
       setInputText((current) => current || body);
       Alert.alert("Xabar yuborilmadi", result.message || "Aloqani tekshirib, qayta urinib ko'ring.");
@@ -391,24 +415,53 @@ function ChatThreadContent({ navigation, route }) {
   }
 
   return (
-    <View ref={screenRef} collapsable={false} onLayout={measureKeyboardOverlap} style={[styles.screen, { paddingBottom: keyboardInset }]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.headerIcon}>
-          <ArrowLeft size={21} color="#273248" strokeWidth={2.8} />
-        </Pressable>
-        <View style={[styles.roomIcon, { backgroundColor: room.color || "#17B9AD" }]}>
-          <UserRound size={20} color="#FFFFFF" strokeWidth={2.3} />
+    <View
+      ref={screenRef}
+      collapsable={false}
+      onLayout={measureKeyboardOverlap}
+      style={[styles.screen, { paddingBottom: keyboardInset }]}
+    >
+      {isClient ? (
+        <ClientHeader
+          title={
+            <Text translate={false} numberOfLines={1} style={styles.clientHeaderTitle}>
+              {room.title}
+            </Text>
+          }
+          subtitle={chatSubtitle}
+          onBack={() => navigation.goBack()}
+          right={
+            <GlassSurface style={styles.safetySurface}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Xavfsizlik")}
+                style={styles.safetyButton}
+                onPress={openChatSafetyActions}
+              >
+                <Info size={21} color={clientColors.primary} strokeWidth={1.8} />
+              </Pressable>
+            </GlassSurface>
+          }
+        />
+      ) : (
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} style={styles.headerIcon}>
+            <ArrowLeft size={21} color="#273248" strokeWidth={2.8} />
+          </Pressable>
+          <View style={[styles.roomIcon, { backgroundColor: room.color || "#17B9AD" }]}>
+            <UserRound size={20} color="#FFFFFF" strokeWidth={2.3} />
+          </View>
+          <View style={styles.headerText}>
+            <Text translate={false} style={styles.title} numberOfLines={1}>
+              {room.title}
+            </Text>
+            <Text style={styles.subtitle}>{chatSubtitle}</Text>
+          </View>
+          <Pressable style={styles.infoButton} onPress={openChatSafetyActions}>
+            <Info size={18} color="#FFFFFF" strokeWidth={3} />
+          </Pressable>
         </View>
-        <View style={styles.headerText}>
-          <Text style={styles.title} numberOfLines={1}>
-            {room.title}
-          </Text>
-          <Text style={styles.subtitle}>Buyurtma chati</Text>
-        </View>
-        <Pressable style={styles.infoButton} onPress={openChatSafetyActions}>
-          <Info size={18} color="#FFFFFF" strokeWidth={3} />
-        </Pressable>
-      </View>
+      )}
 
       <View style={styles.chatArea}>
         <FlatList
@@ -418,9 +471,13 @@ function ChatThreadContent({ navigation, route }) {
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           onScroll={rememberScrollPosition}
-          onScrollBeginDrag={() => { userScrolling.current = true; }}
+          onScrollBeginDrag={() => {
+            userScrolling.current = true;
+          }}
           onScrollEndDrag={finishUserScroll}
-          onMomentumScrollBegin={() => { userScrolling.current = true; }}
+          onMomentumScrollBegin={() => {
+            userScrolling.current = true;
+          }}
           onMomentumScrollEnd={finishUserScroll}
           scrollEventThrottle={100}
           onLayout={followNewMessages}
@@ -428,11 +485,12 @@ function ChatThreadContent({ navigation, route }) {
           keyExtractor={(message) => String(message.id)}
           renderItem={({ item }) =>
             item.direction === "out" ? (
-              <OutgoingMessage message={item} onOpenImage={setSelectedImage} />
+              <OutgoingMessage message={item} onOpenImage={setSelectedImage} isClient={isClient} />
             ) : (
               <IncomingMessage
                 message={item}
                 onOpenImage={setSelectedImage}
+                isClient={isClient}
                 onReport={() =>
                   setReportTarget({ targetType: "MESSAGE", targetId: item.id, title: "Xabar haqida shikoyat" })
                 }
@@ -441,9 +499,11 @@ function ChatThreadContent({ navigation, route }) {
           }
           ListHeaderComponent={
             <>
-              <View style={styles.datePill}>
-                <Text style={styles.dateText}>Bugun</Text>
-              </View>
+              {isClient ? null : (
+                <View style={styles.datePill}>
+                  <Text style={styles.dateText}>Bugun</Text>
+                </View>
+              )}
 
               {messages.length ? null : (
                 <View style={styles.emptyMessages}>
@@ -460,15 +520,20 @@ function ChatThreadContent({ navigation, route }) {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor="#0F80B7"
-              colors={["#0F80B7"]}
+              tintColor={isClient ? clientColors.primary : "#0F80B7"}
+              colors={[isClient ? clientColors.primary : "#0F80B7"]}
             />
           }
         />
 
-        <View style={styles.inputPanel}>
-          <Pressable style={styles.plusButton} onPress={openAttachmentSheet} disabled={uploading || sending}>
-            <Plus size={24} color="#0F80B7" strokeWidth={2.7} />
+        <InputPanel style={styles.inputPanel}>
+          <Pressable
+            {...(isClient ? { accessibilityRole: "button", accessibilityLabel: t("Rasm tanlash") } : {})}
+            style={styles.plusButton}
+            onPress={openAttachmentSheet}
+            disabled={uploading || sending}
+          >
+            <Plus size={24} color={isClient ? clientColors.primary : "#0F80B7"} strokeWidth={isClient ? 1.8 : 2.7} />
           </Pressable>
           <View style={[styles.inputBox, { height: inputBoxHeight }]} onLayout={handleInputBoxLayout}>
             <TextInput
@@ -476,7 +541,8 @@ function ChatThreadContent({ navigation, route }) {
               onChangeText={handleInputTextChange}
               onContentSizeChange={handleInputContentSizeChange}
               placeholder="Xabar yozing..."
-              placeholderTextColor="#A0A7B3"
+              accessibilityLabel={isClient ? t("Xabar yozing...") : undefined}
+              placeholderTextColor={isClient ? clientColors.subtle : "#A0A7B3"}
               multiline
               blurOnSubmit={false}
               submitBehavior="newline"
@@ -491,14 +557,19 @@ function ChatThreadContent({ navigation, route }) {
             />
           </View>
           <Pressable
-            accessibilityLabel="Xabar yuborish"
+            {...(isClient ? { accessibilityRole: "button" } : {})}
+            accessibilityLabel={isClient ? t("Xabar yuborish") : "Xabar yuborish"}
             style={[styles.sendButton, !canSendText && styles.sendButtonDisabled]}
             onPress={sendTextMessage}
             disabled={!canSendText}
           >
-            {uploading ? <ActivityIndicator color="#FFFFFF" /> : <Send size={18} color="#FFFFFF" strokeWidth={2.7} />}
+            {uploading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Send size={18} color="#FFFFFF" strokeWidth={isClient ? 1.8 : 2.7} />
+            )}
           </Pressable>
-        </View>
+        </InputPanel>
       </View>
 
       <AttachmentSheet
@@ -506,9 +577,10 @@ function ChatThreadContent({ navigation, route }) {
         onClose={() => setSheetVisible(false)}
         onPickImage={() => pickImage("library")}
         onTakePhoto={() => pickImage("camera")}
+        isClient={isClient}
       />
 
-      <ImageViewer image={selectedImage} onClose={() => setSelectedImage(null)} />
+      <ImageViewer image={selectedImage} onClose={() => setSelectedImage(null)} isClient={isClient} />
       <ReportModal
         visible={Boolean(reportTarget)}
         targetType={reportTarget?.targetType}
@@ -518,48 +590,69 @@ function ChatThreadContent({ navigation, route }) {
         onSuccess={() => Alert.alert("Shikoyat yuborildi", "Moderatorlar murojaatingizni ko‘rib chiqadi.")}
       />
 
-      {keyboardVisible ? null : <ScreenBottomNav navigation={navigation} experienceMode={experienceMode} />}
+      {keyboardVisible || isClient ? null : <ScreenBottomNav navigation={navigation} experienceMode={experienceMode} />}
     </View>
   );
 }
 
-function IncomingMessage({ message, onOpenImage, onReport }) {
+function IncomingMessage({ message, onOpenImage, onReport, isClient }) {
+  const styles = isClient ? clientThreadStyles : workerThreadStyles;
   return (
     <Pressable style={styles.incomingRow} onLongPress={onReport} delayLongPress={450}>
       <View style={styles.avatar}>
-        <UserRound size={16} color="#0F80B7" strokeWidth={2.4} />
+        <UserRound size={16} color={isClient ? clientColors.primary : "#0F80B7"} strokeWidth={isClient ? 1.8 : 2.4} />
       </View>
       <View style={styles.incomingBody}>
         <View style={styles.messageMeta}>
-          <Text style={styles.senderName}>{message.senderName || "NearFIX"}</Text>
+          <Text {...(isClient ? { translate: false } : {})} style={styles.senderName}>{message.senderName || "NearFIX"}</Text>
           <Text style={styles.messageTime}>{message.time}</Text>
         </View>
         <View style={styles.incomingBubble}>
-          {message.body ? <Text style={styles.incomingText}>{message.body}</Text> : null}
-          {message.type === "image" ? <ImageMessage message={message} onOpenImage={onOpenImage} /> : null}
+          {message.body ? <Text {...(isClient ? { translate: false } : {})} style={styles.incomingText}>{message.body}</Text> : null}
+          {message.type === "image" ? (
+            <ImageMessage message={message} onOpenImage={onOpenImage} isClient={isClient} />
+          ) : null}
         </View>
       </View>
     </Pressable>
   );
 }
 
-function OutgoingMessage({ message, onOpenImage }) {
+function OutgoingMessage({ message, onOpenImage, isClient }) {
+  const styles = isClient ? clientThreadStyles : workerThreadStyles;
   return (
     <View style={styles.outgoingWrap}>
       <Text style={styles.outgoingTime}>{message.status === "sending" ? "Yuborilmoqda..." : message.time}</Text>
       <View style={[styles.outgoingBubble, message.type === "image" && styles.outgoingImageBubble]}>
-        {message.body ? <Text style={styles.outgoingText}>{message.body}</Text> : null}
-        {message.type === "image" ? <ImageMessage message={message} outgoing onOpenImage={onOpenImage} /> : null}
-        {message.status !== "failed" ? (
-          <Text style={styles.readReceipt}>{message.readByOthers ? "✓✓" : "✓"}</Text>
+        {message.body ? <Text {...(isClient ? { translate: false } : {})} style={styles.outgoingText}>{message.body}</Text> : null}
+        {message.type === "image" ? (
+          <ImageMessage message={message} outgoing onOpenImage={onOpenImage} isClient={isClient} />
         ) : null}
-        {message.status === "failed" ? <Text style={styles.failedText}>Yuborilmadi</Text> : null}
+        {message.status !== "failed" ? (
+          <Text
+            style={
+              isClient && message.type === "image" ? [styles.readReceipt, styles.imageStatusText] : styles.readReceipt
+            }
+          >
+            {message.readByOthers ? "✓✓" : "✓"}
+          </Text>
+        ) : null}
+        {message.status === "failed" ? (
+          <Text
+            style={
+              isClient && message.type === "image" ? [styles.failedText, styles.failedImageText] : styles.failedText
+            }
+          >
+            Yuborilmadi
+          </Text>
+        ) : null}
       </View>
     </View>
   );
 }
 
-function ImageMessage({ message, outgoing, onOpenImage }) {
+function ImageMessage({ message, outgoing, onOpenImage, isClient }) {
+  const styles = isClient ? clientThreadStyles : workerThreadStyles;
   const source = message.media?.uri ? message.media : null;
   if (!source) return null;
 
@@ -578,7 +671,8 @@ function ImageMessage({ message, outgoing, onOpenImage }) {
   );
 }
 
-function ImageViewer({ image, onClose }) {
+function ImageViewer({ image, onClose, isClient }) {
+  const styles = isClient ? clientThreadStyles : workerThreadStyles;
   return (
     <Modal visible={Boolean(image)} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.viewer}>
@@ -591,7 +685,9 @@ function ImageViewer({ image, onClose }) {
   );
 }
 
-function AttachmentSheet({ visible, onClose, onPickImage, onTakePhoto }) {
+function AttachmentSheet({ visible, onClose, onPickImage, onTakePhoto, isClient }) {
+  const styles = isClient ? clientThreadStyles : workerThreadStyles;
+  const SheetSurface = isClient ? GlassSurface : View;
   return (
     <Modal
       transparent
@@ -602,10 +698,14 @@ function AttachmentSheet({ visible, onClose, onPickImage, onTakePhoto }) {
     >
       <View style={styles.sheetOverlay}>
         <Pressable style={styles.sheetBackdrop} onPress={onClose} />
-        <View style={styles.sheet}>
+        <SheetSurface style={styles.sheet}>
           <Pressable style={styles.sheetItem} onPress={onPickImage}>
             <View style={[styles.sheetIcon, styles.sheetIconPurple]}>
-              <ImageIcon size={23} color="#FFFFFF" strokeWidth={2.5} />
+              <ImageIcon
+                size={23}
+                color={isClient ? clientColors.primary : "#FFFFFF"}
+                strokeWidth={isClient ? 1.8 : 2.5}
+              />
             </View>
             <View>
               <Text style={styles.sheetTitle}>Rasm tanlash</Text>
@@ -615,7 +715,11 @@ function AttachmentSheet({ visible, onClose, onPickImage, onTakePhoto }) {
           <View style={styles.sheetDivider} />
           <Pressable style={styles.sheetItem} onPress={onTakePhoto}>
             <View style={[styles.sheetIcon, styles.sheetIconGreen]}>
-              <Camera size={20} color="#FFFFFF" strokeWidth={2.5} />
+              <Camera
+                size={20}
+                color={isClient ? clientColors.primary : "#FFFFFF"}
+                strokeWidth={isClient ? 1.8 : 2.5}
+              />
             </View>
             <View>
               <Text style={styles.sheetTitle}>Rasmga olish</Text>
@@ -625,7 +729,7 @@ function AttachmentSheet({ visible, onClose, onPickImage, onTakePhoto }) {
           <Pressable style={styles.cancelButton} onPress={onClose}>
             <Text style={styles.cancelText}>Bekor qilish</Text>
           </Pressable>
-        </View>
+        </SheetSurface>
       </View>
     </Modal>
   );
@@ -633,7 +737,7 @@ function AttachmentSheet({ visible, onClose, onPickImage, onTakePhoto }) {
 
 function ScreenBottomNav({ navigation, experienceMode }) {
   function goTab(screen) {
-    navigation.navigate(experienceMode === "worker" ? ROUTES.WORKER_TABS : ROUTES.CLIENT_TABS, { screen });
+    navigation.popTo(experienceMode === "worker" ? ROUTES.WORKER_TABS : ROUTES.CLIENT_TABS, { screen });
   }
 
   if (experienceMode === "worker") {
@@ -1071,3 +1175,180 @@ const styles = StyleSheet.create({
     color: "#0F80B7"
   }
 });
+
+// Resolve styles per experience so the existing worker view remains unchanged.
+const workerThreadStyles = styles;
+const clientThreadStyles = {
+  ...workerThreadStyles,
+  ...StyleSheet.create({
+    screen: { flex: 1, backgroundColor: clientColors.background },
+    clientHeaderTitle: {
+      color: clientColors.text,
+      fontSize: 18,
+      lineHeight: 26,
+      fontFamily: clientFont.semi,
+      letterSpacing: -0.3
+    },
+    safetySurface: { width: 46, height: 46, borderRadius: 17 },
+    safetyButton: { flex: 1, alignItems: "center", justifyContent: "center" },
+    messages: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 12, paddingBottom: 22 },
+    datePill: {
+      alignSelf: "center",
+      minHeight: 28,
+      borderRadius: 14,
+      backgroundColor: clientColors.surface,
+      paddingHorizontal: 15,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 22
+    },
+    dateText: { color: clientColors.muted, fontSize: 11, fontFamily: clientFont.regular },
+    incomingRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 20 },
+    avatar: {
+      width: 30,
+      height: 30,
+      borderRadius: 11,
+      backgroundColor: clientColors.primarySoft,
+      marginTop: 2,
+      alignItems: "center",
+      justifyContent: "center"
+    },
+    emptyMessages: { alignItems: "center", justifyContent: "center", paddingVertical: 48, paddingHorizontal: 22 },
+    emptyTitle: { color: clientColors.text, fontSize: 18, lineHeight: 25, fontFamily: clientFont.semi },
+    emptyText: {
+      marginTop: 8,
+      color: clientColors.muted,
+      fontSize: 14,
+      lineHeight: 22,
+      textAlign: "center",
+      fontFamily: clientFont.regular
+    },
+    senderName: { color: clientColors.text, fontSize: 12, fontFamily: clientFont.medium },
+    messageTime: { color: clientColors.subtle, fontSize: 11, fontFamily: clientFont.regular },
+    incomingBubble: {
+      alignSelf: "flex-start",
+      maxWidth: "90%",
+      borderRadius: 20,
+      borderTopLeftRadius: 7,
+      backgroundColor: clientColors.white,
+      borderWidth: 1,
+      borderColor: clientColors.border,
+      paddingHorizontal: 14,
+      paddingVertical: 11
+    },
+    incomingText: { color: clientColors.text, fontSize: 15, lineHeight: 23, fontFamily: clientFont.regular },
+    outgoingWrap: { alignItems: "flex-end", marginBottom: 20 },
+    outgoingTime: {
+      marginRight: 2,
+      marginBottom: 5,
+      color: clientColors.subtle,
+      fontSize: 11,
+      fontFamily: clientFont.regular
+    },
+    outgoingBubble: {
+      maxWidth: "82%",
+      borderRadius: 20,
+      borderBottomRightRadius: 7,
+      backgroundColor: clientColors.primary,
+      paddingHorizontal: 14,
+      paddingVertical: 11
+    },
+    outgoingImageBubble: { padding: 5, backgroundColor: clientColors.primarySoft },
+    outgoingText: { color: clientColors.white, fontSize: 15, lineHeight: 23, fontFamily: clientFont.regular },
+    readReceipt: {
+      alignSelf: "flex-end",
+      marginTop: 3,
+      color: "rgba(255,255,255,0.9)",
+      fontSize: 11,
+      fontFamily: clientFont.medium
+    },
+    failedText: { marginTop: 6, color: "#FFE3E5", fontSize: 12, fontFamily: clientFont.medium },
+    failedImageText: { color: clientColors.danger },
+    imageStatusText: { color: clientColors.primaryDark },
+    viewerClose: {
+      position: "absolute",
+      top: 52,
+      right: 22,
+      zIndex: 2,
+      minHeight: 44,
+      borderRadius: 18,
+      backgroundColor: "rgba(255,255,255,0.14)",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 16
+    },
+    inputPanel: {
+      minHeight: 78,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: 10,
+      borderWidth: 0,
+      borderTopWidth: 1,
+      borderTopColor: clientColors.border
+    },
+    plusButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 16,
+      backgroundColor: clientColors.primarySoft,
+      alignItems: "center",
+      justifyContent: "center"
+    },
+    inputBox: {
+      flex: 1,
+      minHeight: 44,
+      maxHeight: 116,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: clientColors.border,
+      backgroundColor: clientColors.white,
+      alignItems: "stretch",
+      justifyContent: "center",
+      paddingLeft: 13,
+      paddingRight: 12,
+      paddingVertical: MESSAGE_INPUT_VERTICAL_PADDING
+    },
+    input: {
+      width: "100%",
+      minWidth: 0,
+      minHeight: 24,
+      maxHeight: MAX_MESSAGE_INPUT_HEIGHT,
+      color: clientColors.text,
+      fontSize: 14,
+      lineHeight: 20,
+      paddingVertical: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      includeFontPadding: false,
+      fontFamily: clientFont.regular
+    },
+    sendButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 16,
+      backgroundColor: clientColors.primary,
+      alignItems: "center",
+      justifyContent: "center"
+    },
+    sendButtonDisabled: { backgroundColor: "#799A9D", opacity: 0.7 },
+    sheetOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(23,44,56,0.32)" },
+    sheet: { marginHorizontal: 16, marginBottom: 22, borderRadius: 28, overflow: "hidden" },
+    sheetItem: { minHeight: 78, flexDirection: "row", alignItems: "center", paddingHorizontal: 18, gap: 14 },
+    sheetIcon: { width: 46, height: 46, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+    sheetIconPurple: { backgroundColor: clientColors.primarySoft },
+    sheetIconGreen: { backgroundColor: clientColors.mintSoft },
+    sheetTitle: { color: clientColors.text, fontSize: 15, fontFamily: clientFont.semi },
+    sheetText: { marginTop: 4, color: clientColors.muted, fontSize: 12, fontFamily: clientFont.regular },
+    sheetDivider: { height: StyleSheet.hairlineWidth, marginLeft: 78, backgroundColor: clientColors.border },
+    cancelButton: {
+      height: 54,
+      borderTopWidth: 1,
+      borderTopColor: clientColors.border,
+      alignItems: "center",
+      justifyContent: "center"
+    },
+    cancelText: { color: clientColors.primary, fontSize: 15, fontFamily: clientFont.semi }
+  })
+};

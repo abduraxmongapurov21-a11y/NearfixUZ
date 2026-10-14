@@ -1,6 +1,16 @@
 import React from "react";
-import { Pressable, StyleSheet, View } from "react-native";
-import { Camera, Flag, LifeBuoy, MessageCircle, Phone, ShieldCheck, Video } from "lucide-react-native";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
+import {
+  ChevronRight,
+  Flag,
+  LifeBuoy,
+  MapPin,
+  MessageCircle,
+  Phone,
+  ShieldCheck,
+  WalletCards
+} from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 import { CountdownCard } from "./CountdownCard";
 import { OrderTimeline } from "./OrderTimeline";
 import { StatusBadge } from "./StatusBadge";
@@ -8,61 +18,102 @@ import { trackingStatusCopy, TRACKING_STATUSES } from "../../constants/orderTrac
 import { workerStatusCopy } from "../../constants/workerStatus";
 import { env } from "../../constants/env";
 import { WorkerAvatar } from "../ui/WorkerAvatar";
-import { colors, iconSizes, radius, shadow } from "../../theme";
-import { Text } from "../../i18n/native";
+import { GlassSurface } from "../client/GlassSurface";
+import { colors, font, radius, shadow } from "../../theme/clientTheme";
+import { Alert, Text } from "../../i18n/native";
 
-function WorkerSummary({ worker, onChat }) {
+function WorkerSummary({ worker, order, onChat }) {
+  const { t } = useTranslation();
   const statusCopy = workerStatusCopy[worker?.availability];
+  const phoneCandidate = String(worker?.phone || "").replace(/[\s().-]/g, "");
+  const phone = /^\+?\d{7,15}$/.test(phoneCandidate) ? phoneCandidate : null;
+
+  async function handleCall() {
+    if (!phone) return;
+    try {
+      await Linking.openURL(`tel:${phone}`);
+    } catch {
+      Alert.alert("Qo'ng'iroq qilish", "Telefon ilovasi ochilmadi. Qayta urinib ko'ring.");
+    }
+  }
 
   return (
-    <View style={styles.workerCard}>
-      <WorkerAvatar worker={worker} size={54} radius={radius.lg} style={styles.avatar} />
-      <View style={styles.workerBody}>
-        <Text style={styles.workerName}>{worker?.name || "Usta"}</Text>
-        <Text style={styles.workerMeta}>{worker?.specialty || "Xizmat ko'rsatuvchi"}</Text>
-        <Text style={styles.workerStatus}>{statusCopy?.label || "Holat noma'lum"}</Text>
+    <View style={styles.workerSection}>
+      <View style={styles.workerCard}>
+        <WorkerAvatar worker={worker} size={50} radius={17} style={styles.avatar} />
+        <View style={styles.workerBody}>
+          <Text translate={!worker?.name && !order.provider} style={styles.workerName} numberOfLines={1}>
+            {worker?.name || order.provider || "Usta"}
+          </Text>
+          <Text style={styles.workerMeta} numberOfLines={2}>
+            {worker?.specialty || order.service || "Xizmat ko'rsatuvchi"}
+          </Text>
+          {statusCopy ? <Text style={styles.workerStatus}>{statusCopy.label}</Text> : null}
+        </View>
+        {phone ? (
+          <GlassSurface style={styles.quickGlass}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Qo'ng'iroq qilish")}
+              onPress={handleCall}
+              style={styles.quickButton}
+            >
+              <Phone size={20} color={colors.primary} strokeWidth={1.8} />
+            </Pressable>
+          </GlassSurface>
+        ) : null}
       </View>
-      <View style={styles.quickActions}>
-        <Pressable onPress={onChat} style={styles.quickButton}>
-          <MessageCircle size={iconSizes.sm} color={colors.primary} strokeWidth={2.5} />
+      {onChat ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onChat}
+          style={({ pressed }) => [styles.chatButton, pressed && styles.pressed]}
+        >
+          <MessageCircle size={20} color={colors.white} strokeWidth={1.8} />
+          <Text style={styles.chatText}>Chat</Text>
+          <ChevronRight size={18} color={colors.white} strokeWidth={1.8} />
         </Pressable>
-        <Pressable style={styles.quickButton}>
-          <Phone size={iconSizes.sm} color={colors.primary} strokeWidth={2.5} />
-        </Pressable>
-      </View>
+      ) : null}
+      <Text style={styles.chatNote}>Chat faqat buyurtma tafsilotlari uchun.</Text>
     </View>
   );
 }
 
 export function ActiveOrderCard({ order, worker, onChat, onCancel, onReport, onSupport }) {
   if (!order) return null;
-
   const copy = trackingStatusCopy[order.statusKey] || trackingStatusCopy[TRACKING_STATUSES.REQUEST_SENT];
   const waitingForResponse = order.statusKey === TRACKING_STATUSES.REQUEST_SENT;
   const cancelled = order.statusKey === TRACKING_STATUSES.CANCELLED;
+  const orderCode = String(order.publicCode || order.id || "").slice(0, 10);
 
   return (
     <View style={styles.card}>
       <View style={styles.top}>
-        <View style={styles.titleBlock}>
-          <StatusBadge statusKey={order.statusKey} />
-          <Text style={styles.title}>{copy.title}</Text>
-          <Text style={styles.subtitle}>{copy.subtitle}</Text>
+        <StatusBadge statusKey={order.statusKey} />
+        <Text translate={false} style={styles.orderNumberText}>
+          #{orderCode}
+        </Text>
+      </View>
+      <View style={styles.titleBlock}>
+        <Text translate={!order.title && !order.service} style={styles.title}>{order.title || order.service || copy.title}</Text>
+        <Text style={styles.subtitle}>{copy.subtitle}</Text>
+      </View>
+      <View style={styles.orderInfo}>
+        <View style={styles.infoRow}>
+          <MapPin size={17} color={colors.subtle} strokeWidth={1.7} />
+          <Text translate={!order.address} style={styles.infoText}>{order.address || "Manzil ko'rsatilmagan"}</Text>
         </View>
-        <View style={styles.orderNumber}>
-          <Text style={styles.orderNumberText}>#{order.id}</Text>
+        <View style={styles.infoRow}>
+          <WalletCards size={17} color={colors.subtle} strokeWidth={1.7} />
+          <Text style={styles.amount}>{order.amount || order.price || "Kelishiladi"}</Text>
         </View>
       </View>
-
       {waitingForResponse ? <CountdownCard deadlineAt={order.responseDeadlineAt} /> : null}
-
-      <OrderTimeline statusKey={order.statusKey} />
-
-      <WorkerSummary worker={worker} onChat={onChat} />
-
+      {!cancelled ? <OrderTimeline statusKey={order.statusKey} /> : null}
+      <WorkerSummary worker={worker} order={order} onChat={onChat} />
       {env.paymentsEnabled ? (
         <View style={styles.paymentCard}>
-          <ShieldCheck size={iconSizes.md} color={colors.success} strokeWidth={2.5} />
+          <ShieldCheck size={20} color={colors.success} strokeWidth={1.8} />
           <View style={styles.paymentBody}>
             <Text style={styles.paymentTitle}>To'lov ish yakunlangandan keyin</Text>
             <Text style={styles.paymentText}>
@@ -71,36 +122,35 @@ export function ActiveOrderCard({ order, worker, onChat, onCancel, onReport, onS
           </View>
         </View>
       ) : null}
-
-      <View style={styles.chatTools}>
-        <View style={styles.uploadTool}>
-          <Camera size={iconSizes.sm} color={colors.primary} strokeWidth={2.5} />
-          <Text style={styles.uploadText}>Rasm</Text>
-        </View>
-        <View style={styles.uploadTool}>
-          <Video size={iconSizes.sm} color={colors.primary} strokeWidth={2.5} />
-          <Text style={styles.uploadText}>Video</Text>
-        </View>
-        <Text style={styles.chatNote}>Chat faqat buyurtma tafsilotlari uchun.</Text>
-      </View>
-
       <View style={styles.safetyActions}>
-        <Pressable onPress={onSupport} style={styles.supportButton}>
-          <LifeBuoy size={17} color={colors.primary} />
-          <Text style={styles.supportText}>Yordam</Text>
-        </Pressable>
-        <Pressable onPress={onReport} style={styles.reportButton}>
-          <Flag size={17} color={colors.danger} />
-          <Text style={styles.reportText}>Muammo haqida xabar berish</Text>
-        </Pressable>
+        {onSupport ? (
+          <Pressable accessibilityRole="button" onPress={onSupport} style={styles.safetyButton}>
+            <LifeBuoy size={19} color={colors.primary} strokeWidth={1.8} />
+            <Text style={styles.supportText}>Yordam</Text>
+            <ChevronRight size={17} color={colors.subtle} strokeWidth={1.7} />
+          </Pressable>
+        ) : null}
+        {onReport ? (
+          <Pressable accessibilityRole="button" onPress={onReport} style={styles.safetyButton}>
+            <Flag size={19} color={colors.muted} strokeWidth={1.8} />
+            <Text style={styles.reportText}>Muammo haqida xabar berish</Text>
+            <ChevronRight size={17} color={colors.subtle} strokeWidth={1.7} />
+          </Pressable>
+        ) : null}
       </View>
-
       {!cancelled && onCancel ? (
-        <Pressable onPress={onCancel} style={({ pressed }) => [styles.cancelButton, pressed && styles.pressed]}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onCancel}
+          style={({ pressed }) => [styles.cancelButton, pressed && styles.pressed]}
+        >
           <Text style={styles.cancelText}>Buyurtmani bekor qilish</Text>
         </Pressable>
       ) : cancelled ? (
-        <Text style={styles.cancelledText}>Sabab: {order.cancellationReason || "Ko'rsatilmagan"}</Text>
+        <View style={styles.cancelledBox}>
+          <Text style={styles.cancelledLabel}>Bekor qilish sababi</Text>
+          <Text style={styles.cancelledText}>{order.cancellationReason || "Ko'rsatilmagan"}</Text>
+        </View>
       ) : null}
     </View>
   );
@@ -108,203 +158,79 @@ export function ActiveOrderCard({ order, worker, onChat, onCancel, onReport, onS
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.xxl,
+    borderRadius: 24,
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 16,
-    gap: 14,
+    padding: 18,
+    gap: 18,
     ...shadow
   },
-  top: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  titleBlock: {
-    flex: 1,
-    gap: 7
-  },
-  title: {
-    color: colors.text,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: "900"
-  },
-  subtitle: {
-    color: colors.muted,
-    fontWeight: "700"
-  },
-  orderNumber: {
-    height: 34,
-    borderRadius: radius.pill,
-    backgroundColor: "#E6F4F8",
-    paddingHorizontal: 10,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  orderNumberText: {
-    color: colors.primary,
-    fontWeight: "900"
-  },
+  top: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  titleBlock: { gap: 5 },
+  title: { color: colors.text, fontSize: 22, lineHeight: 29, fontFamily: font.bold, letterSpacing: -0.5 },
+  subtitle: { color: colors.muted, fontSize: 13, lineHeight: 19, fontFamily: font.regular },
+  orderNumberText: { color: colors.subtle, fontSize: 10, fontFamily: font.medium },
+  orderInfo: { gap: 11, paddingVertical: 14, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  infoRow: { flexDirection: "row", alignItems: "flex-start", gap: 9 },
+  infoText: { flex: 1, color: colors.muted, fontSize: 12, lineHeight: 19, fontFamily: font.regular },
+  amount: { color: colors.text, fontSize: 14, lineHeight: 20, fontFamily: font.semi },
+  workerSection: { gap: 10 },
   workerCard: {
-    minHeight: 82,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surface,
+    minHeight: 84,
+    borderRadius: 18,
+    backgroundColor: colors.background,
     padding: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 10
   },
-  avatar: {
-    width: 54,
-    height: 54,
-    borderRadius: radius.lg,
-    backgroundColor: colors.white
-  },
-  workerBody: {
-    flex: 1
-  },
-  workerName: {
-    color: colors.text,
-    fontWeight: "900"
-  },
-  workerMeta: {
-    marginTop: 2,
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: "900"
-  },
-  workerStatus: {
-    marginTop: 4,
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: "800"
-  },
-  quickActions: {
+  avatar: { width: 50, height: 50, borderRadius: 17, backgroundColor: colors.white },
+  workerBody: { flex: 1, minWidth: 0 },
+  workerName: { color: colors.text, fontSize: 14, lineHeight: 19, fontFamily: font.semi },
+  workerMeta: { marginTop: 3, color: colors.muted, fontSize: 11, lineHeight: 17, fontFamily: font.regular },
+  workerStatus: { marginTop: 4, color: colors.primary, fontSize: 10, lineHeight: 15, fontFamily: font.medium },
+  quickGlass: { width: 44, height: 44, borderRadius: 15 },
+  quickButton: { flex: 1, alignItems: "center", justifyContent: "center" },
+  chatButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    backgroundColor: colors.primary,
     flexDirection: "row",
-    gap: 8
-  },
-  quickButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.md,
-    backgroundColor: colors.white,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    gap: 9
   },
+  chatText: { color: colors.white, fontSize: 14, fontFamily: font.semi },
+  chatNote: { color: colors.muted, fontSize: 11, lineHeight: 17, textAlign: "center", fontFamily: font.regular },
   paymentCard: {
-    borderRadius: radius.xl,
-    backgroundColor: "rgba(22,163,74,0.09)",
-    borderWidth: 1,
-    borderColor: "rgba(22,163,74,0.18)",
-    padding: 12,
+    borderRadius: radius.lg,
+    backgroundColor: colors.mintSoft,
+    padding: 14,
     flexDirection: "row",
     gap: 10
   },
-  paymentBody: {
-    flex: 1
-  },
-  paymentTitle: {
-    color: colors.text,
-    fontWeight: "900"
-  },
-  paymentText: {
-    marginTop: 3,
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: "700"
-  },
-  chatTools: {
-    minHeight: 46,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8
-  },
-  uploadTool: {
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4
-  },
-  uploadText: {
-    color: colors.primary,
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  chatNote: {
-    flex: 1,
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: "700"
-  },
-  safetyActions: {
-    flexDirection: "row",
-    gap: 8
-  },
-  supportButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: "#CFE8F0",
-    backgroundColor: "#F2FBFE",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7
-  },
-  supportText: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: "900"
-  },
-  reportButton: {
-    flex: 1.4,
-    minHeight: 42,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: "#FECACA",
-    backgroundColor: "#FFF7F7",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7
-  },
-  reportText: {
-    color: colors.danger,
-    fontSize: 11,
-    fontWeight: "900"
-  },
+  paymentBody: { flex: 1 },
+  paymentTitle: { color: colors.text, fontSize: 13, lineHeight: 19, fontFamily: font.semi },
+  paymentText: { marginTop: 4, color: colors.muted, fontSize: 12, lineHeight: 18, fontFamily: font.regular },
+  safetyActions: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 },
+  safetyButton: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 9 },
+  supportText: { flex: 1, color: colors.primary, fontSize: 13, lineHeight: 19, fontFamily: font.medium },
+  reportText: { flex: 1, color: colors.muted, fontSize: 12, lineHeight: 18, fontFamily: font.medium },
   cancelButton: {
-    minHeight: 44,
-    borderRadius: radius.lg,
-    backgroundColor: "rgba(239,68,68,0.1)",
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F2DADD",
+    backgroundColor: "#FFF5F6",
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    padding: 10
   },
-  cancelText: {
-    color: colors.danger,
-    fontWeight: "900"
-  },
-  cancelledText: {
-    borderRadius: radius.lg,
-    backgroundColor: "rgba(239,68,68,0.08)",
-    color: colors.danger,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden"
-  },
-  pressed: {
-    opacity: 0.78
-  }
+  cancelText: { color: colors.danger, fontSize: 12, lineHeight: 18, fontFamily: font.semi },
+  cancelledBox: { borderRadius: 14, backgroundColor: "#FFF5F6", padding: 14, gap: 5 },
+  cancelledLabel: { color: colors.danger, fontSize: 12, fontFamily: font.semi },
+  cancelledText: { color: colors.muted, fontSize: 12, lineHeight: 18, fontFamily: font.regular },
+  pressed: { opacity: 0.75 }
 });

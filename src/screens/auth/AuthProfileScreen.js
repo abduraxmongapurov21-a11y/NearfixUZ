@@ -40,7 +40,7 @@ export function AuthProfileScreen({ navigation, route }) {
       }
 
       const resumed = await resumeAfterAuthentication(navigation, result.role);
-      if (!resumed.ok) {
+      if (!resumed.ok && !resumed.stale) {
         Alert.alert("Usta mavjud emas", "Usta hozir buyurtma qabul qilmayapti. Boshqa ustani tanlang.");
       }
     } finally {

@@ -8,6 +8,7 @@ import {
 import { deleteMediaObject, uploadMediaObject } from "../../storage/media.storage.js";
 import { authenticate } from "../auth/middleware/auth.middleware.js";
 import { createUploadedMedia } from "./media.service.js";
+import { matchesMediaContent } from "./media-content.js";
 
 const allowedMimeTypes = new Set([
   "image/jpeg",
@@ -42,9 +43,10 @@ const upload = multer({
 });
 
 function resolveScope(value: unknown) {
-  const raw = typeof value === "string" ? value.toUpperCase() : undefined;
-  if (raw && raw in MediaScope) return MediaScope[raw as keyof typeof MediaScope];
-  return undefined;
+  if (value === undefined) return undefined;
+  const raw = typeof value === "string" ? value.toUpperCase() : "";
+  if (Object.values(MediaScope).includes(raw as MediaScope)) return raw as MediaScope;
+  throw Object.assign(new Error("Unknown media scope"), { status: 400, code: "INVALID_MEDIA_SCOPE" });
 }
 
 function normalizeMimeType(value: string) {
@@ -62,7 +64,12 @@ function resolveObjectPrefix(scope?: MediaScope): R2ObjectPrefix {
 
 export const mediaRouter = Router();
 
-mediaRouter.post("/upload", authenticate, upload.single("file"), async (request, response, next) => {
+mediaRouter.post("/upload", authenticate, (request, response, next) => {
+  upload.single("file")(request, response, (error) => {
+    if (error instanceof multer.MulterError) Object.assign(error, { status: error.code === "LIMIT_FILE_SIZE" ? 413 : 400 });
+    next(error);
+  });
+}, async (request, response, next) => {
   try {
     const file = request.file;
 
@@ -75,6 +82,12 @@ mediaRouter.post("/upload", authenticate, upload.single("file"), async (request,
 
     const scope = resolveScope(request.body.scope);
     const mimeType = normalizeMimeType(file.mimetype);
+    if (!matchesMediaContent(file.buffer, mimeType)) {
+      throw Object.assign(new Error("File content does not match the declared image or video type"), {
+        status: 415,
+        code: "UNSUPPORTED_MEDIA_TYPE"
+      });
+    }
     const objectKey = createR2ObjectKey(resolveObjectPrefix(scope), file.originalname, mimeType);
     const requestHost = request.get("host");
     if (!requestHost) {

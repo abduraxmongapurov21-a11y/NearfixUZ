@@ -5,12 +5,16 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AdminOrderDetail } from "@/contracts/admin";
 import { adminLabel } from "@/lib/admin-labels";
+import { TableLoadState } from "@/shared/components/filter-bar";
 import type { AdminOrderAction } from "../services/orders-service";
 
 type OrderDetailDrawerProps = {
   open: boolean;
   order?: AdminOrderDetail;
   isLoading?: boolean;
+  canManage?: boolean;
+  loadError?: Error | null;
+  onRetry?: () => void;
   actionError?: string | null;
   actionSuccess?: string | null;
   pendingAction?: AdminOrderAction | null;
@@ -84,6 +88,9 @@ export function OrderDetailDrawer({
   open,
   order,
   isLoading,
+  canManage = false,
+  loadError,
+  onRetry,
   actionError,
   actionSuccess,
   pendingAction,
@@ -92,7 +99,7 @@ export function OrderDetailDrawer({
 }: OrderDetailDrawerProps) {
   if (!open) return null;
 
-  const actions = getAvailableActions(order?.status);
+  const actions = canManage ? getAvailableActions(order?.status) : [];
 
   return (
     <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-xl border-l bg-background shadow-xl">
@@ -112,6 +119,8 @@ export function OrderDetailDrawer({
             <div className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
               Buyurtma tafsilotlari yuklanmoqda...
             </div>
+          ) : loadError ? (
+            <TableLoadState error={loadError} isPending={false} onRetry={() => onRetry?.()} />
           ) : order ? (
             <div className="space-y-4">
               <section className="rounded-md border bg-card p-4">

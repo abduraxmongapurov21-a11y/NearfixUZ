@@ -12,8 +12,9 @@ const profile = source("src/screens/auth/AuthProfileScreen.js");
 const navigator = source("src/navigation/AuthNavigator.js");
 const authStore = source("src/store/authStore.js");
 
-assert.match(guestProfile, /title="Kirish yoki ro'yxatdan o'tish"/);
-assert.equal((guestProfile.match(/<PrimaryButton/g) || []).length, 1, "guest profile must expose one primary auth CTA");
+assert.match(guestProfile, /Kirish yoki ro'yxatdan o'tish/);
+assert.equal((guestProfile.match(/requireAuthentication\(root,/g) || []).length, 1, "guest profile must expose one primary auth CTA");
+assert.match(guestProfile, /requireAuthentication\(root, \{ kind: "PROTECTED_ROUTE", routeName: ROUTES\.PROFILE_TAB \}\)/);
 assert.doesNotMatch(guestProfile, /SecondaryButton|title="Usta bo'lish"/);
 
 assert.match(navigator, /initialRouteName=\{invalidation \? ROUTES\.SESSION_INVALIDATED : ROUTES\.LOGIN\}/);

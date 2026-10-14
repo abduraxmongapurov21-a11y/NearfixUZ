@@ -3,35 +3,9 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AppSidebar } from "@/shared/components/app-sidebar";
-import { hasPermission, isSuperAdmin, type AdminPermission } from "@/shared/auth/permissions";
+import { canAccessAdminPath } from "@/shared/auth/navigation";
 import { Topbar } from "@/shared/components/topbar";
 import { useAdminSessionStore } from "@/stores/admin-session-store";
-
-const routePermissions: {
-  prefix: string;
-  permission?: AdminPermission;
-  anyPermission?: AdminPermission[];
-  superAdminOnly?: boolean;
-}[] = [
-  { prefix: "/dashboard", permission: "analytics.read" },
-  { prefix: "/orders", permission: "orders.read" },
-  { prefix: "/workers", permission: "workers.read" },
-  { prefix: "/users", permission: "users.read" },
-  { prefix: "/reviews", permission: "reviews.read" },
-  { prefix: "/reports", permission: "reports.read" },
-  { prefix: "/support", permission: "support.read" },
-  { prefix: "/content", permission: "content.read" },
-  { prefix: "/system/admins", anyPermission: ["admins.read", "admins.manage"] },
-  { prefix: "/system/audit-logs", permission: "audit.read" }
-];
-
-function canAccessPath(session: { role: string; permissions: string[] }, pathname: string) {
-  const rule = routePermissions.find((item) => pathname === item.prefix || pathname.startsWith(`${item.prefix}/`));
-  if (!rule) return true;
-  if (rule.superAdminOnly) return isSuperAdmin(session);
-  if (rule.anyPermission) return isSuperAdmin(session) || rule.anyPermission.some((permission) => hasPermission(session, permission));
-  return rule.permission ? hasPermission(session, rule.permission) : true;
-}
 
 export default function DashboardLayout({
   children
@@ -50,11 +24,12 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (isSessionReady && !session) router.replace("/login");
+    else if (session?.tokenType === "admin_account" && session.mustChangePassword) router.replace("/change-password");
   }, [isSessionReady, router, session]);
 
-  if (!isSessionReady || !session) return null;
+  if (!isSessionReady || !session || session.mustChangePassword) return null;
 
-  const canAccess = canAccessPath(session, pathname);
+  const canAccess = canAccessAdminPath(session, pathname);
 
   return (
     <div className="min-h-screen bg-background">

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { adminLabel } from "@/lib/admin-labels";
 import { hasPermission, isSuperAdmin, type AdminPermission } from "@/shared/auth/permissions";
 import { DataTable } from "@/shared/components/data-table";
+import { TableLoadState } from "@/shared/components/filter-bar";
 import { useAdminSessionStore } from "@/stores/admin-session-store";
 import { useAdmins } from "../hooks/use-admins";
 import {
@@ -160,7 +161,7 @@ function PermissionList({
 }
 
 export function AdminsManager() {
-  const { data = [], isLoading } = useAdmins();
+  const { data = [], isPending: isLoading, error: loadError, refetch } = useAdmins();
   const queryClient = useQueryClient();
   const session = useAdminSessionStore((state) => state.session);
   const canManageAdmins = isSuperAdmin(session) || hasPermission(session, "admins.manage");
@@ -368,7 +369,7 @@ export function AdminsManager() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
-          {data.length} ta admin hisobi
+          {!isLoading && !loadError ? `${data.length} ta admin hisobi` : null}
         </div>
         {canManageAdmins ? (
           <Button onClick={openCreateModal} type="button">
@@ -388,9 +389,9 @@ export function AdminsManager() {
           {errorMessage}
         </div>
       ) : null}
-      {isLoading ? <div className="rounded-md border bg-card p-4 text-sm">Adminlar yuklanmoqda...</div> : null}
+      <TableLoadState error={loadError} isPending={isLoading} onRetry={() => void refetch()} />
 
-      <DataTable
+      {!isLoading && !loadError ? <DataTable
         columns={[
           {
             accessorKey: "name",
@@ -487,7 +488,7 @@ export function AdminsManager() {
         data={data}
         emptyDescription="Hali admin hisobi yo'q."
         emptyTitle="Adminlar yo'q"
-      />
+      /> : null}
 
       {modalMode ? (
         <Modal onClose={clearModalState} title={modalTitle}>

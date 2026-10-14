@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Star } from "lucide-react-native";
-import { PrimaryButton } from "../ui/Button";
+import { useTranslation } from "react-i18next";
 import { Text, TextInput } from "../../i18n/native";
-import { colors, radius } from "../../theme";
+import { colors, font, radius } from "../../theme/clientTheme";
 
 export function OrderRatingCard({ review, submitting = false, onSubmit }) {
+  const { t } = useTranslation();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
 
@@ -23,7 +24,7 @@ export function OrderRatingCard({ review, submitting = false, onSubmit }) {
             />
           ))}
         </View>
-        {review.text ? <Text style={styles.reviewText}>{review.text}</Text> : null}
+        {review.text ? <Text translate={false} style={styles.reviewText}>{review.text}</Text> : null}
       </View>
     );
   }
@@ -37,12 +38,15 @@ export function OrderRatingCard({ review, submitting = false, onSubmit }) {
           <Pressable
             key={value}
             accessibilityRole="button"
-            accessibilityLabel={`${value} yulduz`}
+            accessibilityLabel={t("{{value0}} yulduz", { value0: value })}
+            accessibilityState={{ selected: value === rating, disabled: submitting }}
+            disabled={submitting}
             onPress={() => setRating(value)}
-            hitSlop={8}
+            style={styles.starButton}
           >
             <Star
-              size={32}
+              size={29}
+              strokeWidth={1.7}
               color={colors.warning}
               fill={value <= rating ? colors.warning : "transparent"}
             />
@@ -59,11 +63,15 @@ export function OrderRatingCard({ review, submitting = false, onSubmit }) {
         editable={!submitting}
         style={styles.input}
       />
-      <PrimaryButton
-        title={submitting ? "Yuborilmoqda..." : "Bahoni yuborish"}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !rating || submitting, busy: submitting }}
+        style={[styles.submitButton, (!rating || submitting) && styles.disabled]}
         disabled={!rating || submitting}
         onPress={() => onSubmit?.(rating, comment)}
-      />
+      >
+        <Text style={styles.submitText}>{submitting ? "Yuborilmoqda..." : "Bahoni yuborish"}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -79,19 +87,30 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: "900"
+    fontSize: 17,
+    fontFamily: font.bold
   },
   copy: {
     color: colors.muted,
     fontSize: 13,
     lineHeight: 19,
-    fontWeight: "600"
+    fontFamily: font.regular
   },
   stars: {
     flexDirection: "row",
-    gap: 8
+    gap: 3,
+    justifyContent: "space-between"
   },
+  starButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 12 },
+  submitButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  submitText: { color: colors.white, fontSize: 13, fontFamily: font.semi },
+  disabled: { opacity: 0.45 },
   input: {
     minHeight: 92,
     borderRadius: radius.lg,
@@ -100,11 +119,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     padding: 14,
     color: colors.text,
+    fontFamily: font.regular,
+    fontSize: 13,
     textAlignVertical: "top"
   },
   reviewText: {
     color: colors.muted,
     lineHeight: 20,
-    fontWeight: "600"
+    fontFamily: font.regular
   }
 });

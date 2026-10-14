@@ -1,6 +1,6 @@
 # NearFIX App Review Notes
 
-Copy this document into App Store Connect Review Notes for the NearFIX 1.0.3 review build. Replace credential placeholders directly in App Store Connect from the approved secret source; never store the values in Git.
+Copy this document into App Store Connect Review Notes for the NearFIX 1.0.7 review build after checking the dedicated accounts against the deployed environment. Replace credential placeholders directly in App Store Connect from the approved secret source; never store the values in Git.
 
 ## Production services
 
@@ -46,6 +46,13 @@ Copy this document into App Store Connect Review Notes for the NearFIX 1.0.3 rev
 ## Payments
 
 Payments are disabled for this review build. No payment information or purchase is required.
+
+## Account deletion
+
+- Open Profile and select **Hisobni o‘chirish**, then confirm.
+- Complete or cancel active orders before deleting the account. Support can help resolve an order that prevents deletion.
+- The public account-deletion page linked above must contain the monitored email request route before submission. Users can request deletion without reinstalling or signing into the app; support verifies ownership without asking for a password or SMS code.
+- Use a disposable review account when testing deletion; deleting the main reviewer accounts would invalidate these login instructions.
 
 ## Safety and moderation
 

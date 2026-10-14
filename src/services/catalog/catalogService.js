@@ -1,5 +1,6 @@
-import { apiRequest, httpRequest } from "../api/client";
-import { normalizeDistanceMeters } from "./catalogDistance.mjs";
+import { ApiError, apiRequest, httpRequest } from "../api/client";
+import { httpAuthRequest } from "../api/authenticatedClient";
+import { hasAddressCoordinates, normalizeDistanceMeters } from "./catalogDistance.mjs";
 
 function mapAvailability(status) {
   return String(status || "OFFLINE").toLowerCase();
@@ -49,10 +50,16 @@ export async function fetchCatalogWorkers(categoryId, options = {}) {
     async () => {
       const params = new URLSearchParams();
       if (categoryId) params.set("categoryId", categoryId);
-      if (options.originAddressId) params.set("originAddressId", options.originAddressId);
+      if (options.originCoordinates) {
+        if (!hasAddressCoordinates(options.originCoordinates)) throw new ApiError("Invalid origin coordinates", 400, "ORIGIN_COORDINATES_INVALID");
+        params.set("originLat", String(options.originCoordinates.lat ?? options.originCoordinates.latitude));
+        params.set("originLng", String(options.originCoordinates.lng ?? options.originCoordinates.longitude));
+      } else if (options.originAddressId) params.set("originAddressId", options.originAddressId);
       if (options.sort === "nearest") params.set("sort", "nearest");
       const query = params.toString() ? `?${params.toString()}` : "";
-      const payload = await httpRequest(`/workers/catalog${query}`, { token: options.token });
+      const payload = options.token
+        ? await httpAuthRequest(`/workers/catalog${query}`, { token: options.token })
+        : await httpRequest(`/workers/catalog${query}`);
 
       return {
         ok: true,

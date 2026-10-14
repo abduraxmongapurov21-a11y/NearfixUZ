@@ -20,6 +20,17 @@ const VISIBLE_PROPS = new Set([
 ]);
 const COPY_RE = /[A-Za-zА-Яа-яЁёЎўҚқҒғҲҳ]/;
 const NON_COPY = new Set([
+  "link",
+  "box-none",
+  "LOCATION_PERMISSION_DENIED",
+  "LOCATION_UNAVAILABLE",
+  "ORIGIN_COORDINATES_INVALID",
+  "Invalid origin coordinates",
+  "Location timeout",
+  "VIDEO",
+  "HOME",
+  "SUSPENDED",
+  "{{value0}}:{{value1}}",
   "NearFIX",
   "Near",
   "FIX",
@@ -51,6 +62,7 @@ const NON_COPY = new Set([
   "NETWORK_REQUEST_FAILED",
   "AUTHENTICATED",
   "WORKER_PROFILE_INCOMPLETE",
+  "ORDER_CHANGED",
   "NAVIGATOR_NOT_READY",
   "NAVIGATION_FAILED",
   "/auth/register/complete",
@@ -77,6 +89,7 @@ function isCandidate(value, explicit = false) {
   if (/^(?:https?:|mailto:|tel:|\.\.?\/)/i.test(copy)) return false;
   if (/^#[0-9a-f]{3,8}$/i.test(copy)) return false;
   if (!explicit && /^[a-z][a-zA-Z0-9_.:/-]*$/.test(copy)) return false;
+  if (!explicit && /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(copy)) return false;
   return true;
 }
 
@@ -98,6 +111,17 @@ function isInsideStyleSheet(pathRef) {
   );
 }
 
+function isReactKey(pathRef) {
+  return Boolean(pathRef.findParent((candidate) => candidate.isJSXAttribute() && candidate.node.name?.name === "key"));
+}
+
+function isLocaleFormatArgument(pathRef) {
+  return Boolean(pathRef.findParent((candidate) => candidate.isCallExpression() &&
+    candidate.node.callee?.type === "MemberExpression" &&
+    ["toLocaleString", "toLocaleDateString", "toLocaleTimeString"].includes(candidate.node.callee.property?.name) &&
+    candidate.node.arguments.some((argument) => argument.start <= pathRef.node.start && argument.end >= pathRef.node.end)));
+}
+
 export function extractCopy({ root = process.cwd() } = {}) {
   const result = new Map();
   const sourceRoots = [path.join(root, "src")];
@@ -113,6 +137,9 @@ export function extractCopy({ root = process.cwd() } = {}) {
   }
 
   for (const file of files) {
+    // The shared build/runtime URL validator contains technical diagnostics,
+    // protocols and host tokens, rather than copy displayed by the interface.
+    if (file === path.join(root, "src", "constants", "mobileRuntimeConfig.js")) continue;
     const source = fs.readFileSync(file, "utf8");
     const ast = parse(source, { sourceType: "module", plugins: ["jsx"] });
     traverse(ast, {
@@ -120,6 +147,7 @@ export function extractCopy({ root = process.cwd() } = {}) {
         add(pathRef.node.value, file, pathRef.node.loc.start.line, true);
       },
       StringLiteral(pathRef) {
+        if (isReactKey(pathRef) || isLocaleFormatArgument(pathRef)) return;
         const parent = pathRef.parent;
         if (
           parent.type === "ImportDeclaration" ||
@@ -150,7 +178,7 @@ export function extractCopy({ root = process.cwd() } = {}) {
         add(pathRef.node.value, file, pathRef.node.loc.start.line, explicit);
       },
       TemplateLiteral(pathRef) {
-        if (isInsideStyleSheet(pathRef)) return;
+        if (isInsideStyleSheet(pathRef) || isReactKey(pathRef) || isLocaleFormatArgument(pathRef)) return;
         const jsxExpression = pathRef.findParent((candidate) => candidate.isJSXExpressionContainer());
         const alertCall = pathRef.findParent(
           (candidate) =>

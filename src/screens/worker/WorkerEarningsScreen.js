@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { ArrowDownLeft, ArrowUpRight, CalendarDays, DollarSign } from "lucide-react-native";
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from "react-native-svg";
 import { env } from "../../constants/env";
@@ -24,9 +24,36 @@ const avatarPalette = [
 export function WorkerEarningsScreen() {
   const earnings = useWorkerStore((state) => state.earnings);
   const transactions = useWorkerStore((state) => state.transactions);
+  const transactionsNextCursor = useWorkerStore((state) => state.transactionsNextCursor);
+  const transactionsLoading = useWorkerStore((state) => state.transactionsLoading);
+  const transactionsError = useWorkerStore((state) => state.transactionsError);
+  const loadMoreTransactionsFromApi = useWorkerStore((state) => state.loadMoreTransactionsFromApi);
   const syncWorkerFromApi = useWorkerStore((state) => state.syncWorkerFromApi);
   const [refreshing, setRefreshing] = useState(false);
   const [range, setRange] = useState("week");
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+
+  const selectedPeriod = earnings.periods?.[range];
+  const trend = selectedPeriod?.revenueTrend || earnings.revenueTrend || [];
+  const rangeTransactions = useMemo(() => {
+    if (!selectedPeriod?.startAt || !selectedPeriod?.endAt) return transactions;
+    const start = new Date(selectedPeriod.startAt).getTime();
+    const end = new Date(selectedPeriod.endAt).getTime();
+    return transactions.filter((transaction) => {
+      const date = new Date(transaction.createdAt).getTime();
+      return date >= start && date < end;
+    });
+  }, [transactions, selectedPeriod]);
+
+  function selectRange(nextRange) {
+    setRange(nextRange);
+    setShowAllTransactions(false);
+  }
+
+  async function showMoreTransactions() {
+    setShowAllTransactions(true);
+    if (transactionsNextCursor) await loadMoreTransactionsFromApi();
+  }
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -35,27 +62,28 @@ export function WorkerEarningsScreen() {
   }
 
   const visibleTransactions = useMemo(() => {
-    return transactions.slice(0, 5).map((transaction, index) => {
+    const visible = showAllTransactions ? rangeTransactions : rangeTransactions.slice(0, 5);
+    return visible.map((transaction, index) => {
       const palette = avatarPalette[index % avatarPalette.length];
       return {
         id: transaction.id,
         title: transaction.clientName || transaction.publicCode || "Buyurtma",
         subtitle: `${transaction.service || "Xizmat"} - ${formatDate(transaction.createdAt)}`,
-        amount: formatPositiveAmount(transaction.netAmount || transaction.amount),
+        amount: formatPositiveAmount(transaction.netAmount ?? transaction.amount),
         positive: true,
         avatar: getInitials(transaction.clientName || transaction.publicCode || "NF"),
         avatarBg: palette.avatarBg,
         avatarColor: palette.avatarColor
       };
     });
-  }, [transactions]);
+  }, [rangeTransactions, showAllTransactions]);
 
   const selectedTotal =
-    range === "today" ? earnings.todayEarnings : range === "month" ? earnings.monthEarnings : earnings.weekEarnings;
+    selectedPeriod?.total ?? (range === "today" ? earnings.todayEarnings : range === "month" ? earnings.monthEarnings : earnings.weekEarnings);
   const summaryLabel = range === "today" ? "BUGUNGI DAROMAD" : range === "month" ? "OYLIK DAROMAD" : "HAFTALIK DAROMAD";
-  const jobs = earnings.completedJobs || 0;
-  const avgDay = earnings.averagePerDay || 0;
-  const hasEarningsData = Boolean(selectedTotal || jobs || visibleTransactions.length);
+  const jobs = selectedPeriod?.completedJobs ?? earnings.completedJobs ?? 0;
+  const avgDay = selectedPeriod?.averagePerDay ?? earnings.averagePerDay ?? 0;
+  const growthPercentage = selectedPeriod?.growthPercentage ?? earnings.growthPercentage ?? 0;
 
   return (
     <ScrollView
@@ -72,9 +100,9 @@ export function WorkerEarningsScreen() {
       </View>
 
       <View style={styles.segment}>
-        <RangeButton label="Bugun" active={range === "today"} onPress={() => setRange("today")} />
-        <RangeButton label="Bu hafta" active={range === "week"} onPress={() => setRange("week")} />
-        <RangeButton label="Bu oy" active={range === "month"} onPress={() => setRange("month")} />
+        <RangeButton label="Bugun" active={range === "today"} onPress={() => selectRange("today")} />
+        <RangeButton label="Bu hafta" active={range === "week"} onPress={() => selectRange("week")} />
+        <RangeButton label="Bu oy" active={range === "month"} onPress={() => selectRange("month")} />
       </View>
 
       <View style={styles.summaryCard}>
@@ -87,7 +115,7 @@ export function WorkerEarningsScreen() {
           </View>
           <View style={styles.growthPillDark}>
             <ArrowUpRight size={12} color="#49F093" strokeWidth={2.5} />
-            <Text style={styles.growthTextDark}>{earnings.growthPercentage || 0}%</Text>
+            <Text style={styles.growthTextDark}>{growthPercentage}%</Text>
           </View>
         </View>
 
@@ -103,26 +131,49 @@ export function WorkerEarningsScreen() {
           <Text style={styles.cardTitle}>Daromad dinamikasi</Text>
           <View style={styles.growthPillLight}>
             <ArrowUpRight size={12} color="#18A850" strokeWidth={2.5} />
-            <Text style={styles.growthTextLight}>{earnings.growthPercentage || 0}%</Text>
+            <Text style={styles.growthTextLight}>{growthPercentage}%</Text>
           </View>
         </View>
-        <RevenueChart trend={earnings.revenueTrend || []} />
+        <RevenueChart trend={trend} range={range} />
       </View>
 
       <View style={styles.transactionsHeader}>
         <Text style={styles.transactionsTitle}>Tranzaksiyalar</Text>
-        <Pressable style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={styles.viewAll}>Barchasi</Text>
-        </Pressable>
+        {rangeTransactions.length > 5 || transactionsNextCursor ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showAllTransactions }}
+            onPress={() => showAllTransactions ? setShowAllTransactions(false) : showMoreTransactions()}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Text style={styles.viewAll}>{showAllTransactions ? "Kamroq ko'rsatish" : "Barchasi"}</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.transactionList}>
-        {hasEarningsData ? (
+        {visibleTransactions.length ? (
           visibleTransactions.map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} />)
         ) : (
           <EmptyState />
         )}
       </View>
+      {showAllTransactions && transactionsNextCursor ? (
+        <View style={styles.transactionsFooter}>
+          {transactionsError ? <Text style={styles.transactionsError}>{transactionsError}</Text> : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ busy: Boolean(transactionsLoading) }}
+            disabled={transactionsLoading || refreshing}
+            onPress={showMoreTransactions}
+            style={({ pressed }) => [styles.loadMoreButton, pressed && styles.pressed]}
+          >
+            {transactionsLoading ? <ActivityIndicator color="#246BFF" /> : (
+              <Text style={styles.viewAll}>{transactionsError ? "Qayta urinish" : "Ko'proq yuklash"}</Text>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -152,51 +203,59 @@ function SummaryMetric({ icon: Icon, label, value }) {
   );
 }
 
-function RevenueChart({ trend }) {
-  const values = trend.map((item) => Number(item.amount || 0));
+function RevenueChart({ trend, range = "week" }) {
+  const values = trend.map((item) => Math.max(0, Number(item.amount) || 0));
   const hasData = values.some((value) => value > 0);
 
   if (!hasData) {
     return <EmptyState />;
   }
 
-  const maxValue = Math.max(...values, 1);
+  const largestValue = Math.max(...values, 1);
+  const scaleStep = 10 ** Math.floor(Math.log10(largestValue));
+  const maxValue = Math.ceil(largestValue / scaleStep) * scaleStep;
   const points = trend.map((item, index) => {
     const x = 10 + index * (274 / Math.max(1, trend.length - 1));
-    const y = 88 - (Number(item.amount || 0) / maxValue) * 78;
+    const y = 88 - (values[index] / maxValue) * 78;
     return [x, y];
   });
   const path = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x} ${y}`).join(" ");
   const areaPath = `${path} L${points[points.length - 1][0]} 88 L${points[0][0]} 88 Z`;
-  const labels = trend.map((item) => new Date(item.date).toLocaleDateString("uz-UZ", { weekday: "short" }));
+  const labels = trend.map((item, index) => ({
+    id: `${item.date}-${index}`,
+    text: new Date(item.date).toLocaleDateString("uz-UZ", range === "week" ? { weekday: "short" } : { day: "numeric", month: "short" })
+  })).filter((_, index) => index === trend.length - 1 || index % Math.max(1, Math.ceil((trend.length - 1) / 6)) === 0);
 
   return (
-    <View style={styles.chartBody}>
-      <View style={styles.yAxis}>
-        <Text style={styles.axisLabel}>240</Text>
-        <Text style={styles.axisLabel}>120</Text>
-        <Text style={styles.axisLabel}>0</Text>
-      </View>
-      <View style={styles.chartArea}>
-        <Svg width="100%" height="92" viewBox="0 0 284 92">
-          <Defs>
-            <LinearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#FF7A21" stopOpacity="0.26" />
-              <Stop offset="1" stopColor="#FF7A21" stopOpacity="0" />
-            </LinearGradient>
-          </Defs>
-          <Path d={areaPath} fill="url(#revenueFill)" />
-          <Path d={path} fill="none" stroke="#FF7A21" strokeWidth="3" strokeLinecap="round" />
-          {points.map(([cx, cy]) => (
-            <Circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="3.2" fill="#FF7A21" />
-          ))}
-        </Svg>
-        <View style={styles.xAxis}>
-          {labels.map((label) => (
-            <Text key={label} style={styles.axisLabel}>
-              {label}
-            </Text>
-          ))}
+    <View>
+      <Text style={styles.chartUnit}>so'm</Text>
+      <View style={styles.chartBody}>
+        <View style={styles.yAxis}>
+          <Text translate={false} style={styles.axisLabel}>{maxValue.toLocaleString("uz-UZ")}</Text>
+          <Text translate={false} style={styles.axisLabel}>{(maxValue / 2).toLocaleString("uz-UZ")}</Text>
+          <Text style={styles.axisLabel}>0</Text>
+        </View>
+        <View style={styles.chartArea}>
+          <Svg width="100%" height="92" viewBox="0 0 284 92">
+            <Defs>
+              <LinearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor="#FF7A21" stopOpacity="0.26" />
+                <Stop offset="1" stopColor="#FF7A21" stopOpacity="0" />
+              </LinearGradient>
+            </Defs>
+            <Path d={areaPath} fill="url(#revenueFill)" />
+            <Path d={path} fill="none" stroke="#FF7A21" strokeWidth="3" strokeLinecap="round" />
+            {points.map(([cx, cy]) => (
+              <Circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="3.2" fill="#FF7A21" />
+            ))}
+          </Svg>
+          <View style={styles.xAxis}>
+            {labels.map((label) => (
+              <Text key={label.id} translate={false} style={styles.axisLabel}>
+                {label.text}
+              </Text>
+            ))}
+          </View>
         </View>
       </View>
     </View>
@@ -454,15 +513,22 @@ const styles = StyleSheet.create({
     fontFamily: font.extra
   },
   chartBody: {
-    marginTop: 14,
+    marginTop: 4,
     flexDirection: "row"
   },
+  chartUnit: {
+    marginTop: 10,
+    color: "#8EA1BA",
+    fontSize: 10,
+    fontFamily: font.medium
+  },
   yAxis: {
-    width: 26,
-    height: 103,
+    minWidth: 48,
+    paddingRight: 8,
+    height: 92,
     justifyContent: "space-between",
-    paddingTop: 2,
-    paddingBottom: 17
+    paddingTop: 5,
+    paddingBottom: 0
   },
   axisLabel: {
     color: "#8EA1BA",
@@ -496,6 +562,21 @@ const styles = StyleSheet.create({
   },
   transactionList: {
     gap: 10
+  },
+  transactionsFooter: {
+    alignItems: "center",
+    gap: 10,
+    marginTop: 14
+  },
+  transactionsError: {
+    color: "#FF2E55",
+    textAlign: "center"
+  },
+  loadMoreButton: {
+    minHeight: 44,
+    minWidth: 120,
+    alignItems: "center",
+    justifyContent: "center"
   },
   emptyState: {
     minHeight: 120,

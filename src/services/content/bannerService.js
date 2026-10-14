@@ -1,21 +1,11 @@
 import { apiRequest, httpRequest } from "../api/client";
+import { mapApiBanner } from "./bannerModel.mjs";
+export { mapApiBanner } from "./bannerModel.mjs";
 
-export function mapApiBanner(banner) {
-  return {
-    id: banner.id,
-    title: banner.title || "NearFIX",
-    imageUrl: banner.imageUrl || "",
-    targetType: String(banner.targetType || "NONE").toUpperCase(),
-    targetValue: banner.targetValue || "",
-    sortOrder: Number.isFinite(Number(banner.sortOrder)) ? Number(banner.sortOrder) : 0,
-    isActive: Boolean(banner.isActive)
-  };
-}
-
-export async function fetchBannersApi() {
+export async function fetchBannersApi(placement = "HOME") {
   return apiRequest(
     async () => {
-      const payload = await httpRequest("/content/banners");
+      const payload = await httpRequest(`/content/banners?placement=${encodeURIComponent(placement)}`);
       return {
         ok: true,
         banners: (payload.banners || []).map(mapApiBanner)

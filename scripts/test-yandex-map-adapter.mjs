@@ -28,6 +28,14 @@ assert.deepEqual(toYandexInitialRegion(canonical), {
 });
 assert.equal(toCanonicalCoordinate({ lat: 91, lon: 69 }), null);
 assert.equal(toCanonicalCoordinate({ latitude: 41, longitude: Number.NaN }), null);
+for (const invalid of [null, undefined, "", " ", true, false, [], [41.3], {}, NaN, Infinity, -Infinity]) {
+  assert.equal(toCanonicalCoordinate({ latitude: invalid, longitude: 69.2 }), null);
+  assert.equal(toCanonicalCoordinate({ latitude: 41.3, longitude: invalid }), null);
+  assert.equal(toCanonicalCoordinate({ nativeEvent: { point: { lat: invalid, lon: 69.2 } } }), null);
+}
+assert.deepEqual(toCanonicalCoordinate({ lat: " 0 ", lon: "0" }), { latitude: 0, longitude: 0 });
+assert.deepEqual(toCanonicalCoordinate({ lat: -90, lon: 180 }), { latitude: -90, longitude: 180 });
+assert.equal(toCanonicalCoordinate({ lat: 41.3, lon: 181 }), null);
 
 const mapPickerSource = fs.readFileSync("src/screens/maps/MapPickerScreen.js", "utf8");
 const mapKitLoaderSource = fs.readFileSync("src/services/maps/yandexMapKit.js", "utf8");

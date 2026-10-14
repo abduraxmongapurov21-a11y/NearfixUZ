@@ -1,17 +1,11 @@
-import { apiClient, getAdminToken } from "@/services/api-client";
-import type { AdminBanner, BannerInput } from "../types/banner";
+import { apiClient, getAdminToken, getApiUrl } from "@/services/api-client";
+import type { AdminBanner, BannerInput, BannerMediaType, BannerPlacement } from "../types/banner";
 
-function getApiBaseUrl() {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!apiBaseUrl) throw new Error("NEXT_PUBLIC_API_URL sozlanmagan");
-  return apiBaseUrl;
-}
-
-export async function getBanners(): Promise<AdminBanner[]> {
+export async function getBanners(placement: BannerPlacement): Promise<AdminBanner[]> {
   const token = getAdminToken();
   if (!token) return [];
 
-  const payload = await apiClient<{ ok: boolean; banners: AdminBanner[] }>("/admin/banners", { token });
+  const payload = await apiClient<{ ok: boolean; banners: AdminBanner[] }>(`/admin/banners?placement=${placement}`, { token });
   return payload.banners;
 }
 
@@ -51,27 +45,27 @@ export async function deleteBanner(bannerId: string) {
   });
 }
 
-export async function reorderBanners(items: { id: string; sortOrder: number }[]) {
+export async function reorderBanners(items: { id: string; sortOrder: number }[], placement: BannerPlacement) {
   const token = getAdminToken();
   if (!token) throw new Error("Admin sessiyasi topilmadi");
 
   const payload = await apiClient<{ ok: boolean; banners: AdminBanner[] }>("/admin/banners/reorder", {
     method: "PATCH",
     token,
-    body: JSON.stringify({ items })
+    body: JSON.stringify({ items, placement })
   });
 
   return payload.banners;
 }
 
-export async function uploadBannerImage(file: File): Promise<string> {
+export async function uploadBannerMedia(file: File): Promise<{ imageUrl: string; mediaType: BannerMediaType }> {
   const token = getAdminToken();
   if (!token) throw new Error("Admin sessiyasi topilmadi");
 
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${getApiBaseUrl()}/admin/banners/upload`, {
+  const response = await fetch(getApiUrl("/admin/banners/upload"), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`
@@ -81,8 +75,8 @@ export async function uploadBannerImage(file: File): Promise<string> {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok || !payload?.ok) {
-    throw new Error(payload?.message || "Banner rasmini yuklab bo'lmadi");
+    throw new Error(payload?.message || "Reklama faylini yuklab bo'lmadi");
   }
 
-  return payload.imageUrl;
+  return { imageUrl: payload.imageUrl, mediaType: payload.mediaType || "IMAGE" };
 }

@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Search } from "lucide-react";
+import { LogOut, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { useAdminSessionStore } from "@/stores/admin-session-store";
 import { useAdminUiStore } from "@/stores/ui-store";
+import { AdminNotifications } from "./admin-notifications";
 
 export function Topbar() {
+  const router = useRouter();
   const globalSearch = useAdminUiStore((state) => state.globalSearch);
   const setGlobalSearch = useAdminUiStore((state) => state.setGlobalSearch);
   const session = useAdminSessionStore((state) => state.session);
+  const logout = useAdminSessionStore((state) => state.logout);
   const initials = (session?.name || session?.username || "NF").slice(0, 2).toUpperCase();
 
   return (
@@ -25,9 +29,7 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-4">
-        <button aria-label="Bildirishnomalar" className="flex h-10 w-10 items-center justify-center rounded-md border bg-card text-muted-foreground">
-          <Bell className="h-4 w-4" />
-        </button>
+        <AdminNotifications />
         {session?.tokenType === "admin_account" ? (
           <Link
             className="rounded-md border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -36,6 +38,14 @@ export function Topbar() {
             Parolni o'zgartirish
           </Link>
         ) : null}
+        <button
+          className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted"
+          onClick={() => { logout(); setGlobalSearch(""); router.replace("/login"); }}
+          type="button"
+        >
+          <LogOut aria-hidden="true" className="h-4 w-4" />
+          Chiqish
+        </button>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
             {initials}

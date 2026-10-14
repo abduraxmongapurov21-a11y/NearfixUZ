@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { adminLabel } from "@/lib/admin-labels";
-import { FilterBar } from "@/shared/components/filter-bar";
+import { FilterBar, TableLoadState } from "@/shared/components/filter-bar";
+import { hasPermission } from "@/shared/auth/permissions";
+import { useAdminSessionStore } from "@/stores/admin-session-store";
+import { useAdminUiStore } from "@/stores/ui-store";
 import { DataTable } from "@/shared/components/data-table";
 import { useWorkers } from "@/modules/workers/hooks/use-workers";
 import { useOrders } from "../hooks/use-orders";
@@ -23,7 +26,9 @@ const controlClassName =
   "h-10 rounded-md border bg-card px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring";
 
 export function OrdersTable() {
-  const [search, setSearch] = useState("");
+  const search = useAdminUiStore((state) => state.globalSearch);
+  const setSearch = useAdminUiStore((state) => state.setGlobalSearch);
+  const canManage = useAdminSessionStore((state) => hasPermission(state.session, "orders.manage"));
   const [status, setStatus] = useState("");
   const [cityId, setCityId] = useState("");
   const [workerId, setWorkerId] = useState("");
@@ -59,8 +64,8 @@ export function OrdersTable() {
     page,
     limit: pageSize
   };
-  const { data } = useOrders(query);
-  const { data: selectedOrder, isLoading: isDetailLoading } = useQuery({
+  const { data, error: loadError, isPending: isLoading, refetch } = useOrders(query);
+  const { data: selectedOrder, isLoading: isDetailLoading, error: detailError, refetch: refetchDetail } = useQuery({
     enabled: Boolean(selectedOrderId),
     queryKey: ["admin-order-detail", selectedOrderId],
     queryFn: () => getOrderDetail(selectedOrderId!)
@@ -103,7 +108,7 @@ export function OrdersTable() {
   }
 
   function handleAction(action: AdminOrderAction) {
-    if (!selectedOrderId || actionMutation.isPending) return;
+    if (!canManage || !selectedOrderId || actionMutation.isPending) return;
     actionMutation.mutate({ orderId: selectedOrderId, action });
   }
 
@@ -154,24 +159,32 @@ export function OrdersTable() {
         searchPlaceholder="Buyurtma yoki mijozni qidirish"
         searchValue={search}
       />
-      <DataTable columns={ordersColumns} data={items} onRowClick={(order) => openOrder(order.orderId)} />
-      <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-        <div>
-          Jami {data?.total ?? 0} ta buyurtma — {data?.page ?? page} / {totalPages}-sahifa
-        </div>
-        <div className="flex items-center gap-2">
-          <Button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} variant="outline">
-            Oldingi
-          </Button>
-          <Button disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} variant="outline">
-            Keyingi
-          </Button>
-        </div>
-      </div>
+      <TableLoadState error={loadError} isPending={isLoading} onRetry={() => void refetch()} />
+      {!isLoading && !loadError ? (
+        <>
+          <DataTable columns={ordersColumns} data={items} onRowClick={(order) => openOrder(order.orderId)} />
+          <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+            <div>
+              Jami {data?.total ?? 0} ta buyurtma — {data?.page ?? page} / {totalPages}-sahifa
+            </div>
+            <div className="flex items-center gap-2">
+              <Button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} variant="outline">
+                Oldingi
+              </Button>
+              <Button disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} variant="outline">
+                Keyingi
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : null}
       <OrderDetailDrawer
         actionError={actionError}
         actionSuccess={actionSuccess}
+        canManage={canManage}
         isLoading={isDetailLoading}
+        loadError={detailError}
+        onRetry={() => void refetchDetail()}
         onAction={handleAction}
         onClose={() => setSelectedOrderId(null)}
         open={Boolean(selectedOrderId)}
