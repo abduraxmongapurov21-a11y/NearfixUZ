@@ -229,10 +229,12 @@ export async function createWorkerOrderApi(token, input) {
         ...(input.clientName ? { clientName: input.clientName } : {}),
         categoryId: input.categoryId,
         description: input.description,
-        location: {
-          addressText: input.addressText,
-          ...(input.district ? { district: input.district } : {})
-        },
+        ...(input.addressText || input.district ? {
+          location: {
+            addressText: input.addressText,
+            ...(input.district ? { district: input.district } : {})
+          }
+        } : {}),
         ...(input.priceEstimate ? { priceEstimate: input.priceEstimate } : {})
       }
     });

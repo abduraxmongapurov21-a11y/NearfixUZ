@@ -76,7 +76,8 @@ function decimalToNumber(value: Prisma.Decimal | number | null | undefined) {
 
 function locationForOrder(order: OrderRecord) {
   const hasSnapshot = Boolean(order.locationAddressText?.trim()) ||
-    (order.locationLat != null && order.locationLng != null);
+    (order.locationLat != null && order.locationLng != null) ||
+    (order.source === "WORKER_PHONE" && Boolean(order.locationDistrict?.trim() || order.locationLabel?.trim()));
   const source = hasSnapshot
     ? {
         label: order.locationLabel,

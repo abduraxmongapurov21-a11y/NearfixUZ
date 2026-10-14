@@ -34,4 +34,13 @@ for (const coordinates of [{ lat: 41.3 }, { lng: 69.2 }, { lat: 91, lng: 69.2 },
   assert.equal(createAddressSchema.safeParse({ ...address, ...coordinates }).success, false);
   checks++;
 }
+const phoneOrder = { clientPhone: "+998900000000", categoryId: "category" };
+for (const details of [{}, { description: "" }, { description: " " }, { location: {} }, { location: { addressText: " " } }, { description: "A", location: { addressText: "1" } }]) {
+  assert.equal(createWorkerOrderSchema.safeParse({ ...phoneOrder, ...details }).success, true);
+  checks++;
+}
+for (const details of [{ description: "x".repeat(1201) }, { description: 12 }, { location: { addressText: "x".repeat(241) } }, { location: { addressText: false } }, { location: { latitude: 41.3 } }, { location: { longitude: 69.2 } }]) {
+  assert.equal(createWorkerOrderSchema.safeParse({ ...phoneOrder, ...details }).success, false);
+  checks++;
+}
 console.log(`Address coordinate contracts: ${checks} checks PASS; malformed JSON types rejected, numeric strings and text-only addresses retained.`);

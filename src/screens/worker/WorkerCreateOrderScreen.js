@@ -69,15 +69,6 @@ export function WorkerCreateOrderScreen({ navigation }) {
       setError(t("Xizmat turini tanlang."));
       return;
     }
-    if (description.trim().length < 3) {
-      setError(t("Ish tavsifini kiriting."));
-      return;
-    }
-    if (addressText.trim().length < 4) {
-      setError(t("Manzilni kiriting."));
-      return;
-    }
-
     const cleanPrice = price.trim().replace(/\s/g, "");
     if (cleanPrice && (!/^\d+$/.test(cleanPrice) || Number(cleanPrice) <= 0)) {
       setError(t("Narx musbat son bo'lishi kerak."));
@@ -90,8 +81,8 @@ export function WorkerCreateOrderScreen({ navigation }) {
       clientPhone: normalizedPhone,
       clientName: clientName.trim() || undefined,
       categoryId,
-      description: description.trim(),
-      addressText: addressText.trim(),
+      description: description.trim() || undefined,
+      addressText: addressText.trim() || undefined,
       district: district.trim() || undefined,
       priceEstimate: cleanPrice ? Number(cleanPrice) : undefined
     });
@@ -161,9 +152,10 @@ export function WorkerCreateOrderScreen({ navigation }) {
           {!categories.length ? <Text style={styles.helper}>Profilga biriktirilgan faol xizmat topilmadi.</Text> : null}
         </View>
 
-        <Field label="Ish tavsifi">
+        <Field label="Ish tavsifi (ixtiyoriy)">
           <TextInput
             multiline
+            maxLength={1200}
             onChangeText={setDescription}
             placeholder="Bajariladigan ishni qisqacha yozing"
             style={[styles.input, styles.textArea]}
@@ -172,9 +164,10 @@ export function WorkerCreateOrderScreen({ navigation }) {
           />
         </Field>
 
-        <Field label="Manzil">
+        <Field label="Manzil (ixtiyoriy)">
           <TextInput
             multiline
+            maxLength={240}
             onChangeText={setAddressText}
             placeholder="Ko'cha, uy va mo'ljal"
             style={[styles.input, styles.addressInput]}

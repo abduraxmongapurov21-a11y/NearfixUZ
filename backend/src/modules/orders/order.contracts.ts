@@ -41,7 +41,7 @@ export const createOrderSchema = z.object({
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
 const workerOrderLocationSchema = z.object({
-  addressText: z.string().trim().min(4).max(240),
+  addressText: z.string().trim().max(240).optional(),
   label: z.string().trim().min(2).max(60).optional(),
   district: z.string().trim().max(80).optional(),
   latitude: z.number().finite().min(-90).max(90).optional(),
@@ -60,8 +60,8 @@ export const createWorkerOrderSchema = z.object({
   clientPhone: z.string().min(7).max(32),
   clientName: z.string().trim().min(2).max(80).optional(),
   categoryId: z.string().min(1).max(191),
-  description: z.string().trim().min(3).max(1200),
-  location: workerOrderLocationSchema,
+  description: z.string().trim().max(1200).optional(),
+  location: workerOrderLocationSchema.optional(),
   priceEstimate: z.number().int().positive().max(2_000_000_000).optional()
 }).strict();
 

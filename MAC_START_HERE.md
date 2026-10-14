@@ -7,7 +7,7 @@ Windows’da kod/test/push/server deploy ishlari bajariladi; Mac’da native bui
 ZIP yonidagi `.sha256` fayl bilan macOS Terminal’da ZIP hashini solishtiring:
 
 ```sh
-shasum -a 256 NearFIX-1.0.7-Mac-20261014-r2.zip
+shasum -a 256 NearFIX-1.0.7-Mac-20261014-r3.zip
 ```
 
 ZIP’ni yangi katalogga oching. Terminal’da ichidagi `NearFIX-1.0.7` katalogiga kiring. `.git`, `node_modules`, Windows native/build kataloglari va maxfiy credentiallar paketga kiritilmagan. Mobil, backend, admin, testlar, migrationlar, lockfile va assets to‘liq source sifatida kiritiladi. Android uchun zarur **ommaviy** `google-services.json` ham bor.

@@ -22,25 +22,31 @@ function BannerVideo({ uri, playing, onError }) {
     nativeControls={false} allowsFullscreen={false} allowsPictureInPicture={false} playsInline pointerEvents="none" />;
 }
 
-function BannerSlide({ banner, width, current, playing, target, onPress, isHome }) {
+function BannerSlide({ banner, width, current, playing, motionPaused, onTogglePlayback, onPlaybackError, target, onPress, isHome }) {
+  const { t } = useTranslation();
   const [failed, setFailed] = useState(false);
   return (
     <View style={{ width, paddingHorizontal: 1 }}>
       <Pressable accessibilityRole={target ? "link" : undefined} accessibilityLabel={banner.title} disabled={!target}
         onPress={onPress} style={[styles.card, isHome && styles.heroCard]}>
         {!failed && banner.imageUrl ? banner.mediaType === "VIDEO" ? (
-          current ? <BannerVideo uri={banner.imageUrl} playing={playing} onError={() => setFailed(true)} /> : null
+          current ? <BannerVideo uri={banner.imageUrl} playing={playing} onError={() => { setFailed(true); onPlaybackError(); }} /> : null
         ) : <Image source={{ uri: banner.imageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setFailed(true)} /> : null}
         <View pointerEvents="none" style={styles.scrim} />
         <Text style={styles.adLabel}>Reklama</Text>
         <Text translate={false} numberOfLines={2} style={[styles.title, isHome && styles.heroTitle]}>{banner.title}</Text>
       </Pressable>
+      {current && banner.mediaType === "VIDEO" && banner.imageUrl && !failed ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={t(motionPaused ? "Reklamani davom ettirish" : "Reklamani to'xtatish")}
+          onPress={onTogglePlayback} style={styles.pause}>
+          {motionPaused ? <Play size={13} color={colors.white} /> : <Pause size={13} color={colors.white} />}
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 export function BannerCarousel({ banners, categories, navigation, placement }) {
-  const { t } = useTranslation();
   const isFocused = useIsFocused();
   const scroll = useRef(null);
   const [width, setWidth] = useState(0);
@@ -51,7 +57,7 @@ export function BannerCarousel({ banners, categories, navigation, placement }) {
   const [foreground, setForeground] = useState(AppState.currentState === "active");
   const isHome = placement === "HOME";
   const activeBanners = bannersForPlacement(banners, placement);
-  const identity = activeBanners.map((banner) => `${banner.id}:${banner.imageUrl}`).join("|");
+  const identity = activeBanners.map((banner) => `${banner.id}:${banner.mediaType}:${banner.imageUrl}`).join("|");
   const canPlay = isFocused && foreground && !paused && !reduceMotion && !dragging;
   const currentMediaType = activeBanners[index]?.mediaType;
   const motionPaused = paused || reduceMotion;
@@ -68,6 +74,8 @@ export function BannerCarousel({ banners, categories, navigation, placement }) {
     setIndex(0);
     scroll.current?.scrollTo({ x: 0, animated: false });
   }, [identity, width]);
+
+  useEffect(() => { setPaused(false); }, [index, identity]);
 
   useEffect(() => {
     if (!canPlay || width <= 0 || activeBanners.length < 2) return undefined;
@@ -98,16 +106,14 @@ export function BannerCarousel({ banners, categories, navigation, placement }) {
         {width > 0 ? activeBanners.map((banner, itemIndex) => {
           const target = resolveBannerTarget(banner, categories);
           return <BannerSlide key={`${banner.id}:${banner.mediaType}:${banner.imageUrl}`} banner={banner} width={width} isHome={isHome}
-            current={itemIndex === index} playing={canPlay && itemIndex === index} target={target} onPress={() => openBanner(target)} />;
+            current={itemIndex === index} playing={canPlay && itemIndex === index} motionPaused={motionPaused}
+            onTogglePlayback={() => { setPaused(!motionPaused); setReduceMotion(false); }} onPlaybackError={() => setPaused(false)}
+            target={target} onPress={() => openBanner(target)} />;
         }) : null}
       </ScrollView>
-      {activeBanners.length > 1 || activeBanners[0]?.mediaType === "VIDEO" ? (
+      {activeBanners.length > 1 ? (
         <View pointerEvents="box-none" style={styles.controls}>
           <View style={styles.dots}>{activeBanners.map((banner, itemIndex) => <View key={banner.id} style={[styles.dot, index === itemIndex && styles.activeDot]} />)}</View>
-          <Pressable accessibilityRole="button" accessibilityLabel={t(motionPaused ? "Reklamani davom ettirish" : "Reklamani to'xtatish")}
-            onPress={() => { setPaused(!motionPaused); setReduceMotion(false); }} style={styles.pause}>
-            {motionPaused ? <Play size={13} color={colors.white} /> : <Pause size={13} color={colors.white} />}
-          </Pressable>
         </View>
       ) : null}
     </View>

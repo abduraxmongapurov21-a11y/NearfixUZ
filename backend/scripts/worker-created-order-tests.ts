@@ -10,7 +10,8 @@ import {
 import { prisma } from "../src/db/prisma.js";
 import type { AuthUser } from "../src/modules/auth/auth-context.js";
 import { verifyAuthOtp } from "../src/modules/auth/auth.service.js";
-import { createWorkerOrderSchema } from "../src/modules/orders/order.contracts.js";
+import { createWorkerOrderSchema, type CreateWorkerOrderInput } from "../src/modules/orders/order.contracts.js";
+import { toOrderDto } from "../src/modules/orders/order.dto.js";
 import {
   acceptOrder,
   cancelOrder,
@@ -175,6 +176,35 @@ async function main() {
     assert.equal(completed.status, OrderStatus.COMPLETED);
     await expectAvailable(worker.id);
 
+    const optionalDetails: Array<{
+      input: Partial<CreateWorkerOrderInput>;
+      description: string | null;
+      location: { addressText: string; district: string | null; latitude: number | null; longitude: number | null; label: string | null } | null;
+    }> = [
+      { input: {}, description: null, location: null },
+      { input: { description: "   ", location: { addressText: "  " } }, description: null, location: null },
+      { input: { description: "  Ish  ", location: {} }, description: "Ish", location: null },
+      { input: { location: { addressText: "  Uy  " } }, description: null,
+        location: { addressText: "Uy", district: null, latitude: null, longitude: null, label: null } },
+      { input: { location: { district: "Yunusobod" } }, description: null,
+        location: { addressText: "", district: "Yunusobod", latitude: null, longitude: null, label: null } },
+      { input: { location: { latitude: 0, longitude: 0 } }, description: null,
+        location: { addressText: "", district: null, latitude: 0, longitude: 0, label: null } }
+    ];
+    for (const testCase of optionalDetails) {
+      const parsed = createWorkerOrderSchema.parse({ clientPhone: existingClient.phone, categoryId: category.id, ...testCase.input });
+      const order = await createWorkerOrder(providerAuth, parsed);
+      const stored = await getOrderForUser(clientAuth, order.id);
+      assert.equal(stored.problemDescription, testCase.description);
+      assert.equal(stored.locationAddressText, testCase.location?.addressText || null);
+      assert.equal(stored.addressId, null, "Missing address must not invent or save a customer address");
+      assert.equal(stored.status, OrderStatus.ACCEPTED);
+      assert.deepEqual(toOrderDto(stored).location, testCase.location);
+      assert.equal(await prisma.chatRoom.count({ where: { orderId: order.id } }), 1, "Optional details retain the order chat");
+      await cancelOrder(providerAuth, order.id, "Optional details fixture cleanup");
+      await expectAvailable(worker.id);
+    }
+
     const raceResults = await Promise.allSettled([
       createWorkerOrder(providerAuth, inputFor(trackedPhones[4], category.id, "Parallel order A")),
       createWorkerOrder(providerAuth, inputFor(trackedPhones[5], category.id, "Parallel order B"))
@@ -239,6 +269,13 @@ async function main() {
       urgency: "FAST"
     });
     assert.equal(clientOrder.source, OrderSource.CLIENT_APP);
+    assert.equal(toOrderDto({
+      ...clientOrder,
+      locationAddressText: null,
+      locationLat: null,
+      locationLng: null,
+      locationDistrict: "Legacy district"
+    }).location?.addressText, address.addressText, "Legacy client orders still fall back to the saved address");
     assert.equal(clientOrder.status, OrderStatus.WAITING_RESPONSE);
     assert.equal((await acceptOrder(providerAuth, clientOrder.id)).status, OrderStatus.ACCEPTED);
     assert.equal((await cancelOrder(ordinaryClientAuth, clientOrder.id, "Client regression cleanup")).status, OrderStatus.CANCELLED);

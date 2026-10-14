@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { ArrowRight, MessageCircle, MoreVertical, RefreshCw, Search, X } from "lucide-react-native";
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { ArrowRight, MessageCircle, MoreVertical, Phone, RefreshCw, Search, X } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../constants/routes";
 import { useAuthStore } from "../../store/authStore";
 import { useChatRefresh } from "../../hooks/useChatRefresh";
 import { refreshChatRooms, useChatStore } from "../../store/chatStore";
 import { chatUnreadCount } from "../../services/chats/chatSync.mjs";
-import { Text, TextInput } from "../../i18n/native";
+import { Alert, Text, TextInput } from "../../i18n/native";
 import { normalizeExperienceMode } from "../../navigation/experienceMode.mjs";
+import { normalizeWorkerPhone } from "../../utils/workerPhone.mjs";
 import { ClientHeader } from "../../components/client/ClientHeader";
 import { GlassSurface } from "../../components/client/GlassSurface";
 import { colors as clientColors, font as clientFont, CLIENT_CONTENT_BOTTOM, shadow as clientShadow } from "../../theme/clientTheme";
@@ -30,7 +31,9 @@ const avatarPalette = [
 ];
 
 function resolvePrivateRoom(room, currentUserId, index) {
-  const otherParticipant = room.participants?.find((participant) => participant.userId !== currentUserId);
+  const otherParticipant = currentUserId
+    ? room.participants?.find((participant) => participant.userId !== currentUserId)
+    : null;
   const otherUser = otherParticipant?.user;
   const palette = avatarPalette[index % avatarPalette.length];
   const title = otherUser?.name || otherUser?.phone || room.title || "NearFIX chat";
@@ -38,6 +41,7 @@ function resolvePrivateRoom(room, currentUserId, index) {
   return {
     ...room,
     title,
+    phone: normalizeWorkerPhone(otherUser?.phone),
     subtitle: room.subtitle || room.serviceType || (room.orderId ? "Buyurtma suhbati" : "Shaxsiy chat"),
     time: room.time || "hozir",
     avatarBg: palette.avatarBg,
@@ -202,24 +206,47 @@ export function ChatScreen({ navigation, route }) {
 }
 
 function ClientChatRow({ room, onPress }) {
+  const { t } = useTranslation();
+
+  async function callWorker() {
+    if (!room.phone) return;
+    try {
+      await Linking.openURL(`tel:${room.phone}`);
+    } catch {
+      Alert.alert("Xatolik", "Telefon ilovasini ochib bo'lmadi.");
+    }
+  }
+
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [clientStyles.chatCard, pressed && clientStyles.pressed]}>
-      <View style={clientStyles.avatar}>
-        <Text translate={false} style={clientStyles.avatarText}>{getInitials(room.title)}</Text>
-        {room.online ? <View style={clientStyles.onlineDot} /> : null}
-      </View>
-      <View style={clientStyles.roomBody}>
-        <View style={clientStyles.roomTop}>
-          <Text translate={false} style={clientStyles.roomTitle} numberOfLines={1}>{room.title}</Text>
-          <Text style={clientStyles.roomTime}>{room.time}</Text>
+    <View style={clientStyles.chatCard}>
+      <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [clientStyles.chatContent, pressed && clientStyles.pressed]}>
+        <View style={clientStyles.avatar}>
+          <Text translate={false} style={clientStyles.avatarText}>{getInitials(room.title)}</Text>
+          {room.online ? <View style={clientStyles.onlineDot} /> : null}
         </View>
-        {room.orderId ? <Text style={clientStyles.orderLabel} numberOfLines={1}>Buyurtma · {room.orderCode || room.orderId.slice(-6)}</Text> : null}
-        <View style={clientStyles.roomBottom}>
-          <Text translate={!room.lastMessage?.body} style={clientStyles.roomSubtitle} numberOfLines={1}>{room.subtitle}</Text>
-          {room.unread ? <View style={clientStyles.unreadBadge}><Text translate={false} style={clientStyles.unreadText}>{room.unread > 99 ? "99+" : room.unread}</Text></View> : null}
+        <View style={clientStyles.roomBody}>
+          <View style={clientStyles.roomTop}>
+            <Text translate={false} style={clientStyles.roomTitle} numberOfLines={1}>{room.title}</Text>
+            <Text style={clientStyles.roomTime}>{room.time}</Text>
+          </View>
+          {room.orderId ? <Text style={clientStyles.orderLabel} numberOfLines={1}>Buyurtma · {room.orderCode || room.orderId.slice(-6)}</Text> : null}
+          <View style={clientStyles.roomBottom}>
+            <Text translate={!room.lastMessage?.body} style={clientStyles.roomSubtitle} numberOfLines={1}>{room.subtitle}</Text>
+            {room.unread ? <View style={clientStyles.unreadBadge}><Text translate={false} style={clientStyles.unreadText}>{room.unread > 99 ? "99+" : room.unread}</Text></View> : null}
+          </View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("Ustaga qo'ng'iroq qilish: {{name}}", { name: room.title })}
+        accessibilityState={{ disabled: !room.phone }}
+        disabled={!room.phone}
+        onPress={callWorker}
+        style={({ pressed }) => [clientStyles.callButton, !room.phone && clientStyles.callDisabled, pressed && clientStyles.pressed]}
+      >
+        <Phone size={20} color={room.phone ? clientColors.primary : clientColors.subtle} strokeWidth={1.8} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -452,7 +479,10 @@ const clientStyles = StyleSheet.create({
   searchInput: { flex: 1, minWidth: 0, paddingVertical: 12, color: clientColors.text, fontSize: 15, fontFamily: clientFont.regular },
   clearButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   listContent: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 18, paddingBottom: CLIENT_CONTENT_BOTTOM, gap: 12 },
-  chatCard: { minHeight: 92, borderRadius: 22, backgroundColor: clientColors.white, borderWidth: 1, borderColor: clientColors.border, padding: 16, flexDirection: "row", alignItems: "center", ...clientShadow },
+  chatCard: { borderRadius: 22, backgroundColor: clientColors.white, borderWidth: 1, borderColor: clientColors.border, ...clientShadow },
+  chatContent: { minHeight: 100, padding: 16, borderRadius: 22, flexDirection: "row", alignItems: "center" },
+  callButton: { position: "absolute", right: 8, bottom: 8, width: 44, height: 44, borderRadius: 16, backgroundColor: clientColors.primarySoft, alignItems: "center", justifyContent: "center" },
+  callDisabled: { opacity: 0.5 },
   avatar: { width: 48, height: 48, borderRadius: 18, backgroundColor: clientColors.primarySoft, alignItems: "center", justifyContent: "center" },
   avatarText: { color: clientColors.primaryDark, fontSize: 16, fontFamily: clientFont.semi },
   onlineDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: clientColors.white, backgroundColor: clientColors.success },
@@ -460,8 +490,8 @@ const clientStyles = StyleSheet.create({
   roomTop: { flexDirection: "row", alignItems: "center", gap: 8 },
   roomTitle: { flex: 1, color: clientColors.text, fontSize: 15, lineHeight: 21, fontFamily: clientFont.semi },
   roomTime: { color: clientColors.subtle, fontSize: 11, fontFamily: clientFont.regular },
-  orderLabel: { marginTop: 3, color: clientColors.primary, fontSize: 11, lineHeight: 16, fontFamily: clientFont.medium },
-  roomBottom: { marginTop: 5, flexDirection: "row", alignItems: "center", gap: 8 },
+  orderLabel: { marginTop: 3, paddingRight: 44, color: clientColors.primary, fontSize: 11, lineHeight: 16, fontFamily: clientFont.medium },
+  roomBottom: { marginTop: 5, paddingRight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
   roomSubtitle: { flex: 1, color: clientColors.muted, fontSize: 13, lineHeight: 19, fontFamily: clientFont.regular },
   unreadBadge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: clientColors.primary, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   unreadText: { color: clientColors.white, fontSize: 11, fontFamily: clientFont.semi },
