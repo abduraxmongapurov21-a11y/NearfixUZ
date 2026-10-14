@@ -8,7 +8,7 @@
 - App Store Connect app ID: `6782775201`.
 - Production API: `https://nearfix-production-backend-wvd6v.ondigitalocean.app`.
 - Production admin: `https://nearfix-admin-k8mxo.ondigitalocean.app`.
-- Public pages on that origin: `/legal/privacy`, `/legal/terms`, `/legal/account-deletion`.
+- Public pages on the API origin: `/legal/privacy`, `/legal/terms`, `/legal/account-deletion`.
 
 The owner confirmed on 2026-10-14 that no custom domain was purchased. Use the DigitalOcean URLs above for production, admin access and store legal links. Historical audit references to custom domains do not define the current configuration.
 
